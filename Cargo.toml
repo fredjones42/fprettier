@@ -6,6 +6,12 @@ authors = ["Fred Jones"]
 description = "Auto-formatter for modern Fortran source code"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/fredjones42/fprettier"
+readme = "README.md"
+keywords = ["fortran", "formatter", "cli", "code-formatting", "pretty-print"]
+categories = [
+  "command-line-utilities",
+  "development-tools"
+]
 
 [dependencies]
 anyhow = "1.0"
