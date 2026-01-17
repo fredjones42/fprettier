@@ -1,0 +1,18 @@
+[package]
+name = "fprettier"
+version = "0.1.0"
+edition = "2021"
+authors = ["Fred Jones"]
+description = "Auto-formatter for modern Fortran source code"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/fredjones42/fprettier"
+
+[dependencies]
+anyhow = "1.0"
+clap = "4.5"
+glob = "0.3"
+regex = "1.12"
+rayon = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.9"
+walkdir = "2.5"
