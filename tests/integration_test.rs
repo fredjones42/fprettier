@@ -738,14 +738,20 @@ fn test_unary_plusminus_in_array_literal() {
     let lines: Vec<&str> = result.lines().collect();
 
     // Line with -2 should have unary minus (no space between - and 2)
-    let line_minus = lines.iter().find(|l| l.contains("-2")).expect("Should have line with -2");
+    let line_minus = lines
+        .iter()
+        .find(|l| l.contains("-2"))
+        .expect("Should have line with -2");
     assert!(
         line_minus.contains("-2") && !line_minus.contains("- 2"),
         "Unary minus should not have space: {line_minus}"
     );
 
     // Line with +3 should have unary plus (no space between + and 3)
-    let line_plus = lines.iter().find(|l| l.contains("+3") || l.contains("+ 3")).expect("Should have line with +3");
+    let line_plus = lines
+        .iter()
+        .find(|l| l.contains("+3") || l.contains("+ 3"))
+        .expect("Should have line with +3");
     assert!(
         line_plus.contains("+3") && !line_plus.contains("+ 3"),
         "Unary plus should not have space: {line_plus}"
@@ -780,7 +786,10 @@ fn test_binary_plusminus_on_continuation() {
     let lines: Vec<&str> = result.lines().collect();
 
     // The continuation line should have binary plus with space before
-    let cont_line = lines.iter().find(|l| l.trim().starts_with("+") || l.trim().starts_with("+ ")).expect("Should have continuation line");
+    let cont_line = lines
+        .iter()
+        .find(|l| l.trim().starts_with("+") || l.trim().starts_with("+ "))
+        .expect("Should have continuation line");
     assert!(
         cont_line.contains("+ c"),
         "Binary plus should have space after: {cont_line}"

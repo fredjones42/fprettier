@@ -392,10 +392,7 @@ mod tests {
         // The trimmed line has "format(" where "(" is at position 6 (0-indexed)
         // Alignment should be at position 7 (after the "(")
         let mut aligner = F90Aligner::new();
-        let lines = vec![
-            "format(A10, I5, &".to_string(),
-            "F10.2)".to_string(),
-        ];
+        let lines = vec!["format(A10, I5, &".to_string(), "F10.2)".to_string()];
 
         let logical_line = "format(A10, I5, F10.2)";
 

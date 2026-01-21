@@ -1144,13 +1144,19 @@ mod tests {
         let result =
             add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, Some(',')).0;
         // Should NOT add space after unary -
-        assert_eq!(result, "-2", "Unary minus after comma should not have space");
+        assert_eq!(
+            result, "-2",
+            "Unary minus after comma should not have space"
+        );
 
         let line2 = "+3";
         let result2 =
             add_whitespace_charwise_with_level(line2, &whitespace_flags, false, 0, Some(',')).0;
         // Should NOT add space after unary +
-        assert_eq!(result2, "+3", "Unary plus after comma should not have space");
+        assert_eq!(
+            result2, "+3",
+            "Unary plus after comma should not have space"
+        );
     }
 
     #[test]
