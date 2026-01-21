@@ -661,6 +661,58 @@ fn test_format_statement_label() {
     assert!(result.contains("FORMAT"), "FORMAT missing: {result}");
 }
 
+/// Test FORMAT statement continuation alignment with labels
+///
+/// Verifies that continuation lines of FORMAT statements align correctly
+/// under the opening parenthesis, accounting for the label position.
+#[test]
+fn test_format_statement_continuation_alignment() {
+    // Test case 1: 4-digit label at top level (indent=0)
+    // "1003 FORMAT(" has "(" at position 12, so continuation should have 12 spaces
+    let input1 = "1003 FORMAT(A10, I5, &\nF10.2)\n";
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: true,
+        indent: 3,
+        whitespace: 2,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input1.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+    let result1 = String::from_utf8(output).unwrap();
+    let lines1: Vec<&str> = result1.lines().collect();
+
+    // Count leading spaces on continuation line
+    let cont_leading1 = lines1[1].len() - lines1[1].trim_start().len();
+    assert_eq!(
+        cont_leading1, 12,
+        "4-digit label: continuation should have 12 spaces, got {}: {}",
+        cont_leading1, result1
+    );
+
+    // Test case 2: 1-digit label inside module (indent=3)
+    // "2  FORMAT(" has "(" at position 10, so continuation should have 10 spaces
+    let input2 = "MODULE test\nCONTAINS\n2 FORMAT(A10, I5, &\nF10.2)\nEND MODULE\n";
+
+    let cursor = Cursor::new(input2.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+    let result2 = String::from_utf8(output).unwrap();
+    let lines2: Vec<&str> = result2.lines().collect();
+
+    // Find the continuation line (should be line 3, after "2  FORMAT(...&")
+    let cont_leading2 = lines2[3].len() - lines2[3].trim_start().len();
+    assert_eq!(
+        cont_leading2, 10,
+        "1-digit label: continuation should have 10 spaces, got {}: {}",
+        cont_leading2, result2
+    );
+}
+
 /// Test case conversion - keywords to uppercase
 #[test]
 fn test_case_conversion_keywords_upper() {

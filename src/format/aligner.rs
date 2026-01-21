@@ -385,4 +385,31 @@ mod tests {
             indents[1]
         );
     }
+
+    #[test]
+    fn test_aligner_format_statement() {
+        // Test alignment for FORMAT statement continuation
+        // The trimmed line has "format(" where "(" is at position 6 (0-indexed)
+        // Alignment should be at position 7 (after the "(")
+        let mut aligner = F90Aligner::new();
+        let lines = vec![
+            "format(A10, I5, &".to_string(),
+            "F10.2)".to_string(),
+        ];
+
+        let logical_line = "format(A10, I5, F10.2)";
+
+        aligner
+            .process_logical_line(logical_line, &lines, 3)
+            .unwrap();
+
+        let indents = aligner.get_lines_indent();
+        assert_eq!(indents.len(), 2);
+        assert_eq!(indents[0], 0, "First line indent should be 0");
+        // "(" is at position 6, so alignment should be 6 + 1 = 7
+        assert_eq!(
+            indents[1], 7,
+            "Second line indent should be 7 (position after opening paren)"
+        );
+    }
 }

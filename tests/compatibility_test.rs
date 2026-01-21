@@ -925,8 +925,8 @@ fn test_compat_statement_label() {
     let input = "1003  FORMAT(2(1x, i4), 5x, '-', 5x, '-', 3x, '-', 5x, '-', 5x, '-', 8x, '-', 3x, &\n    1p, 2(1x, d10.3))\n";
     // Label spacing is computed as: max(0, target_indent - label_len)
     // For top-level (indent=0), label "1003 " (5 chars): padding = 0 - 5 = 0, so just 1 space from label
-    // Note: continuation indent differs slightly from fprettify (13 vs 12 spaces) - separate issue
-    let expected = "1003 FORMAT(2(1x, i4), 5x, '-', 5x, '-', 3x, '-', 5x, '-', 5x, '-', 8x, '-', 3x, &\n             1p, 2(1x, d10.3))\n";
+    // Continuation aligns under opening paren: "1003 FORMAT(" has "(" at position 12, so 12 spaces
+    let expected = "1003 FORMAT(2(1x, i4), 5x, '-', 5x, '-', 3x, '-', 5x, '-', 5x, '-', 8x, '-', 3x, &\n            1p, 2(1x, d10.3))\n";
 
     let config = Config {
         impose_whitespace: true,

@@ -627,22 +627,22 @@ fn compute_and_apply_indentation(
                 }
             } else {
                 // For labeled lines with auto-alignment (no leading &),
-                // continuation indents should use first_line_leading instead of base_indent.
-                // The indenter already added base_indent, so we need to adjust.
+                // continuation indents should align relative to where content starts
+                // in the OUTPUT (not the intermediate representation).
                 //
-                // For single-digit labels, we add an extra space at output time
-                // (extra_label_spacing). This affects the actual column position
-                // of content in the output, so we must include it here.
-                let label_digits = label.trim().len();
-                let extra_label_spacing: usize = usize::from(label_digits == 1);
+                // In the output, the first line is: label + padding + content
+                // where padding = max(0, target_indent - label.len())
+                //
+                // So content starts at position: max(label.len(), target_indent)
+                // This is the effective_leading we should use for continuation alignment.
 
-                // Effective first_line_leading = original + extra spacing
-                let effective_leading = first_line_leading + extra_label_spacing;
-
-                // Compute base_indent from first line:
-                // indenter sets computed_indents[0] = base_indent for first line
-                // (before our adjustment)
+                // Compute base_indent from first line (this is target_indent for the content)
                 let base_indent = computed_indents[0];
+
+                // In output format: label (len) + padding + content
+                // padding = max(0, base_indent - label.len())
+                // So content starts at: max(label.len(), base_indent)
+                let effective_leading = label.len().max(base_indent);
 
                 // Adjustment = effective_leading - base_indent
                 // This replaces base_indent with effective_leading
