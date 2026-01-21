@@ -52,41 +52,41 @@ static SCI_NOTATION_RE: LazyLock<Regex> =
 /// 3. Add whitespace context-aware
 #[must_use]
 pub fn format_line(logical_line: &str, whitespace_flags: &[bool; 11], format_decl: bool) -> String {
-    format_line_with_level(logical_line, whitespace_flags, format_decl, 0, false).0
+    format_line_with_level(logical_line, whitespace_flags, format_decl, 0, None).0
 }
 
 /// Format a single Fortran line with bracket level tracking
 ///
-/// Returns (`formatted_line`, `ending_bracket_level`) for continuation support
-/// `is_continuation` should be true when processing line 2+ of a multi-line statement
-/// - this affects how leading +/- are treated (as binary operators on continuation lines)
+/// Returns (`formatted_line`, `ending_bracket_level`, `last_significant_char`) for continuation support.
+/// `prev_line_last_char` should be the last significant character from the previous line (before `&`),
+/// used to determine if a leading +/- on a continuation line is binary or unary.
 #[must_use]
 pub fn format_line_with_level(
     logical_line: &str,
     whitespace_flags: &[bool; 11],
     format_decl: bool,
     initial_level: usize,
-    is_continuation: bool,
-) -> (String, usize) {
+    prev_line_last_char: Option<char>,
+) -> (String, usize, Option<char>) {
     let mut line = logical_line.to_string();
 
     // Stage 1: Remove extra whitespace
     line = rm_extra_whitespace(&line, format_decl);
 
     // Stage 2: Add whitespace character-wise (with bracket level tracking)
-    let (formatted, final_level) = add_whitespace_charwise_with_level(
+    let (formatted, final_level, last_char) = add_whitespace_charwise_with_level(
         &line,
         whitespace_flags,
         format_decl,
         initial_level,
-        is_continuation,
+        prev_line_last_char,
     );
     line = formatted;
 
     // Stage 3: Add whitespace context-aware
     line = add_whitespace_context(&line, whitespace_flags);
 
-    (line, final_level)
+    (line, final_level, last_char)
 }
 
 /// Remove all unnecessary whitespace from the line
@@ -222,15 +222,16 @@ fn rm_extra_whitespace(line: &str, format_decl: bool) -> String {
 
 /// Add whitespace character-wise with bracket level tracking
 ///
-/// Returns (`formatted_line`, `ending_bracket_level`) for continuation support
-/// `is_continuation` affects leading +/- treatment (binary on continuation lines)
+/// Returns (`formatted_line`, `ending_bracket_level`, `last_significant_char`) for continuation support.
+/// `prev_line_last_char` is the last significant character from the previous line (if any),
+/// used to determine if leading +/- on a continuation is binary or unary.
 fn add_whitespace_charwise_with_level(
     line: &str,
     whitespace_flags: &[bool; 11],
     format_decl: bool,
     initial_level: usize,
-    is_continuation: bool,
-) -> (String, usize) {
+    prev_line_last_char: Option<char>,
+) -> (String, usize, Option<char>) {
     use crate::parser::patterns::{
         DEL_CLOSE_RE, DEL_OPEN_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, REL_OP_RE,
     };
@@ -681,15 +682,24 @@ fn add_whitespace_charwise_with_level(
                 _ => false,
             };
 
-            // Simple heuristic: add spacing if preceded by alphanumeric or )
-            // But NOT if it's part of scientific notation
-            // On continuation lines, a leading +/- is binary (continues from prev line)
+            // Simple heuristic: add spacing if preceded by alphanumeric, ), or ]
+            // But NOT if it's part of scientific notation.
+            // For continuation lines, check the previous line's last character.
             let is_binary = match prev_char {
                 Some(c) => (c.is_alphanumeric() || c == ')' || c == ']') && !is_exponent,
                 None => {
-                    // At start of line: binary only if this is a continuation line
-                    // and we have content after removing whitespace
-                    is_continuation && formatted_line.trim().is_empty()
+                    // At start of line: binary only if this is a continuation
+                    // from a line that ended with an operand (alphanumeric, ), or ])
+                    // If prev line ended with comma, delimiter, or operator, it's unary.
+                    if formatted_line.trim().is_empty() {
+                        // Check prev_line_last_char to determine if +/- is binary
+                        match prev_line_last_char {
+                            Some(c) => c.is_alphanumeric() || c == ')' || c == ']',
+                            None => false,
+                        }
+                    } else {
+                        false
+                    }
                 }
             };
 
@@ -781,7 +791,20 @@ fn add_whitespace_charwise_with_level(
         i += 1;
     }
 
-    (formatted_line, level)
+    // Compute last significant character from final formatted output
+    // Use CharFilter to skip strings and comments, so we get the last CODE char
+    // This is used to determine if leading +/- on next line is binary or unary
+    let last_significant_char = {
+        let mut last_char = None;
+        for (_, c) in CharFilter::new(&formatted_line, true, true, true) {
+            if !c.is_whitespace() {
+                last_char = Some(c);
+            }
+        }
+        last_char
+    };
+
+    (formatted_line, level, last_significant_char)
 }
 
 /// Add whitespace in a context-aware manner
@@ -1075,7 +1098,7 @@ mod tests {
             true, false, false, false, false, false, false, false, false, false, false,
         ];
         let line = "call foo(a,b,c)";
-        let result = add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, false).0;
+        let result = add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, None).0;
         assert_eq!(result, "call foo(a, b, c)");
     }
 
@@ -1085,7 +1108,7 @@ mod tests {
             false, true, false, false, false, false, false, false, false, false, false,
         ];
         let line = "x=5";
-        let result = add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, false).0;
+        let result = add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, None).0;
         assert_eq!(result, "x = 5");
     }
 
@@ -1095,7 +1118,7 @@ mod tests {
             false, true, false, false, false, false, false, false, false, false, false,
         ];
         let line = "ptr=>target";
-        let result = add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, false).0;
+        let result = add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, None).0;
         assert_eq!(result, "ptr => target");
     }
 
@@ -1105,9 +1128,56 @@ mod tests {
             false, false, false, false, true, false, false, false, false, false, false,
         ];
         let line = "x=a+b-c";
-        let result = add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, false).0;
+        let result = add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, None).0;
         // Should add spaces around binary + and -
         assert!(result.contains(" + ") && result.contains(" - "));
+    }
+
+    #[test]
+    fn test_add_whitespace_plusminus_unary() {
+        // Test that unary +/- don't get spacing when prev_line_last_char is comma
+        let whitespace_flags = [
+            false, false, false, false, true, false, false, false, false, false, false,
+        ];
+        // Simulating continuation line where previous line ended with comma
+        let line = "-2";
+        let result =
+            add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, Some(',')).0;
+        // Should NOT add space after unary -
+        assert_eq!(result, "-2", "Unary minus after comma should not have space");
+
+        let line2 = "+3";
+        let result2 =
+            add_whitespace_charwise_with_level(line2, &whitespace_flags, false, 0, Some(',')).0;
+        // Should NOT add space after unary +
+        assert_eq!(result2, "+3", "Unary plus after comma should not have space");
+    }
+
+    #[test]
+    fn test_add_whitespace_plusminus_binary_continuation() {
+        // Test that +/- are treated as binary when prev_line_last_char is ) or alphanumeric
+        let whitespace_flags = [
+            false, false, false, false, true, false, false, false, false, false, false,
+        ];
+        // Previous line ended with )
+        let line = "+c";
+        let result =
+            add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, Some(')')).0;
+        // Should add space before and after binary +
+        assert!(
+            result.contains(" + "),
+            "Binary plus after ) should have spaces: {result}"
+        );
+
+        // Previous line ended with alphanumeric
+        let line2 = "-d";
+        let result2 =
+            add_whitespace_charwise_with_level(line2, &whitespace_flags, false, 0, Some('b')).0;
+        // Should add space before and after binary -
+        assert!(
+            result2.contains(" - "),
+            "Binary minus after alphanumeric should have spaces: {result2}"
+        );
     }
 
     #[test]

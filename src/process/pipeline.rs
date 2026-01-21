@@ -343,6 +343,20 @@ fn extract_and_format_pre_ampersands(
     // Pass 1 (whitespace pass) because remove_pre_ampersands only runs here.
     if config.impose_whitespace && !skip_format {
         let mut bracket_level: usize = 0;
+        // Get the last significant character from line 0 (already formatted in Pass 1)
+        // This determines if leading +/- on line 1 is binary or unary
+        let mut prev_line_last_char: Option<char> = output_lines.first().and_then(|line0| {
+            // Find last non-space char before trailing & (if any)
+            let trimmed = line0.trim_end().trim_end_matches('&').trim_end();
+            // Use CharFilter to skip strings and comments
+            let mut last_char = None;
+            for (_, c) in CharFilter::new(trimmed, true, true, true) {
+                if !c.is_whitespace() {
+                    last_char = Some(c);
+                }
+            }
+            last_char
+        });
         for (i, line) in output_lines.iter_mut().enumerate() {
             if i == 0 {
                 continue; // First line was already formatted in Pass 1
@@ -378,14 +392,19 @@ fn extract_and_format_pre_ampersands(
             } else {
                 Cow::Borrowed(line)
             };
-            let (formatted, new_level) = format_line_with_level(
+            let (formatted, new_level, last_char) = format_line_with_level(
                 &line_to_format,
                 whitespace_flags,
                 config.format_decl,
                 bracket_level,
-                true, // is_continuation
+                prev_line_last_char,
             );
             bracket_level = new_level;
+            // Only update prev_line_last_char if line had code content
+            // (comment-only lines return None, preserve previous value)
+            if last_char.is_some() {
+                prev_line_last_char = last_char;
+            }
             *line = if has_continuation {
                 // Use ampersand_sep to preserve original spacing before trailing &
                 // ampersand_sep[i] is the spacing for line i's trailing &
@@ -441,6 +460,7 @@ fn apply_whitespace_to_lines(
             }
 
             let mut bracket_level: usize = 0;
+            let mut prev_line_last_char: Option<char> = None;
             for (i, line) in output_lines.iter_mut().enumerate() {
                 // When lines have leading & (auto_align=false), skip formatting here.
                 // The leading & hasn't been stripped yet (remove_pre_ampersands runs
@@ -494,16 +514,20 @@ fn apply_whitespace_to_lines(
                 };
 
                 // Format this physical line with bracket level tracking
-                // Pass is_continuation=true for lines after the first (i > 0)
-                // This affects treatment of leading +/- as binary operators
-                let (formatted, ending_level) = format_line_with_level(
+                // Pass prev_line_last_char for continuation lines to determine +/- treatment
+                let (formatted, ending_level, last_char) = format_line_with_level(
                     line_content,
                     whitespace_flags,
                     config.format_decl,
                     bracket_level,
-                    i > 0, // is_continuation
+                    if i > 0 { prev_line_last_char } else { None },
                 );
                 bracket_level = ending_level;
+                // Only update prev_line_last_char if line had code content
+                // (comment-only lines return None, preserve previous value)
+                if last_char.is_some() {
+                    prev_line_last_char = last_char;
+                }
 
                 // Restore continuation marker if needed
                 // When lines have leading & (auto_align=false), preserve original spacing

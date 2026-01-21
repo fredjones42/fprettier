@@ -713,6 +713,80 @@ fn test_format_statement_continuation_alignment() {
     );
 }
 
+/// Test unary +/- operators in array literal continuations
+///
+/// Unary operators should NOT have spaces after them (e.g., -2 not - 2)
+/// Binary operators should have spaces around them (e.g., a + b)
+#[test]
+fn test_unary_plusminus_in_array_literal() {
+    let input = "program test\n  integer :: arr(3) = (/ &\n     1, &\n     -2, &\n     +3 /)\nend program\n";
+
+    let config = Config {
+        indent: 3,
+        impose_indent: true,
+        impose_whitespace: true,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // Line with -2 should have unary minus (no space between - and 2)
+    let line_minus = lines.iter().find(|l| l.contains("-2")).expect("Should have line with -2");
+    assert!(
+        line_minus.contains("-2") && !line_minus.contains("- 2"),
+        "Unary minus should not have space: {line_minus}"
+    );
+
+    // Line with +3 should have unary plus (no space between + and 3)
+    let line_plus = lines.iter().find(|l| l.contains("+3") || l.contains("+ 3")).expect("Should have line with +3");
+    assert!(
+        line_plus.contains("+3") && !line_plus.contains("+ 3"),
+        "Unary plus should not have space: {line_plus}"
+    );
+}
+
+/// Test binary +/- on continuation lines
+///
+/// When a line continues from an expression ending with ), ], or alphanumeric,
+/// the leading +/- on the continuation is binary and should have spaces.
+#[test]
+fn test_binary_plusminus_on_continuation() {
+    // x = (a + b) &
+    //     + c
+    // Here the + continues from ), so it's binary
+    let input = "program test\nx = (a + b) &\n+ c\nend program\n";
+
+    let config = Config {
+        indent: 3,
+        impose_indent: true,
+        impose_whitespace: true,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // The continuation line should have binary plus with space before
+    let cont_line = lines.iter().find(|l| l.trim().starts_with("+") || l.trim().starts_with("+ ")).expect("Should have continuation line");
+    assert!(
+        cont_line.contains("+ c"),
+        "Binary plus should have space after: {cont_line}"
+    );
+}
+
 /// Test case conversion - keywords to uppercase
 #[test]
 fn test_case_conversion_keywords_upper() {
