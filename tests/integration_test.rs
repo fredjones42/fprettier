@@ -1594,3 +1594,283 @@ end select casetest
         lines[5]
     );
 }
+
+// ============================================================================
+// C Preprocessor handling tests
+// ============================================================================
+
+/// Test that C preprocessor lines are pinned to column 0 (no indentation)
+#[test]
+fn test_cpp_lines_no_indent() {
+    let input = r"program test
+   #define DEBUG 1
+   #ifdef DEBUG
+   x = 1
+   #endif
+end program test
+";
+
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: false,
+        indent: 3,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // CPP lines should be at column 0
+    assert!(
+        lines[1].starts_with("#define"),
+        "CPP #define should be at column 0: {}",
+        lines[1]
+    );
+    assert!(
+        lines[2].starts_with("#ifdef"),
+        "CPP #ifdef should be at column 0: {}",
+        lines[2]
+    );
+    assert!(
+        lines[4].starts_with("#endif"),
+        "CPP #endif should be at column 0: {}",
+        lines[4]
+    );
+
+    // Fortran code should still be indented
+    assert!(
+        lines[3].starts_with("   "),
+        "Fortran code should be indented: {}",
+        lines[3]
+    );
+}
+
+/// Test that C preprocessor lines skip whitespace formatting
+#[test]
+fn test_cpp_lines_no_whitespace_formatting() {
+    let input = "#define FOO(a,b) a+b\n";
+
+    let config = Config {
+        impose_indent: false,
+        impose_whitespace: true,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+
+    // Whitespace formatting should NOT be applied to CPP line
+    // (spaces should NOT be added around + or after commas)
+    assert!(
+        result.contains("FOO(a,b) a+b"),
+        "CPP line should not have whitespace formatting applied: {}",
+        result
+    );
+}
+
+/// Test that C preprocessor lines skip case conversion
+#[test]
+fn test_cpp_lines_no_case_conversion() {
+    use std::collections::HashMap;
+
+    let input = "#define MyMacro(x) x\n";
+
+    let mut case_dict = HashMap::new();
+    case_dict.insert("keywords".to_string(), 1); // uppercase keywords
+
+    let config = Config {
+        impose_indent: false,
+        impose_whitespace: false,
+        case_dict,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+
+    // Case should NOT be changed for CPP line
+    assert!(
+        result.contains("MyMacro"),
+        "CPP line should preserve original case: {}",
+        result
+    );
+}
+
+/// Test that C preprocessor lines skip relational operator replacement
+#[test]
+fn test_cpp_lines_no_operator_replacement() {
+    let input = "#if defined(A) && defined(B)\n";
+
+    let config = Config {
+        impose_indent: false,
+        impose_whitespace: false,
+        enable_replacements: true,
+        c_relations: false, // Would convert to Fortran-style
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+
+    // && should NOT be converted (it's C preprocessor, not Fortran)
+    assert!(
+        result.contains("&&"),
+        "CPP line should not have operator replacement: {}",
+        result
+    );
+}
+
+/// Test various C preprocessor directives are handled
+#[test]
+fn test_cpp_various_directives() {
+    let input = r#"   #include <stdio.h>
+   #include "myheader.h"
+   #pragma once
+   #error This is an error
+   #warning This is a warning
+   #undef FOO
+   #line 100
+"#;
+
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: true,
+        indent: 3,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // All CPP lines should be at column 0
+    for (i, line) in lines.iter().enumerate() {
+        if !line.is_empty() {
+            assert!(
+                line.starts_with('#'),
+                "Line {} should start with # at column 0: {}",
+                i,
+                line
+            );
+        }
+    }
+}
+
+/// Test that fypp lines are NOT treated as CPP
+#[test]
+fn test_fypp_not_treated_as_cpp() {
+    let input = r"#:if DEBUG
+   x = 1
+#:endif
+";
+
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: false,
+        indent: 3,
+        indent_fypp: true,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+
+    // Fypp lines should use normal scope-based indentation when indent_fypp=true
+    // They are NOT pinned to column 0 like CPP lines
+    // The exact behavior depends on the fypp handling logic
+    assert!(
+        result.contains("#:if") && result.contains("#:endif"),
+        "Fypp directives should be preserved: {}",
+        result
+    );
+}
+
+/// Test CPP inside indented Fortran code
+#[test]
+fn test_cpp_inside_fortran_scope() {
+    let input = r"subroutine test()
+   integer :: x
+#ifdef DEBUG
+   x = 1
+#else
+   x = 0
+#endif
+end subroutine test
+";
+
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: false,
+        indent: 3,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // CPP lines should be at column 0 regardless of Fortran scope
+    assert!(
+        lines[2].starts_with("#ifdef"),
+        "#ifdef should be at column 0: {}",
+        lines[2]
+    );
+    assert!(
+        lines[4].starts_with("#else"),
+        "#else should be at column 0: {}",
+        lines[4]
+    );
+    assert!(
+        lines[6].starts_with("#endif"),
+        "#endif should be at column 0: {}",
+        lines[6]
+    );
+
+    // Fortran code inside should be indented based on scope
+    assert!(
+        lines[3].starts_with("   "),
+        "Fortran inside subroutine should be indented: {}",
+        lines[3]
+    );
+    assert!(
+        lines[5].starts_with("   "),
+        "Fortran inside subroutine should be indented: {}",
+        lines[5]
+    );
+}

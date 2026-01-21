@@ -229,6 +229,21 @@ pub static PLUSMINUS_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"(?<=[^ \d
 // Multiply/divide (excluding ** and //)
 pub static MULTDIV_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"(?<=[^\*/])(\*|/)(?![/\*])"));
 
+// ===== C PREPROCESSOR =====
+
+/// C preprocessor line pattern - matches lines starting with # but NOT fypp patterns.
+///
+/// Fypp patterns start with: `#!`, `#:`, `#{`, `#}`
+///
+/// C preprocessor directives include:
+/// - `#define`, `#undef`
+/// - `#include`
+/// - `#if`, `#ifdef`, `#ifndef`, `#else`, `#elif`, `#endif`
+/// - `#pragma`, `#error`, `#warning`, `#line`
+///
+/// The pattern matches `#` followed by any character that is NOT `!`, `:`, `{`, or `}`.
+pub static CPP_LINE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*#[^!:{}]").unwrap());
+
 // ===== FYPP PREPROCESSOR =====
 
 // FYPP DEF
@@ -416,5 +431,41 @@ mod tests {
         // With name
         assert!(ENDSEL_RE.is_match("end select casetest"));
         assert!(ENDSEL_RE.is_match("END SELECT mycase"));
+    }
+
+    #[test]
+    fn test_cpp_line_regex() {
+        // C preprocessor directives should match
+        assert!(CPP_LINE_RE.is_match("#define FOO 1"));
+        assert!(CPP_LINE_RE.is_match("#include <stdio.h>"));
+        assert!(CPP_LINE_RE.is_match("#include \"myheader.h\""));
+        assert!(CPP_LINE_RE.is_match("#ifdef DEBUG"));
+        assert!(CPP_LINE_RE.is_match("#ifndef GUARD"));
+        assert!(CPP_LINE_RE.is_match("#endif"));
+        assert!(CPP_LINE_RE.is_match("#if defined(FOO)"));
+        assert!(CPP_LINE_RE.is_match("#else"));
+        assert!(CPP_LINE_RE.is_match("#elif defined(BAR)"));
+        assert!(CPP_LINE_RE.is_match("#pragma once"));
+        assert!(CPP_LINE_RE.is_match("#error This is an error"));
+        assert!(CPP_LINE_RE.is_match("#warning This is a warning"));
+        assert!(CPP_LINE_RE.is_match("#undef FOO"));
+        assert!(CPP_LINE_RE.is_match("#line 100"));
+        // With leading whitespace
+        assert!(CPP_LINE_RE.is_match("  #define FOO"));
+        assert!(CPP_LINE_RE.is_match("    #ifdef DEBUG"));
+
+        // Fypp directives should NOT match
+        assert!(!CPP_LINE_RE.is_match("#:if DEBUG"));
+        assert!(!CPP_LINE_RE.is_match("#:for i in range(10)"));
+        assert!(!CPP_LINE_RE.is_match("#:def macro"));
+        assert!(!CPP_LINE_RE.is_match("#:endif"));
+        assert!(!CPP_LINE_RE.is_match("#! This is a fypp comment"));
+        assert!(!CPP_LINE_RE.is_match("#{"));
+        assert!(!CPP_LINE_RE.is_match("#}"));
+
+        // Regular Fortran lines should NOT match
+        assert!(!CPP_LINE_RE.is_match("x = 1"));
+        assert!(!CPP_LINE_RE.is_match("! comment"));
+        assert!(!CPP_LINE_RE.is_match("program main"));
     }
 }

@@ -17,7 +17,9 @@ use crate::format::{
     remove_pre_ampersands, replace_relational_operators, should_auto_align, split_long_lines,
     CaseSettings, F90Indenter,
 };
-use crate::parser::patterns::{DO_RE, IF_RE, MOD_RE, OMP_DIR_RE, PROG_RE, STATEMENT_LABEL_RE};
+use crate::parser::patterns::{
+    CPP_LINE_RE, DO_RE, IF_RE, MOD_RE, OMP_DIR_RE, PROG_RE, STATEMENT_LABEL_RE,
+};
 use crate::parser::{CharFilter, FortranLine, InputStream};
 use crate::scope::build_scope_parser;
 use crate::Result;
@@ -422,12 +424,13 @@ fn apply_whitespace_to_lines(
     whitespace_flags: &[bool; 11],
     config: &Config,
     is_fypp_line: bool,
+    is_cpp_line: bool,
     skip_format: bool,
     impose_whitespace: bool,
     auto_align: bool,
     ampersand_sep: &[usize],
 ) {
-    if impose_whitespace && !skip_format && !is_fypp_line {
+    if impose_whitespace && !skip_format && !is_fypp_line && !is_cpp_line {
         // If there are multiple physical lines (continuations), format each line separately
         // to preserve the continuation structure
         // Track bracket level across continuation lines for proper keyword argument spacing
@@ -1270,6 +1273,10 @@ fn format_pass<R: BufRead, W: Write>(
         // These lines should not have whitespace formatting applied
         let is_fypp_line = FYPP_LINE_RE.is_match(&fortran_line.joined_line);
 
+        // Check if this is a C preprocessor line (starts with # but not fypp)
+        // These lines should not have whitespace formatting applied and should be pinned to column 0
+        let is_cpp_line = CPP_LINE_RE.is_match(&fortran_line.joined_line);
+
         // Check if lines have leading & (which disables auto-alignment)
         let auto_align = should_auto_align(&output_lines);
 
@@ -1295,6 +1302,7 @@ fn format_pass<R: BufRead, W: Write>(
             &whitespace_flags,
             config,
             is_fypp_line,
+            is_cpp_line,
             skip_format,
             impose_whitespace,
             auto_align,
@@ -1303,14 +1311,15 @@ fn format_pass<R: BufRead, W: Write>(
 
         // Apply relational operator replacement if enabled
         // This converts between Fortran-style (.lt., .eq., etc.) and C-style (<, ==, etc.)
-        if config.enable_replacements && !skip_format && !is_fypp_line {
+        if config.enable_replacements && !skip_format && !is_fypp_line && !is_cpp_line {
             for line in &mut output_lines {
                 *line = replace_relational_operators(line, config.c_relations);
             }
         }
 
         // Apply case conversion if enabled and not deactivated
-        if case_settings.is_enabled() && !skip_format {
+        // Skip for CPP lines since they are not Fortran code
+        if case_settings.is_enabled() && !skip_format && !is_cpp_line {
             for line in &mut output_lines {
                 *line = convert_case(line, &case_settings);
             }
@@ -1321,7 +1330,15 @@ fn format_pass<R: BufRead, W: Write>(
 
         // Apply indentation if requested and not deactivated
         if impose_indent && !skip_format {
-            if let Some(ref mut ind) = indenter {
+            if is_cpp_line {
+                // C preprocessor lines are pinned to column 0
+                // Just trim leading whitespace from all lines
+                for line in &mut output_lines {
+                    *line = line.trim_start().to_string();
+                }
+                // Update indenter scope but don't apply indent
+                // (CPP lines don't affect Fortran scope)
+            } else if let Some(ref mut ind) = indenter {
                 compute_and_apply_indentation(
                     &mut output_lines,
                     &mut computed_indents,
