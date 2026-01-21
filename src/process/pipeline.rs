@@ -614,12 +614,12 @@ fn compute_and_apply_indentation(
             // The indenter adds base_indent to all continuation indents, but for
             // manual alignment with labels, we want just the manual_indent values.
             // These will later have label_shift applied in the prepend_ampersands loop.
+            // Note: We do NOT modify computed_indents[0] here - the first line uses
+            // the target indent from the indenter, not the processed line's spacing.
             if has_pre_amp {
                 if !computed_indents.is_empty() {
                     // Compute base_indent from first line
                     let base_indent = computed_indents[0];
-                    // First line: add first_line_leading
-                    computed_indents[0] += first_line_leading;
                     // Continuation lines: subtract base_indent to get just manual_indent
                     for ind in computed_indents.iter_mut().skip(1) {
                         *ind = ind.saturating_sub(base_indent);
@@ -649,7 +649,10 @@ fn compute_and_apply_indentation(
                 #[allow(clippy::cast_possible_wrap)]
                 let adjustment = effective_leading as isize - base_indent as isize;
 
-                for ind in computed_indents.iter_mut() {
+                // Only adjust continuation lines (skip the first line).
+                // The first line should use the target indent from the indenter,
+                // not be replaced with first_line_leading (which is normalized to label.len()).
+                for ind in computed_indents.iter_mut().skip(1) {
                     *ind = adjust_indent(*ind, adjustment);
                 }
             }
@@ -870,20 +873,20 @@ fn write_output_line<W: Write>(
 
     // Prepend label to first line
     if line_index == 0 && !label.is_empty() {
-        // Label replaces leading spaces up to label length
-        // Note: label already includes trailing space from regex capture
+        // Compute padding to place the statement content at the target column.
+        // The target column comes from computed_indents[0] (the target indentation).
+        // Padding = target_indent - label.len(), ensuring the statement starts
+        // at the same column it would if there were no label.
         let trimmed = line_to_write.trim_start();
-        let current_indent = line_to_write.len() - trimmed.len();
-        let padding = if current_indent > label.len() {
-            current_indent - label.len()
+        let target_indent = if impose_indent && !computed_indents.is_empty() {
+            computed_indents[0]
         } else {
-            0
+            // Without indentation, use the current line's spacing
+            line_to_write.len() - trimmed.len()
         };
-        // For single-digit labels, add extra space
-        let label_digits = label.trim().len();
-        let extra_label_spacing = usize::from(label_digits == 1);
+        let padding = target_indent.saturating_sub(label.len());
         output.write_all(label.as_bytes())?;
-        write_spaces(output, extra_label_spacing + padding)?;
+        write_spaces(output, padding)?;
         output.write_all(trimmed.as_bytes())?;
     } else if is_ford_comment_line {
         // FORD comment lines: write original indentation, not the processed line_to_write
