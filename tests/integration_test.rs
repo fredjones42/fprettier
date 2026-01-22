@@ -1730,6 +1730,387 @@ end select casetest
     );
 }
 
+/// Test SELECT CASE indentation: CASE statements should be at same level as SELECT CASE
+///
+/// Expected formatting:
+/// ```fortran
+/// select case (x)      ! indent N
+/// case (1)             ! indent N (same as select)
+///    code              ! indent N+3 (inside case)
+/// case (2)             ! indent N (same as select)
+///    code              ! indent N+3 (inside case)
+/// case default         ! indent N (same as select)
+///    code              ! indent N+3 (inside case)
+/// end select           ! indent N (same as select)
+/// ```
+#[test]
+fn test_select_case_indentation_comprehensive() {
+    // Test various CASE patterns
+    let input = r"subroutine test()
+select case(i)
+case (1)
+write(*,*) 'one'
+case (2, 3, 4)
+write(*,*) 'two-four'
+case (:0)
+write(*,*) 'negative'
+case (100:)
+write(*,*) 'large'
+case default
+write(*,*) 'default'
+end select
+end subroutine
+";
+
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: false,
+        indent: 3,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // All CASE statements and SELECT/END SELECT should be at indent 3
+    // Content inside CASE should be at indent 6
+
+    // Line 0: subroutine test() - indent 0
+    assert!(
+        !lines[0].starts_with(" "),
+        "subroutine should be at indent 0: '{}'",
+        lines[0]
+    );
+
+    // Line 1: select case - indent 3
+    assert!(
+        lines[1].starts_with("   select case"),
+        "select case should be at indent 3: '{}'",
+        lines[1]
+    );
+    assert!(
+        !lines[1].starts_with("    "),
+        "select case should not be at indent 4+: '{}'",
+        lines[1]
+    );
+
+    // Line 2: case (1) - indent 3 (same as select)
+    assert!(
+        lines[2].starts_with("   case (1)"),
+        "case (1) should be at indent 3: '{}'",
+        lines[2]
+    );
+    assert!(
+        !lines[2].starts_with("    "),
+        "case (1) should not be at indent 4+: '{}'",
+        lines[2]
+    );
+
+    // Line 3: write - indent 6 (inside case)
+    assert!(
+        lines[3].starts_with("      "),
+        "write should be at indent 6: '{}'",
+        lines[3]
+    );
+    assert!(
+        !lines[3].starts_with("       "),
+        "write should not be at indent 7+: '{}'",
+        lines[3]
+    );
+
+    // Line 4: case (2, 3, 4) - indent 3
+    assert!(
+        lines[4].starts_with("   case"),
+        "case (2,3,4) should be at indent 3: '{}'",
+        lines[4]
+    );
+
+    // Line 5: write - indent 6
+    assert!(
+        lines[5].starts_with("      "),
+        "write should be at indent 6: '{}'",
+        lines[5]
+    );
+
+    // Line 6: case (:0) - indent 3
+    assert!(
+        lines[6].starts_with("   case"),
+        "case (:0) should be at indent 3: '{}'",
+        lines[6]
+    );
+
+    // Line 8: case (100:) - indent 3
+    assert!(
+        lines[8].starts_with("   case"),
+        "case (100:) should be at indent 3: '{}'",
+        lines[8]
+    );
+
+    // Line 10: case default - indent 3
+    assert!(
+        lines[10].starts_with("   case default"),
+        "case default should be at indent 3: '{}'",
+        lines[10]
+    );
+
+    // Line 12: end select - indent 3
+    assert!(
+        lines[12].starts_with("   end select"),
+        "end select should be at indent 3: '{}'",
+        lines[12]
+    );
+}
+
+/// Test SELECT TYPE indentation (similar to SELECT CASE)
+#[test]
+fn test_select_type_indentation() {
+    let input = r"subroutine test(x)
+class(*), intent(in) :: x
+select type(x)
+type is (integer)
+print *, 'integer'
+type is (real)
+print *, 'real'
+class is (base_type)
+print *, 'derived'
+class default
+print *, 'unknown'
+end select
+end subroutine
+";
+
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: false,
+        indent: 3,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // select type at indent 3
+    assert!(
+        lines[2].starts_with("   select type"),
+        "select type should be at indent 3: '{}'",
+        lines[2]
+    );
+
+    // type is (integer) at indent 3
+    assert!(
+        lines[3].starts_with("   type is"),
+        "type is should be at indent 3: '{}'",
+        lines[3]
+    );
+
+    // print inside type is at indent 6
+    assert!(
+        lines[4].starts_with("      print"),
+        "print should be at indent 6: '{}'",
+        lines[4]
+    );
+
+    // class is at indent 3
+    assert!(
+        lines[7].starts_with("   class is"),
+        "class is should be at indent 3: '{}'",
+        lines[7]
+    );
+
+    // class default at indent 3
+    assert!(
+        lines[9].starts_with("   class default"),
+        "class default should be at indent 3: '{}'",
+        lines[9]
+    );
+
+    // end select at indent 3
+    assert!(
+        lines[11].starts_with("   end select"),
+        "end select should be at indent 3: '{}'",
+        lines[11]
+    );
+}
+
+/// Test SELECT RANK indentation (similar to SELECT CASE)
+#[test]
+fn test_select_rank_indentation() {
+    let input = r"subroutine test(x)
+real, intent(in) :: x(..)
+select rank(x)
+rank (0)
+print *, 'scalar'
+rank (1)
+print *, '1D'
+rank default
+print *, 'higher'
+end select
+end subroutine
+";
+
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: false,
+        indent: 3,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // select rank at indent 3
+    assert!(
+        lines[2].starts_with("   select rank"),
+        "select rank should be at indent 3: '{}'",
+        lines[2]
+    );
+
+    // rank (0) at indent 3
+    assert!(
+        lines[3].starts_with("   rank (0)"),
+        "rank (0) should be at indent 3: '{}'",
+        lines[3]
+    );
+
+    // content at indent 6
+    assert!(
+        lines[4].starts_with("      print"),
+        "print should be at indent 6: '{}'",
+        lines[4]
+    );
+
+    // rank default at indent 3
+    assert!(
+        lines[7].starts_with("   rank default"),
+        "rank default should be at indent 3: '{}'",
+        lines[7]
+    );
+
+    // end select at indent 3
+    assert!(
+        lines[9].starts_with("   end select"),
+        "end select should be at indent 3: '{}'",
+        lines[9]
+    );
+}
+
+/// Test nested SELECT CASE indentation
+#[test]
+fn test_nested_select_case_indentation() {
+    let input = r"subroutine test()
+if (x > 0) then
+select case(i)
+case (1)
+select case(j)
+case (10)
+write(*,*) 'i=1,j=10'
+end select
+case (2)
+write(*,*) 'i=2'
+end select
+end if
+end subroutine
+";
+
+    let config = Config {
+        impose_indent: true,
+        impose_whitespace: false,
+        indent: 3,
+        ..Default::default()
+    };
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // By default, subroutine body is not indented (no --indent-mod)
+    // Line 1: if (x > 0) then - indent 0 (subroutine body)
+    assert!(
+        lines[1].starts_with("if"),
+        "if should be at indent 0: '{}'",
+        lines[1]
+    );
+
+    // Line 2: select case - indent 3 (inside if)
+    assert!(
+        lines[2].starts_with("   select case"),
+        "outer select case should be at indent 3: '{}'",
+        lines[2]
+    );
+
+    // Line 3: case (1) - indent 3 (same as outer select)
+    assert!(
+        lines[3].starts_with("   case (1)"),
+        "case (1) should be at indent 3: '{}'",
+        lines[3]
+    );
+
+    // Line 4: inner select case - indent 6 (inside case)
+    assert!(
+        lines[4].starts_with("      select case"),
+        "inner select case should be at indent 6: '{}'",
+        lines[4]
+    );
+
+    // Line 5: case (10) - indent 6 (same as inner select)
+    assert!(
+        lines[5].starts_with("      case (10)"),
+        "case (10) should be at indent 6: '{}'",
+        lines[5]
+    );
+
+    // Line 6: write - indent 9 (inside inner case)
+    assert!(
+        lines[6].starts_with("         write"),
+        "write should be at indent 9: '{}'",
+        lines[6]
+    );
+
+    // Line 7: inner end select - indent 6
+    assert!(
+        lines[7].starts_with("      end select"),
+        "inner end select should be at indent 6: '{}'",
+        lines[7]
+    );
+
+    // Line 8: case (2) - indent 3 (same as outer select)
+    assert!(
+        lines[8].starts_with("   case (2)"),
+        "case (2) should be at indent 3: '{}'",
+        lines[8]
+    );
+
+    // Line 10: outer end select - indent 3
+    assert!(
+        lines[10].starts_with("   end select"),
+        "outer end select should be at indent 3: '{}'",
+        lines[10]
+    );
+}
+
 // ============================================================================
 // C Preprocessor handling tests
 // ============================================================================
