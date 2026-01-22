@@ -313,9 +313,19 @@ fn add_whitespace_charwise_with_level(
 
                 // Check for keywords that need space before (
                 if whitespace_flags[8] {
+                    // Check if lhs ends with %word pattern (e.g., obj%method, hdf5%open)
+                    // This prevents adding space in type component member access
+                    let ends_with_percent_word = if let Some(percent_pos) = lhs.rfind('%') {
+                        // Check if everything after % is alphanumeric/underscore (no spaces)
+                        lhs[percent_pos + 1..].chars().all(|c| c.is_alphanumeric() || c == '_')
+                    } else {
+                        false
+                    };
+
                     // Check for intrinsic statements (ALLOCATE, WRITE, etc.)
                     // or IF, DO WHILE, CASE, etc.
-                    if INTR_STMTS_PAR_RE.is_match(&lhs) || KEYWORD_PAREN_RE.is_match(&lhs) {
+                    // But NOT if preceded by % (e.g., obj%open should not add space)
+                    if !ends_with_percent_word && (INTR_STMTS_PAR_RE.is_match(&lhs) || KEYWORD_PAREN_RE.is_match(&lhs)) {
                         sep1 = true;
                     }
                     // Also check after semicolon (e.g., "do i=1,10; if(x)")
@@ -362,7 +372,7 @@ fn add_whitespace_charwise_with_level(
                 // Add space UNLESS the previous char is one of: ( [ (/ alphanumeric * / = + - :
                 if whitespace_flags[8] && !sep1 {
                     if let Some(pc) = prev_non_space {
-                        // NOT ending with delimiter, operator, or alphanumeric
+                        // Skip space if ending with delimiter, operator, or alphanumeric
                         let skip_space = pc == '('
                             || pc == '['
                             || pc == '/'  // part of (/
@@ -371,8 +381,7 @@ fn add_whitespace_charwise_with_level(
                             || pc == '='
                             || pc == '+'
                             || pc == '-'
-                            || pc == ':'
-                            || pc == '%'; // type component
+                            || pc == ':';
                         if !skip_space {
                             sep1 = true;
                         }

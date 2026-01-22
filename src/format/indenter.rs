@@ -374,7 +374,9 @@ impl F90Indenter {
             parent_indent
         } else if is_continue {
             // CONTINUE (ELSE/CASE for Fortran, #:else/#:elif for fypp):
-            // use grandparent indent (like valid END)
+            // MCNP style: CASE statements should NOT be indented (same level as SELECT)
+            // Standard style: ELSE statements use grandparent indent
+            // All continuation statements use grandparent indent
             if self.indent_storage.len() >= 2 {
                 self.indent_storage[self.indent_storage.len() - 2]
             } else {
