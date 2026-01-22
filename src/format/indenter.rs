@@ -182,7 +182,16 @@ impl F90Indenter {
             for (scope_idx, parser_opt) in self.parser.opening.iter().enumerate() {
                 if let Some(parser) = parser_opt {
                     if parser.is_match(&filtered_line) {
-                        new_scope = ScopeType::from_index(scope_idx);
+                        // Special handling for WHERE (11) and FORALL (12):
+                        // Only open scope if nothing follows the closing parenthesis
+                        // e.g., "WHERE (x > 0)" opens scope, but "WHERE (x > 0) y = 1" doesn't
+                        if scope_idx == 11 || scope_idx == 12 {
+                            if Self::is_where_forall_block(&filtered_line) {
+                                new_scope = ScopeType::from_index(scope_idx);
+                            }
+                        } else {
+                            new_scope = ScopeType::from_index(scope_idx);
+                        }
                         break;
                     }
                 }
@@ -198,7 +207,14 @@ impl F90Indenter {
                             // Create a temporary string that looks like a line start
                             let temp_line = format!("  {part_trimmed}");
                             if parser.is_match(&temp_line) {
-                                if let Some(scope) = ScopeType::from_index(scope_idx) {
+                                // Special handling for WHERE (11) and FORALL (12) after semicolons
+                                if scope_idx == 11 || scope_idx == 12 {
+                                    if Self::is_where_forall_block(&temp_line) {
+                                        if let Some(scope) = ScopeType::from_index(scope_idx) {
+                                            additional_scopes.push(scope);
+                                        }
+                                    }
+                                } else if let Some(scope) = ScopeType::from_index(scope_idx) {
                                     additional_scopes.push(scope);
                                 }
                                 break;
@@ -413,6 +429,43 @@ impl F90Indenter {
     #[must_use]
     pub fn scope_depth(&self) -> usize {
         self.scope_storage.len()
+    }
+
+    /// Check if WHERE/FORALL line is a block construct (not single-line)
+    ///
+    /// Returns true if there's nothing after the closing parenthesis (block construct),
+    /// false if there's an assignment after it (single-line statement)
+    ///
+    /// Examples:
+    /// - `WHERE (x > 0)` -> true (block)
+    /// - `WHERE (x > 0) y = 1` -> false (single-line)
+    fn is_where_forall_block(line: &str) -> bool {
+        let mut level = 0;
+        let mut in_parens = false;
+
+        // Filter comments and strings when checking for content after )
+        for (pos, ch) in CharFilter::new(line, true, true, false) {
+            match ch {
+                '(' => {
+                    level += 1;
+                    in_parens = true;
+                }
+                ')' => {
+                    level -= 1;
+                    if level == 0 && in_parens {
+                        // Found the closing paren of WHERE/FORALL
+                        // Check if there's anything after it (besides whitespace/comments)
+                        let after = &line[pos + 1..];
+                        // If only whitespace or comment remains, it's a block construct
+                        let trimmed = after.trim();
+                        return trimmed.is_empty() || trimmed.starts_with('!');
+                    }
+                }
+                _ => {}
+            }
+        }
+        // If we didn't find a closing paren, assume it's a block
+        true
     }
 }
 
