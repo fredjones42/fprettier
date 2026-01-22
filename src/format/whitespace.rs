@@ -317,7 +317,9 @@ fn add_whitespace_charwise_with_level(
                     // This prevents adding space in type component member access
                     let ends_with_percent_word = if let Some(percent_pos) = lhs.rfind('%') {
                         // Check if everything after % is alphanumeric/underscore (no spaces)
-                        lhs[percent_pos + 1..].chars().all(|c| c.is_alphanumeric() || c == '_')
+                        lhs[percent_pos + 1..]
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '_')
                     } else {
                         false
                     };
@@ -325,7 +327,9 @@ fn add_whitespace_charwise_with_level(
                     // Check for intrinsic statements (ALLOCATE, WRITE, etc.)
                     // or IF, DO WHILE, CASE, etc.
                     // But NOT if preceded by % (e.g., obj%open should not add space)
-                    if !ends_with_percent_word && (INTR_STMTS_PAR_RE.is_match(&lhs) || KEYWORD_PAREN_RE.is_match(&lhs)) {
+                    if !ends_with_percent_word
+                        && (INTR_STMTS_PAR_RE.is_match(&lhs) || KEYWORD_PAREN_RE.is_match(&lhs))
+                    {
                         sep1 = true;
                     }
                     // Also check after semicolon (e.g., "do i=1,10; if(x)")

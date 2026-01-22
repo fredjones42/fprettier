@@ -34,8 +34,11 @@ pub static IF_RE: LazyLock<Regex> = LazyLock::new(|| {
         r"{SOL_STR}(\w+\s*:)?\s*IF\s*\(.*\)\s*THEN(\s*$|\s*;)"
     ))
 });
-pub static ELSE_RE: LazyLock<Regex> =
-    LazyLock::new(|| build_re(&format!(r"{SOL_STR}ELSE(\s*IF\s*\(.*\)\s*THEN)?(\s*$|\s*;)")));
+pub static ELSE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}ELSE(\s*IF\s*\(.*\)\s*THEN)?(\s*$|\s*;)"
+    ))
+});
 pub static ENDIF_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*IF(\s+\w+)?{EOL_STR}")));
 
@@ -183,9 +186,8 @@ pub static KEYWORD_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 // Pattern to match SELECT CASE/TYPE/RANK constructs
 // Used to exclude them from space-before-paren formatting (MCNP style)
-pub static SELECT_CONSTRUCT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    build_re(r"^\s*(?:SELECT\s*(?:CASE|TYPE|RANK)|(?:CASE|RANK))\s*$")
-});
+pub static SELECT_CONSTRUCT_RE: LazyLock<Regex> =
+    LazyLock::new(|| build_re(r"^\s*(?:SELECT\s*(?:CASE|TYPE|RANK)|(?:CASE|RANK))\s*$"));
 
 // ===== LINE CONTINUATION =====
 
