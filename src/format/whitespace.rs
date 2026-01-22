@@ -347,7 +347,9 @@ fn add_whitespace_charwise_with_level(
 
                 // Also need space after assignment before opening bracket
                 // e.g., "big_arr =[1" -> "big_arr = [1"
-                if prev_non_space == Some('=') || prev_non_space == Some('>') {
+                // But NOT for named parameters in function calls (level > 1)
+                // Note: level was already incremented, so level==1 means top-level assignment
+                if level == 1 && (prev_non_space == Some('=') || prev_non_space == Some('>')) {
                     sep1 = true;
                 }
 

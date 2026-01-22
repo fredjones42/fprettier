@@ -181,6 +181,12 @@ pub static KEYWORD_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
 });
 
+// Pattern to match SELECT CASE/TYPE/RANK constructs
+// Used to exclude them from space-before-paren formatting (MCNP style)
+pub static SELECT_CONSTRUCT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(r"^\s*(?:SELECT\s*(?:CASE|TYPE|RANK)|(?:CASE|RANK))\s*$")
+});
+
 // ===== LINE CONTINUATION =====
 
 pub static LINEBREAK_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"(&)[\s]*(?:!.*)?$"));
