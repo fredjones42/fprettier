@@ -1850,13 +1850,14 @@ fn test_cpp_lines_no_case_conversion() {
 /// Test that C preprocessor lines skip relational operator replacement
 #[test]
 fn test_cpp_lines_no_operator_replacement() {
-    let input = "#if defined(A) && defined(B)\n";
+    // Use C-style relational operators that would be replaced in Fortran code
+    let input = "#if X < 5 && Y > 10\n";
 
     let config = Config {
         impose_indent: false,
         impose_whitespace: false,
         enable_replacements: true,
-        c_relations: false, // Would convert to Fortran-style
+        c_relations: false, // Would convert < to .lt. and > to .gt. in Fortran code
         ..Default::default()
     };
 
@@ -1868,10 +1869,15 @@ fn test_cpp_lines_no_operator_replacement() {
 
     let result = String::from_utf8(output).unwrap();
 
-    // && should NOT be converted (it's C preprocessor, not Fortran)
+    // < and > should NOT be converted to .lt. and .gt. (it's C preprocessor, not Fortran)
     assert!(
-        result.contains("&&"),
-        "CPP line should not have operator replacement: {}",
+        result.contains('<') && result.contains('>'),
+        "CPP line should preserve C-style operators, not convert to Fortran-style: {}",
+        result
+    );
+    assert!(
+        !result.contains(".lt.") && !result.contains(".gt."),
+        "CPP line should not have Fortran-style operators: {}",
         result
     );
 }
