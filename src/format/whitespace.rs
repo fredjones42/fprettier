@@ -1041,10 +1041,12 @@ fn add_spacing_around_operator(text: &str, operator_re: &regex::Regex) -> String
         };
         result.push_str(trimmed);
         if i < operators.len() {
-            // Don't add space before operator if previous part ends with (
-            // e.g., "(.not." should stay as "(.not." not "( .not."
+            // Don't add space before operator if:
+            // - previous part ends with ( or [, e.g., "(.not." should stay as "(.not."
+            // - result already ends with a space (e.g., adjacent operators like ".and..not.")
             let ends_with_open = trimmed.ends_with('(') || trimmed.ends_with('[');
-            if !ends_with_open {
+            let already_has_space = result.ends_with(' ');
+            if !ends_with_open && !already_has_space {
                 result.push(' ');
             }
             result.push_str(operators[i]);
@@ -1251,6 +1253,35 @@ mod tests {
         let result = format_line(line, &whitespace_flags, false);
         // Should have spaces around .or.
         assert!(result.contains(" .or. ") || result.contains(" .OR. "));
+    }
+
+    #[test]
+    fn test_adjacent_logical_operators() {
+        // Test that adjacent operators like ".and..not." get single space between them
+        let whitespace_flags = [
+            false, false, false, true, false, false, false, false, false, false, false,
+        ];
+
+        // .and. followed directly by .not.
+        let line = "if(a.and..not.b)then";
+        let result = format_line(line, &whitespace_flags, false);
+        // Should have single space between operators, not double
+        assert!(
+            result.contains(".and. .not.") || result.contains(".AND. .NOT."),
+            "Expected single space between adjacent operators, got: '{result}'"
+        );
+        assert!(
+            !result.contains(".and.  .not.") && !result.contains(".AND.  .NOT."),
+            "Should not have double space between adjacent operators, got: '{result}'"
+        );
+
+        // .or. followed directly by .not.
+        let line = "if(a.or..not.b)then";
+        let result = format_line(line, &whitespace_flags, false);
+        assert!(
+            result.contains(".or. .not.") || result.contains(".OR. .NOT."),
+            "Expected single space between adjacent operators, got: '{result}'"
+        );
     }
 
     #[test]
