@@ -31,11 +31,11 @@ const SOL_STR: &str = r"^\s*"; // Start of line
 // IF/THEN/ELSE/ENDIF
 pub static IF_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(&format!(
-        r"{SOL_STR}(\w+\s*:)?\s*IF\s*\(.*\)\s*THEN{EOL_STR}"
+        r"{SOL_STR}(\w+\s*:)?\s*IF\s*\(.*\)\s*THEN(\s*$|\s*;)"
     ))
 });
 pub static ELSE_RE: LazyLock<Regex> =
-    LazyLock::new(|| build_re(&format!(r"{SOL_STR}ELSE(\s*IF\s*\(.*\)\s*THEN)?{EOL_STR}")));
+    LazyLock::new(|| build_re(&format!(r"{SOL_STR}ELSE(\s*IF\s*\(.*\)\s*THEN)?(\s*$|\s*;)")));
 pub static ENDIF_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*IF(\s+\w+)?{EOL_STR}")));
 
@@ -53,7 +53,7 @@ pub static SELCASE_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 pub static CASE_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(&format!(
-        r"{SOL_STR}((CASE|RANK|TYPE\s+IS|CLASS\s+IS)\s*(\(.*\)|DEFAULT)|CLASS\s+DEFAULT){EOL_STR}"
+        r"{SOL_STR}((CASE|RANK|TYPE\s+IS|CLASS\s+IS)\s*(\(.*\)|DEFAULT)|CLASS\s+DEFAULT)(\s*$|\s*;)"
     ))
 });
 pub static ENDSEL_RE: LazyLock<Regex> =

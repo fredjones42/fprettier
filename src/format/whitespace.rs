@@ -369,14 +369,15 @@ fn add_whitespace_charwise_with_level(
 
                 // General case: add space before ( unless the previous char is a special char
                 // This handles cases like "function name(", "subroutine name(", etc.
-                // Add space UNLESS the previous char is one of: ( [ (/ alphanumeric * / = + - :
+                // Add space UNLESS the previous char is one of: ( [ (/ alphanumeric _ * / = + - :
                 if whitespace_flags[8] && !sep1 {
                     if let Some(pc) = prev_non_space {
-                        // Skip space if ending with delimiter, operator, or alphanumeric
+                        // Skip space if ending with delimiter, operator, alphanumeric, or underscore
                         let skip_space = pc == '('
                             || pc == '['
                             || pc == '/'  // part of (/
                             || pc.is_alphanumeric()
+                            || pc == '_'  // underscore is valid in variable names
                             || pc == '*'
                             || pc == '='
                             || pc == '+'
