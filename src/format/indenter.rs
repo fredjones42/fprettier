@@ -81,6 +81,7 @@ impl F90Indenter {
         let mut is_any_end_statement = false;
         let mut valid_end = false;
         let mut additional_end_count = 0;
+        let mut has_valid_end_after_semicolon = false;
 
         for (part_idx, part) in parts.iter().enumerate() {
             let part_check = format!("  {}", part.trim());
@@ -120,6 +121,19 @@ impl F90Indenter {
                             }
                         } else {
                             // Additional END statements after semicolon
+                            // Check if this END matches the current scope (for indentation purposes)
+                            if !self.scope_storage.is_empty() {
+                                let current_scope = self.scope_storage.last().copied();
+                                if let Some(scope) = current_scope {
+                                    let popped_fypp_scope = scope.is_fypp_scope();
+                                    if !parser.spec
+                                        || scope.as_index() == scope_idx
+                                        || (indent_fypp && popped_fypp_scope)
+                                    {
+                                        has_valid_end_after_semicolon = true;
+                                    }
+                                }
+                            }
                             additional_end_count += 1;
                         }
                         break;
@@ -231,8 +245,12 @@ impl F90Indenter {
 
         // Calculate indent for this line
         // Note: scope_storage was already popped if is_any_end_statement=true
-        let line_indent =
-            self.calculate_indent(new_scope, is_continue, is_any_end_statement, valid_end);
+        let line_indent = self.calculate_indent(
+            new_scope,
+            is_continue,
+            is_any_end_statement,
+            valid_end || has_valid_end_after_semicolon,
+        );
 
         // For continuation lines, calculate alignment BEFORE updating scope stack
         if lines.len() > 1 {
@@ -319,11 +337,15 @@ impl F90Indenter {
 
         // Update indent_storage AFTER calculating alignment
         // Note: scope_storage was already popped during END detection
-        if is_any_end_statement && valid_end {
-            if self.indent_storage.len() > 1 {
-                self.indent_storage.pop();
-            } else if let Some(last) = self.indent_storage.last_mut() {
-                *last = 0;
+        if is_any_end_statement && (valid_end || has_valid_end_after_semicolon) {
+            // Only pop for part 0 END if valid_end is true (not just has_valid_end_after_semicolon)
+            // This prevents double-popping when the END is after a semicolon
+            if valid_end {
+                if self.indent_storage.len() > 1 {
+                    self.indent_storage.pop();
+                } else if let Some(last) = self.indent_storage.last_mut() {
+                    *last = 0;
+                }
             }
 
             // Pop additional END scopes found after semicolons
