@@ -178,9 +178,10 @@ pub static INTR_STMTS_PAR_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 // Keywords before parentheses that need space (using line context)
 // Matches: IF, ELSE IF, DO WHILE, CASE, SELECT RANK/TYPE, CLASS IS/DEFAULT, TYPE IS
+// All support optional labels (label:) where applicable
 pub static KEYWORD_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(
-        r"^\s*(?:(?:\w+\s*:)?(?:ELSE)?\s*IF|(?:\w+\s*:)?\s*DO\s+WHILE|(?:SELECT)?\s*CASE|(?:SELECT)?\s*RANK|SELECT\s*TYPE|CLASS\s*DEFAULT|(?:TYPE|CLASS)\s+IS)\s*$",
+        r"^\s*(?:(?:\w+\s*:)?(?:ELSE)?\s*IF|(?:\w+\s*:)?\s*DO\s+WHILE|(?:\w+\s*:)?(?:SELECT)?\s*CASE|(?:\w+\s*:)?(?:SELECT)?\s*RANK|(?:\w+\s*:)?SELECT\s*TYPE|CLASS\s*DEFAULT|(?:TYPE|CLASS)\s+IS)\s*$",
     )
 });
 
