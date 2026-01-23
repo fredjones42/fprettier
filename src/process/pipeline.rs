@@ -1134,7 +1134,19 @@ fn apply_pre_ampersand_indentation(
             let indent = computed_indents[i].saturating_sub(label_shift);
             // Line already has & prefix from prepend_ampersands, just add indent
             if !line.trim().is_empty() {
-                *line = format!("{}{}", " ".repeat(indent), line);
+                // Handle OMP conditional prefix for continuation lines
+                if fortran_line.omp_prefix.is_empty() {
+                    *line = format!("{}{}", " ".repeat(indent), line);
+                } else {
+                    let omp_len = fortran_line.omp_prefix.len();
+                    let padding = indent.saturating_sub(omp_len);
+                    *line = format!(
+                        "{}{}{}",
+                        fortran_line.omp_prefix,
+                        " ".repeat(padding),
+                        line
+                    );
+                }
             }
         }
     }
