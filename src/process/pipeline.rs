@@ -312,7 +312,8 @@ fn extract_and_format_pre_ampersands(
     }
 
     // Get manual alignment before modifying lines
-    let manual_indent = get_manual_alignment(output_lines);
+    // Pass continuation_indent to normalize simple continuations
+    let manual_indent = get_manual_alignment(output_lines, config.indent);
 
     // Extract is_special based on fypp lines AND lines inside multiline strings
     // Lines inside multiline strings must be preserved as-is
@@ -1132,11 +1133,13 @@ fn apply_pre_ampersand_indentation(
             }
             // Apply label_shift: subtract from indent for labeled lines
             let indent = computed_indents[i].saturating_sub(label_shift);
-            // Line already has & prefix from prepend_ampersands, just add indent
+            // Line may have & prefix from prepend_ampersands
+            // Trim the line first to remove any original indentation, then add computed indent
             if !line.trim().is_empty() {
+                let trimmed = line.trim_start();
                 // Handle OMP conditional prefix for continuation lines
                 if fortran_line.omp_prefix.is_empty() {
-                    *line = format!("{}{}", " ".repeat(indent), line);
+                    *line = format!("{}{}", " ".repeat(indent), trimmed);
                 } else {
                     let omp_len = fortran_line.omp_prefix.len();
                     let padding = indent.saturating_sub(omp_len);
@@ -1144,7 +1147,7 @@ fn apply_pre_ampersand_indentation(
                         "{}{}{}",
                         fortran_line.omp_prefix,
                         " ".repeat(padding),
-                        line
+                        trimmed
                     );
                 }
             }

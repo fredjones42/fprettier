@@ -30,9 +30,13 @@ pub fn should_auto_align(lines: &[String]) -> bool {
 ///
 /// Returns the relative indent for each line based on the position of
 /// content after stripping leading spaces and &.
+///
+/// For simple continuations (where all continuation lines have the same indent),
+/// normalizes to use a standard continuation offset instead of preserving the
+/// original file's indentation.
 #[must_use]
 #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
-pub fn get_manual_alignment(lines: &[String]) -> Vec<usize> {
+pub fn get_manual_alignment(lines: &[String], continuation_indent: usize) -> Vec<usize> {
     // Calculate indent as: length - length after stripping spaces and &
     let manual_lines_indent: Vec<isize> = lines
         .iter()
@@ -44,10 +48,30 @@ pub fn get_manual_alignment(lines: &[String]) -> Vec<usize> {
 
     // Make relative to first line
     let first_indent = manual_lines_indent.first().copied().unwrap_or(0);
-    manual_lines_indent
+    let mut result: Vec<usize> = manual_lines_indent
         .into_iter()
         .map(|ind| (ind - first_indent).max(0) as usize)
-        .collect()
+        .collect();
+
+    // Normalize continuation indents ONLY for simple continuations
+    // If the first continuation line (index 1) has a leading &, it's likely
+    // array-style alignment that should be preserved
+    // Only normalize if line[1] doesn't start with & (after trimming spaces)
+    if result.len() >= 2 && result[1] > 0 && lines.len() >= 2 {
+        let first_cont_has_ampersand = lines[1].trim_start_matches(' ').starts_with('&');
+        if !first_cont_has_ampersand {
+            // Simple continuation - normalize to continuation_indent
+            let original_first_cont = result[1];
+            let adjustment = continuation_indent as isize - original_first_cont as isize;
+            for indent in result.iter_mut().skip(1) {
+                if *indent > 0 {
+                    *indent = (*indent as isize + adjustment).max(0) as usize;
+                }
+            }
+        }
+    }
+
+    result
 }
 
 /// Remove leading ampersands from continuation lines
@@ -166,11 +190,12 @@ mod tests {
             "           & 11, 12, 13, 14, 15,&".to_string(),
             "            &16, 17, 18, 19, 20]".to_string(),
         ];
-        let manual_indent = get_manual_alignment(&lines);
+        let manual_indent = get_manual_alignment(&lines, 4);
         // First line starts at 3 spaces (after stripping nothing for &)
         // Second line: 11 spaces + & = 12 chars stripped, relative to first (3) = 9
         // Third line: 11 spaces + & = 12 chars stripped, relative to first (3) = 9
         // Fourth line: 12 spaces + & = 13 chars stripped, relative to first (3) = 10
+        // Array alignment is preserved (first continuation has leading &)
         assert_eq!(manual_indent, vec![0, 9, 9, 10]);
     }
 

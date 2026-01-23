@@ -267,7 +267,8 @@ impl F90Indenter {
             // Determine base indent to add to alignment results
             // - valid END/CONTINUE: indents[-2] (grandparent)
             // - invalid END: indents[-1] (current)
-            // - NEW scopes: indents[-1] (current)
+            // - NEW scopes with manual alignment: line_indent (first line's actual indent)
+            // - NEW scopes without manual alignment: indents[-1] (current)
             // - Regular: indents[-1] (current)
             let base_indent = if (is_any_end_statement && valid_end) || is_continue {
                 // For valid END and CONTINUE, use grandparent indent
@@ -276,8 +277,13 @@ impl F90Indenter {
                 } else {
                     *self.indent_storage.last().unwrap_or(&0)
                 }
+            } else if new_scope.is_some() && manual_lines_indent.is_some() {
+                // For NEW scopes with manual alignment: use the first line's indent
+                // This prevents double-counting indent when manual alignment already
+                // captures the relative positioning from the original formatting
+                line_indent
             } else {
-                // For invalid END, NEW scopes, and regular lines: use current indent
+                // For invalid END, NEW scopes (auto-aligned), and regular lines: use current indent
                 *self.indent_storage.last().unwrap_or(&0)
             };
 
