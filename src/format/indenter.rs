@@ -88,8 +88,12 @@ impl F90Indenter {
             for (scope_idx, parser_opt) in self.parser.closing.iter().enumerate() {
                 if let Some(parser) = parser_opt {
                     if parser.is_match(&part_check) {
+                        // Set flag if ANY part contains an END statement (not just part 0)
+                        // This prevents opening a new scope when there's a balanced
+                        // open/close on the same line (e.g., "do i=1,n; ...; end do")
+                        is_any_end_statement = true;
+
                         if part_idx == 0 {
-                            is_any_end_statement = true;
                             // - If scopes is non-empty: ALWAYS pop, then check if matches
                             // - If scopes is empty: valid_end = true
                             if self.scope_storage.is_empty() {

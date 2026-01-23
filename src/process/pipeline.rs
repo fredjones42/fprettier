@@ -1300,8 +1300,9 @@ fn format_pass<R: BufRead, W: Write>(
         // These lines should not have whitespace formatting applied
         let is_fypp_line = FYPP_LINE_RE.is_match(&fortran_line.joined_line);
 
-        // Check if this is a C preprocessor line (starts with # but not fypp)
-        // These lines should not have whitespace formatting applied and should be pinned to column 0
+        // Check if this logical line contains any C preprocessor lines
+        // (starts with # but not fypp). Used to skip whitespace formatting and case conversion.
+        // Note: Individual physical lines will be checked separately for column 0 pinning.
         let is_cpp_line = CPP_LINE_RE.is_match(&fortran_line.joined_line);
 
         // Check if lines have leading & (which disables auto-alignment)
@@ -1359,12 +1360,17 @@ fn format_pass<R: BufRead, W: Write>(
         if impose_indent && !skip_format {
             if is_cpp_line {
                 // C preprocessor lines are pinned to column 0
-                // Just trim leading whitespace from all lines
+                // Only strip indentation from lines that actually ARE preprocessor directives
+                // This preserves indentation for Fortran code in the same logical line
                 for line in &mut output_lines {
-                    *line = line.trim_start().to_string();
+                    let line_trimmed = line.trim_start();
+                    // Only pin actual CPP directive lines to column 0
+                    if CPP_LINE_RE.is_match(line_trimmed) {
+                        *line = line_trimmed.to_string();
+                    }
+                    // Other lines (Fortran code) keep their indentation
                 }
-                // Update indenter scope but don't apply indent
-                // (CPP lines don't affect Fortran scope)
+                // Don't update indenter scope - CPP lines don't affect Fortran scope
             } else if let Some(ref mut ind) = indenter {
                 compute_and_apply_indentation(
                     &mut output_lines,
