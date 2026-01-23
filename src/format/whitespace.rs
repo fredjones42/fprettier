@@ -622,9 +622,16 @@ fn add_whitespace_charwise_with_level(
         if ch == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
             // When whitespace_flags[10] is false, normalize by removing surrounding spaces
             if !whitespace_flags[10] {
-                // Remove trailing spaces before //
-                while formatted_line.ends_with(' ') {
-                    formatted_line.pop();
+                // Check if the previous non-space character is a comma
+                // If so, preserve the space after comma (controlled by whitespace_flags[0])
+                let prev_non_space = formatted_line.chars().rev().find(|&c| c != ' ');
+                let preserve_comma_space = prev_non_space == Some(',') && whitespace_flags[0];
+
+                // Remove trailing spaces before // (unless preserving comma space)
+                if !preserve_comma_space {
+                    while formatted_line.ends_with(' ') {
+                        formatted_line.pop();
+                    }
                 }
 
                 // Add the concat operator without spaces
