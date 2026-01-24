@@ -60,7 +60,7 @@ pub struct Config {
 
     /// Whitespace formatting level (0-4, default: 2)
     /// 0: no whitespace formatting
-    /// 1: minimal (assignments, relational, logical, print, decl)
+    /// 1: minimal (comma, assignments, relational, logical, print, intrinsics, decl)
     /// 2: standard (adds plusminus)
     /// 3: aggressive (adds multdiv)
     /// 4: maximum (adds type, concat)
