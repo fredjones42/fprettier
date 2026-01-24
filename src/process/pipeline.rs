@@ -15,7 +15,7 @@ use crate::config::Config;
 use crate::format::{
     convert_case, format_line, format_line_with_level, get_manual_alignment, prepend_ampersands,
     remove_pre_ampersands, replace_relational_operators, should_auto_align, split_long_lines,
-    CaseSettings, F90Indenter,
+    CaseSettings, F90Indenter, IndentParams,
 };
 use crate::parser::patterns::{
     CPP_LINE_RE, DO_RE, IF_RE, MOD_RE, OMP_DIR_RE, PROG_RE, STATEMENT_LABEL_RE,
@@ -55,6 +55,65 @@ struct InspectResult {
     required_indents: Vec<usize>,
     /// Indent level of first non-empty line
     first_indent: usize,
+}
+
+// =============================================================================
+// Context structs to reduce function parameter counts
+// =============================================================================
+
+/// Pass-level context shared across all lines in a formatting pass
+struct PassContext<'a> {
+    /// Configuration settings
+    config: &'a Config,
+    /// Whitespace formatting flags (11 boolean options)
+    whitespace_flags: [bool; 11],
+    /// Whether to apply indentation in this pass
+    impose_indent: bool,
+    /// Whether to apply whitespace formatting in this pass
+    impose_whitespace: bool,
+    /// Pre-computed indentation info from inspection pass
+    inspect_result: Option<&'a InspectResult>,
+}
+
+/// Line-level flags controlling formatting behavior
+#[derive(Debug, Clone, Copy)]
+struct FormattingFlags {
+    /// Line is a fypp preprocessor directive
+    is_fypp_line: bool,
+    /// Line is a C preprocessor directive
+    is_cpp_line: bool,
+    /// Formatting is disabled for this line (via !& marker)
+    skip_format: bool,
+    /// Use automatic alignment (no leading & on continuation lines)
+    auto_align: bool,
+}
+
+/// Label-related strings extracted from a Fortran line
+struct LineLabels<'a> {
+    /// The joined logical line with label removed
+    joined_no_label: &'a str,
+    /// The first physical line with label removed
+    first_no_label: &'a str,
+    /// The label extracted from first physical line
+    first_label: &'a str,
+    /// The label extracted from joined line
+    label: &'a str,
+    /// Indentation shift due to label normalization
+    label_shift: usize,
+}
+
+/// Context for writing output lines
+struct LineWriteContext<'a> {
+    /// Computed indentation for each line
+    computed_indents: &'a [usize],
+    /// Whether each original line was indented
+    lines_were_indented: &'a [bool],
+    /// Output line indices that should have comments
+    comment_line_indices: &'a HashSet<usize>,
+    /// Origin indices that were split into multiple lines
+    split_origins: &'a HashSet<usize>,
+    /// Effective line length for wrapping decisions
+    effective_line_length: usize,
 }
 
 /// Apply an adjustment to indent values, clamping to non-negative
@@ -295,25 +354,20 @@ fn detect_skip_format(comments: &[String], in_deactivation_block: &mut bool) -> 
 /// applies whitespace formatting to continuation lines, and returns alignment info.
 ///
 /// Returns `(pre_ampersand, ampersand_sep, manual_lines_indent)`.
-#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn extract_and_format_pre_ampersands(
     output_lines: &mut Vec<String>,
     fortran_line: &FortranLine,
-    config: &Config,
-    whitespace_flags: &[bool; 11],
-    is_fypp_line: bool,
-    skip_format: bool,
-    impose_indent: bool,
-    auto_align: bool,
+    pass_ctx: &PassContext<'_>,
+    flags: FormattingFlags,
 ) -> (Vec<String>, Vec<usize>, Option<Vec<usize>>) {
     // Only process in the indentation pass and when not skipped
-    if auto_align || output_lines.len() <= 1 || !impose_indent || skip_format {
+    if flags.auto_align || output_lines.len() <= 1 || !pass_ctx.impose_indent || flags.skip_format {
         return (vec![], vec![], None);
     }
 
     // Get manual alignment before modifying lines
     // Pass continuation_indent to normalize simple continuations
-    let manual_indent = get_manual_alignment(output_lines, config.indent);
+    let manual_indent = get_manual_alignment(output_lines, pass_ctx.config.indent);
 
     // Extract is_special based on fypp lines AND lines inside multiline strings
     // Lines inside multiline strings must be preserved as-is
@@ -323,7 +377,7 @@ fn extract_and_format_pre_ampersands(
         .enumerate()
         .map(|(i, line)| {
             // If first line is fypp, all continuation lines are special
-            let is_fypp_continuation = is_fypp_line && i > 0;
+            let is_fypp_continuation = flags.is_fypp_line && i > 0;
             // Or if this specific line is a fypp directive
             let is_fypp = i > 0 && FYPP_LINE_RE.is_match(line.trim_start());
             let is_in_string =
@@ -342,7 +396,7 @@ fn extract_and_format_pre_ampersands(
     // Apply whitespace formatting to continuation lines (i > 0) now that
     // the leading & prefix has been stripped. These lines were skipped in
     // Pass 1 (whitespace pass) because remove_pre_ampersands only runs here.
-    if config.impose_whitespace && !skip_format {
+    if pass_ctx.config.impose_whitespace && !flags.skip_format {
         let mut bracket_level: usize = 0;
         // Get the last significant character from line 0 (already formatted in Pass 1)
         // This determines if leading +/- on line 1 is binary or unary
@@ -395,8 +449,8 @@ fn extract_and_format_pre_ampersands(
             };
             let (formatted, new_level, last_char) = format_line_with_level(
                 &line_to_format,
-                whitespace_flags,
-                config.format_decl,
+                &pass_ctx.whitespace_flags,
+                pass_ctx.config.format_decl,
                 bracket_level,
                 prev_line_last_char,
             );
@@ -430,34 +484,23 @@ fn extract_and_format_pre_ampersands(
 /// Handles both single-line and multi-line (continuation) formatting.
 /// For multi-line cases, formats each physical line separately while
 /// tracking bracket levels for proper keyword argument spacing.
-#[allow(
-    clippy::too_many_arguments,
-    clippy::fn_params_excessive_bools,
-    clippy::ptr_arg
-)]
+#[allow(clippy::ptr_arg)]
 fn apply_whitespace_to_lines(
     output_lines: &mut Vec<String>,
-    joined_line_no_label: &str,
-    first_line_no_label: &str,
-    first_line_label: &str,
     fortran_line: &FortranLine,
-    whitespace_flags: &[bool; 11],
-    config: &Config,
-    is_fypp_line: bool,
-    is_cpp_line: bool,
-    skip_format: bool,
-    impose_whitespace: bool,
-    auto_align: bool,
+    pass_ctx: &PassContext<'_>,
+    labels: &LineLabels<'_>,
+    flags: FormattingFlags,
     ampersand_sep: &[usize],
 ) {
-    if impose_whitespace && !skip_format && !is_fypp_line && !is_cpp_line {
+    if pass_ctx.impose_whitespace && !flags.skip_format && !flags.is_fypp_line && !flags.is_cpp_line {
         // If there are multiple physical lines (continuations), format each line separately
         // to preserve the continuation structure
         // Track bracket level across continuation lines for proper keyword argument spacing
         if output_lines.len() > 1 {
             // Strip label from first line before formatting (preserves column positions)
-            if !first_line_label.is_empty() && !output_lines.is_empty() {
-                output_lines[0].clone_from(&first_line_no_label.to_string());
+            if !labels.first_label.is_empty() && !output_lines.is_empty() {
+                output_lines[0].clone_from(&labels.first_no_label.to_string());
             }
 
             let mut bracket_level: usize = 0;
@@ -467,7 +510,7 @@ fn apply_whitespace_to_lines(
                 // The leading & hasn't been stripped yet (remove_pre_ampersands runs
                 // in the indent pass), so formatting would break the prefix.
                 // These lines get formatted in the indent pass instead.
-                if !auto_align && i > 0 {
+                if !flags.auto_align && i > 0 {
                     continue;
                 }
 
@@ -518,8 +561,8 @@ fn apply_whitespace_to_lines(
                 // Pass prev_line_last_char for continuation lines to determine +/- treatment
                 let (formatted, ending_level, last_char) = format_line_with_level(
                     line_content,
-                    whitespace_flags,
-                    config.format_decl,
+                    &pass_ctx.whitespace_flags,
+                    pass_ctx.config.format_decl,
                     bracket_level,
                     if i > 0 { prev_line_last_char } else { None },
                 );
@@ -537,7 +580,7 @@ fn apply_whitespace_to_lines(
                     let spacing = if !ampersand_sep.is_empty() && i < ampersand_sep.len() {
                         // Use captured spacing from extraction
                         ampersand_sep[i]
-                    } else if !auto_align && i == 0 {
+                    } else if !flags.auto_align && i == 0 {
                         // For first line when auto_align=false, extract original spacing
                         // to preserve manual formatting
                         let original = if i < fortran_line.lines.len() {
@@ -565,15 +608,15 @@ fn apply_whitespace_to_lines(
             }
         } else {
             // Single line - format the whole joined line
-            let formatted = format_line(joined_line_no_label, whitespace_flags, config.format_decl);
+            let formatted = format_line(labels.joined_no_label, &pass_ctx.whitespace_flags, pass_ctx.config.format_decl);
             if !output_lines.is_empty() {
                 // Note: OMP prefix is handled during indentation, not here
                 output_lines[0] = formatted;
             }
         }
-    } else if !first_line_label.is_empty() && !output_lines.is_empty() {
+    } else if !labels.first_label.is_empty() && !output_lines.is_empty() {
         // Even without whitespace formatting, strip label for consistent handling
-        output_lines[0] = first_line_no_label.to_string();
+        output_lines[0] = labels.first_no_label.to_string();
     }
 }
 
@@ -587,35 +630,34 @@ fn compute_and_apply_indentation(
     output_lines: &mut Vec<String>,
     computed_indents: &mut Vec<usize>,
     indenter: &mut F90Indenter,
-    joined_line_no_label: &str,
-    label: &str,
-    config: &Config,
-    fortran_line_number: usize,
-    inspect_result: Option<&InspectResult>,
     fortran_line: &FortranLine,
+    pass_ctx: &PassContext<'_>,
+    labels: &LineLabels<'_>,
+    fortran_line_number: usize,
     pre_ampersand: &[String],
     manual_lines_indent: Option<&[usize]>,
     is_fypp_line: bool,
 ) -> Result<()> {
     // Get requested indent for this Fortran line from inspection result
     // Falls back to config.indent if no inspection or index out of bounds
-    let relative_indent = inspect_result
+    let relative_indent = pass_ctx
+        .inspect_result
         .and_then(|r| r.required_indents.get(fortran_line_number).copied())
-        .unwrap_or(config.indent);
+        .unwrap_or(pass_ctx.config.indent);
+
+    // Build indent params
+    let indent_params = IndentParams {
+        relative_indent,
+        continuation_indent: pass_ctx.config.indent,
+        indent_fypp: pass_ctx.config.indent_fypp,
+        manual_lines_indent,
+        use_same_line: fortran_line.use_same_line,
+        semicolon_line_index: fortran_line.semicolon_line_index,
+    };
 
     // Process the logical line for indentation (without label)
     // Use output_lines (which may have been formatted) for alignment computation
-    // Pass manual_lines_indent when lines have leading & (auto_align=false)
-    indenter.process_logical_line(
-        joined_line_no_label,
-        output_lines,
-        relative_indent,
-        config.indent, // continuation indent (same as indent_size)
-        config.indent_fypp,
-        manual_lines_indent,        // manual_lines_indent for leading & lines
-        fortran_line.use_same_line, // force minimal indent after semicolon
-        fortran_line.semicolon_line_index, // line index where semicolon appears
-    )?;
+    indenter.process_logical_line(labels.joined_no_label, output_lines, &indent_params)?;
 
     // Get computed indents and save for comment handling
     let indents = indenter.get_lines_indent();
@@ -628,7 +670,7 @@ fn compute_and_apply_indentation(
     // IMPORTANT: Only shift the FIRST line's indent when there are continuation
     // lines with leading & (pre_ampersand). Continuation lines with leading &
     // should use normal scope-based indent, not label-shifted indent.
-    if !label.is_empty() && !computed_indents.is_empty() && !output_lines.is_empty() {
+    if !labels.label.is_empty() && !computed_indents.is_empty() && !output_lines.is_empty() {
         // Get leading whitespace from first line (this includes label spacing)
         let first_line_leading = output_lines[0].len() - output_lines[0].trim_start().len();
         if first_line_leading > 0 {
@@ -665,9 +707,9 @@ fn compute_and_apply_indentation(
                 let base_indent = computed_indents[0];
 
                 // In output format: label (len) + padding + content
-                // padding = max(0, base_indent - label.len())
-                // So content starts at: max(label.len(), base_indent)
-                let effective_leading = label.len().max(base_indent);
+                // padding = max(0, base_indent - labels.label.len())
+                // So content starts at: max(labels.label.len(), base_indent)
+                let effective_leading = labels.label.len().max(base_indent);
 
                 // Adjustment = effective_leading - base_indent
                 // This replaces base_indent with effective_leading
@@ -725,14 +767,14 @@ fn compute_and_apply_indentation(
                 (is_multiline_fypp_directive && i > 0)
                 // Any fypp line preserves original when indent_fypp=False
                 // Continuation fypp lines (i>0) also preserve original
-                || (is_line_fypp && (!config.indent_fypp || i > 0));
+                || (is_line_fypp && (!pass_ctx.config.indent_fypp || i > 0));
 
             if preserve_original_indent {
                 // For fypp continuation lines when indent_fypp=True:
                 // Add scope-based indent to original relative indent
                 // Example: input "    & content" (4 spaces) + scope indent (6)
                 //          -> output "          & content" (10 spaces)
-                if config.indent_fypp && is_multiline_fypp_directive && i > 0 {
+                if pass_ctx.config.indent_fypp && is_multiline_fypp_directive && i > 0 {
                     let original_indent = line.len() - line.trim_start().len();
                     let base_indent = computed_indents.first().copied().unwrap_or(0);
                     let new_indent = base_indent + original_indent;
@@ -744,7 +786,7 @@ fn compute_and_apply_indentation(
 
             // For labeled lines (i == 0 with label), preserve leading whitespace
             // The label handling code at write time uses these spaces for padding
-            if i == 0 && !label.is_empty() {
+            if i == 0 && !labels.label.is_empty() {
                 // Don't strip/re-apply indent for labeled first line
                 // The leading spaces encode the column position after label
                 continue;
@@ -800,30 +842,25 @@ fn write_output_line<W: Write>(
     line: &str,
     line_index: usize,
     origin: usize,
-    label: &str,
     fortran_line: &FortranLine,
-    computed_indents: &[usize],
+    pass_ctx: &PassContext<'_>,
+    labels: &LineLabels<'_>,
+    write_ctx: &LineWriteContext<'_>,
     indenter: Option<&F90Indenter>,
-    lines_were_indented: &[bool],
-    comment_line_indices: &HashSet<usize>,
-    split_origins: &HashSet<usize>,
-    config: &Config,
-    impose_indent: bool,
-    effective_line_length: usize,
 ) -> std::io::Result<()> {
     let has_comment = origin < fortran_line.comments.len()
         && !fortran_line.comments[origin].is_empty()
-        && comment_line_indices.contains(&line_index);
+        && write_ctx.comment_line_indices.contains(&line_index);
 
     // Determine what to write for the line portion
     // If there's a comment and we're stripping, trim trailing spaces from the line
     // For comment-only lines that were originally indented, preserve one space
     // so that Pass 2 of two-pass formatting can detect the original indentation
-    let line_to_write = if has_comment && config.normalize_comment_spacing {
+    let line_to_write = if has_comment && pass_ctx.config.normalize_comment_spacing {
         let trimmed = line.trim_end();
         // If the line is now empty (comment-only) but was originally indented,
         // preserve one space as a marker for Pass 2
-        if trimmed.is_empty() && origin < lines_were_indented.len() && lines_were_indented[origin] {
+        if trimmed.is_empty() && origin < write_ctx.lines_were_indented.len() && write_ctx.lines_were_indented[origin] {
             " "
         } else {
             trimmed
@@ -833,7 +870,7 @@ fn write_output_line<W: Write>(
         // since the comment provides the separation
         // But preserve one space for originally-indented comment-only lines
         let trimmed = line.trim_end();
-        if trimmed.is_empty() && origin < lines_were_indented.len() && lines_were_indented[origin] {
+        if trimmed.is_empty() && origin < write_ctx.lines_were_indented.len() && write_ctx.lines_were_indented[origin] {
             " "
         } else {
             trimmed
@@ -851,33 +888,33 @@ fn write_output_line<W: Write>(
     } else {
         ""
     };
-    let was_indented = if origin < lines_were_indented.len() {
-        lines_were_indented[origin]
+    let was_indented = if origin < write_ctx.lines_were_indented.len() {
+        write_ctx.lines_were_indented[origin]
     } else {
         original_line.starts_with(' ') || original_line.starts_with('\t')
     };
 
     // Check if we need to detach inline comment to its own line due to line length
     // Also detach if the original line was split (comment goes after all split lines)
-    let should_detach_comment = if has_comment && effective_line_length < LINE_SPLIT_THRESHOLD {
+    let should_detach_comment = if has_comment && write_ctx.effective_line_length < LINE_SPLIT_THRESHOLD {
         let comment = &fortran_line.comments[origin];
         let comment_trimmed = comment.trim();
         let is_comment_only = line_to_write.trim().is_empty();
 
         if !is_comment_only && !comment_trimmed.is_empty() {
             // Always detach if the line was split
-            if split_origins.contains(&origin) {
+            if write_ctx.split_origins.contains(&origin) {
                 true
             } else {
                 // Calculate total line length with code + spacing + comment
-                let spacing = if config.normalize_comment_spacing {
-                    config.comment_spacing
+                let spacing = if pass_ctx.config.normalize_comment_spacing {
+                    pass_ctx.config.comment_spacing
                 } else {
                     let trailing_spaces = original_line.len() - original_line.trim_end().len();
                     trailing_spaces.max(1) // At least 1 space before comment
                 };
                 let total_length = line_to_write.trim_end().len() + spacing + comment_trimmed.len();
-                total_length > effective_line_length
+                total_length > write_ctx.effective_line_length
             }
         } else {
             false
@@ -897,20 +934,20 @@ fn write_output_line<W: Write>(
     };
 
     // Prepend label to first line
-    if line_index == 0 && !label.is_empty() {
+    if line_index == 0 && !labels.label.is_empty() {
         // Compute padding to place the statement content at the target column.
         // The target column comes from computed_indents[0] (the target indentation).
-        // Padding = target_indent - label.len(), ensuring the statement starts
+        // Padding = target_indent - labels.label.len(), ensuring the statement starts
         // at the same column it would if there were no label.
         let trimmed = line_to_write.trim_start();
-        let target_indent = if impose_indent && !computed_indents.is_empty() {
-            computed_indents[0]
+        let target_indent = if pass_ctx.impose_indent && !write_ctx.computed_indents.is_empty() {
+            write_ctx.computed_indents[0]
         } else {
             // Without indentation, use the current line's spacing
             line_to_write.len() - trimmed.len()
         };
-        let padding = target_indent.saturating_sub(label.len());
-        output.write_all(label.as_bytes())?;
+        let padding = target_indent.saturating_sub(labels.label.len());
+        output.write_all(labels.label.as_bytes())?;
         write_spaces(output, padding)?;
         output.write_all(trimmed.as_bytes())?;
     } else if is_ford_comment_line {
@@ -923,7 +960,7 @@ fn write_output_line<W: Write>(
         // the two-pass logic). The indent will be written later.
         let is_comment_only_indented = has_comment
             && line_to_write.trim().is_empty()
-            && impose_indent
+            && pass_ctx.impose_indent
             && (was_indented || line_index > 0);
         if !is_comment_only_indented {
             output.write_all(line_to_write.as_bytes())?;
@@ -942,8 +979,8 @@ fn write_output_line<W: Write>(
             output.write_all(b"\n")?;
 
             // Get indent for the detached comment line (same as the code line)
-            let comment_indent = if origin < computed_indents.len() {
-                computed_indents[origin]
+            let comment_indent = if origin < write_ctx.computed_indents.len() {
+                write_ctx.computed_indents[origin]
             } else if let Some(ind) = indenter {
                 ind.get_scope_indent()
             } else {
@@ -961,14 +998,14 @@ fn write_output_line<W: Write>(
             let is_ford_comment = comment_trimmed.starts_with("!!");
             let in_continuation = line_index > 0;
             if is_comment_only
-                && impose_indent
+                && pass_ctx.impose_indent
                 && (was_indented || in_continuation)
                 && !is_omp_directive
                 && !is_ford_comment
             {
                 // Use computed continuation indent if available, otherwise use scope indent
-                let indent = if line_index < computed_indents.len() {
-                    computed_indents[line_index]
+                let indent = if line_index < write_ctx.computed_indents.len() {
+                    write_ctx.computed_indents[line_index]
                 } else if let Some(ind) = indenter {
                     ind.get_scope_indent()
                 } else {
@@ -979,18 +1016,18 @@ fn write_output_line<W: Write>(
             // Note: FORD comments (!!) are handled earlier - their original indent is preserved
 
             // Determine spacing before comment
-            let spacing = if config.normalize_comment_spacing {
+            let spacing = if pass_ctx.config.normalize_comment_spacing {
                 // When normalizing, use consistent spacing
                 // If comment is on its own line (line is empty), no extra spacing
                 if is_comment_only {
                     0
                 } else {
-                    config.comment_spacing
+                    pass_ctx.config.comment_spacing
                 }
             } else if is_comment_only && is_ford_comment {
                 // FORD comment-only lines: no extra spacing (indentation handled earlier)
                 0
-            } else if is_comment_only && impose_indent && (was_indented || in_continuation) {
+            } else if is_comment_only && pass_ctx.impose_indent && (was_indented || in_continuation) {
                 // Comment-only line with indentation - no extra spacing
                 0
             } else if is_comment_only && !was_indented && !in_continuation {
@@ -1185,6 +1222,15 @@ fn format_pass<R: BufRead, W: Write>(
     // Get whitespace_flags array for whitespace formatting
     let whitespace_flags = config.get_whitespace_flags();
 
+    // Create pass context to group pass-level settings
+    let pass_ctx = PassContext {
+        config,
+        whitespace_flags,
+        impose_indent,
+        impose_whitespace,
+        inspect_result,
+    };
+
     // Get case settings
     let case_settings = CaseSettings::from_dict(&config.case_dict);
 
@@ -1271,7 +1317,7 @@ fn format_pass<R: BufRead, W: Write>(
         // In two-pass mode, Pass 1 output becomes Pass 2 input, so normalizing in Pass 1
         // would lose the original spacing information needed to compute label_shift in Pass 2.
         let (label, joined_line_no_label, first_line_label, first_line_no_label, label_shift) =
-            if fortran_line_number > 1 && !label.is_empty() && impose_indent {
+            if fortran_line_number > 1 && !label.is_empty() && pass_ctx.impose_indent {
                 // The regex captures digits + one space, leaving extra spaces in rest
                 // Normalize by stripping extra leading spaces from line_no_label
                 // so that leading_spaces = label.len()
@@ -1323,46 +1369,52 @@ fn format_pass<R: BufRead, W: Write>(
         // Check if lines have leading & (which disables auto-alignment)
         let auto_align = should_auto_align(&output_lines);
 
+        // Create formatting flags struct
+        let flags = FormattingFlags {
+            is_fypp_line,
+            is_cpp_line,
+            skip_format,
+            auto_align,
+        };
+
+        // Create line labels struct
+        let labels = LineLabels {
+            joined_no_label: &joined_line_no_label,
+            first_no_label: &first_line_no_label,
+            first_label: &first_line_label,
+            label: &label,
+            label_shift,
+        };
+
         // Extract pre-ampersands and apply whitespace formatting to continuation lines
         let (pre_ampersand, ampersand_sep, manual_lines_indent) = extract_and_format_pre_ampersands(
             &mut output_lines,
             &fortran_line,
-            config,
-            &whitespace_flags,
-            is_fypp_line,
-            skip_format,
-            impose_indent,
-            auto_align,
+            &pass_ctx,
+            flags,
         );
 
         // Apply whitespace formatting
         apply_whitespace_to_lines(
             &mut output_lines,
-            &joined_line_no_label,
-            &first_line_no_label,
-            &first_line_label,
             &fortran_line,
-            &whitespace_flags,
-            config,
-            is_fypp_line,
-            is_cpp_line,
-            skip_format,
-            impose_whitespace,
-            auto_align,
+            &pass_ctx,
+            &labels,
+            flags,
             &ampersand_sep,
         );
 
         // Apply relational operator replacement if enabled
         // This converts between Fortran-style (.lt., .eq., etc.) and C-style (<, ==, etc.)
-        if config.enable_replacements && !skip_format && !is_fypp_line && !is_cpp_line {
+        if pass_ctx.config.enable_replacements && !flags.skip_format && !flags.is_fypp_line && !flags.is_cpp_line {
             for line in &mut output_lines {
-                *line = replace_relational_operators(line, config.c_relations);
+                *line = replace_relational_operators(line, pass_ctx.config.c_relations);
             }
         }
 
         // Apply case conversion if enabled and not deactivated
         // Skip for CPP lines since they are not Fortran code
-        if case_settings.is_enabled() && !skip_format && !is_cpp_line {
+        if case_settings.is_enabled() && !flags.skip_format && !flags.is_cpp_line {
             for line in &mut output_lines {
                 *line = convert_case(line, &case_settings);
             }
@@ -1372,8 +1424,8 @@ fn format_pass<R: BufRead, W: Write>(
         let mut computed_indents: Vec<usize> = Vec::new();
 
         // Apply indentation if requested and not deactivated
-        if impose_indent && !skip_format {
-            if is_cpp_line {
+        if pass_ctx.impose_indent && !flags.skip_format {
+            if flags.is_cpp_line {
                 // C preprocessor lines are pinned to column 0
                 // Only strip indentation from lines that actually ARE preprocessor directives
                 // This preserves indentation for Fortran code in the same logical line
@@ -1391,15 +1443,13 @@ fn format_pass<R: BufRead, W: Write>(
                     &mut output_lines,
                     &mut computed_indents,
                     ind,
-                    &joined_line_no_label,
-                    &label,
-                    config,
-                    fortran_line_number,
-                    inspect_result,
                     &fortran_line,
+                    &pass_ctx,
+                    &labels,
+                    fortran_line_number,
                     &pre_ampersand,
                     manual_lines_indent.as_deref(),
-                    is_fypp_line,
+                    flags.is_fypp_line,
                 )?;
             }
         } else if !fortran_line.omp_prefix.is_empty() && !output_lines.is_empty() {
@@ -1410,28 +1460,37 @@ fn format_pass<R: BufRead, W: Write>(
         }
 
         // Prepend ampersands back to continuation lines if we extracted them earlier
-        if !pre_ampersand.is_empty() && impose_indent {
+        if !pre_ampersand.is_empty() && pass_ctx.impose_indent {
             apply_pre_ampersand_indentation(
                 &mut output_lines,
                 &mut computed_indents,
                 &pre_ampersand,
                 &fortran_line,
-                label_shift,
-                is_fypp_line,
+                labels.label_shift,
+                flags.is_fypp_line,
             );
         }
 
         // Apply line splitting if line_length is configured
-        let effective_line_length = if config.line_length == 0 {
+        let effective_line_length = if pass_ctx.config.line_length == 0 {
             LINE_SPLIT_THRESHOLD
         } else {
-            config.line_length
+            pass_ctx.config.line_length
         };
         let line_origins =
-            split_lines_if_needed(&mut output_lines, effective_line_length, config.indent);
+            split_lines_if_needed(&mut output_lines, effective_line_length, pass_ctx.config.indent);
 
         // Compute comment placement indices
         let (comment_line_indices, split_origins) = compute_comment_indices(&line_origins);
+
+        // Create write context
+        let write_ctx = LineWriteContext {
+            computed_indents: &computed_indents,
+            lines_were_indented: &lines_were_indented,
+            comment_line_indices: &comment_line_indices,
+            split_origins: &split_origins,
+            effective_line_length,
+        };
 
         // Write output lines
         for (i, line) in output_lines.iter().enumerate() {
@@ -1441,22 +1500,17 @@ fn format_pass<R: BufRead, W: Write>(
                 line,
                 i,
                 origin,
-                &label,
                 &fortran_line,
-                &computed_indents,
+                &pass_ctx,
+                &labels,
+                &write_ctx,
                 indenter.as_ref(),
-                &lines_were_indented,
-                &comment_line_indices,
-                &split_origins,
-                config,
-                impose_indent,
-                effective_line_length,
             )?;
         }
 
         // Set skip_blank for next iteration
         // Skip subsequent blank lines if this line was blank and had no special content
-        skip_blank = is_blank && label.is_empty();
+        skip_blank = is_blank && labels.label.is_empty();
     }
 
     Ok(())

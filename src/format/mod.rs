@@ -23,7 +23,7 @@ pub use continuation::{
     get_manual_alignment, prepend_ampersands, remove_pre_ampersands, should_auto_align,
     PreAmpersandResult,
 };
-pub use indenter::F90Indenter;
+pub use indenter::{F90Indenter, IndentParams};
 pub use line_split::{
     auto_split_line, find_split_position, split_inline_comment, split_long_lines,
 };

@@ -7,7 +7,7 @@
 
 use std::io::{BufReader, Cursor};
 
-use fprettier::format::F90Indenter;
+use fprettier::format::{F90Indenter, IndentParams};
 use fprettier::process::format_file;
 use fprettier::scope::build_scope_parser;
 use fprettier::Config;
@@ -18,124 +18,53 @@ fn test_complete_fortran_program() {
     // Enable module indentation to recognize PROGRAM
     let parser = build_scope_parser(false, true);
     let mut indenter = F90Indenter::new(parser, 0);
+    let params = IndentParams::new(3);
 
     // program main
     indenter
-        .process_logical_line(
-            "program main",
-            &["program main".to_string()],
-            3,
-            3,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("program main", &["program main".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 0);
 
     // integer :: x, y
     indenter
-        .process_logical_line(
-            "integer :: x, y",
-            &["integer :: x, y".to_string()],
-            3,
-            3,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("integer :: x, y", &["integer :: x, y".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 3);
 
     // if (x > 0) then
     indenter
-        .process_logical_line(
-            "if (x > 0) then",
-            &["if (x > 0) then".to_string()],
-            3,
-            3,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("if (x > 0) then", &["if (x > 0) then".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 3);
 
     // y = x + 1
     indenter
-        .process_logical_line(
-            "y = x + 1",
-            &["y = x + 1".to_string()],
-            3,
-            3,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("y = x + 1", &["y = x + 1".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 6);
 
     // else
     indenter
-        .process_logical_line(
-            "else",
-            &["else".to_string()],
-            3,
-            3,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("else", &["else".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 3);
 
     // y = 0
     indenter
-        .process_logical_line(
-            "y = 0",
-            &["y = 0".to_string()],
-            3,
-            3,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("y = 0", &["y = 0".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 6);
 
     // end if
     indenter
-        .process_logical_line(
-            "end if",
-            &["end if".to_string()],
-            3,
-            3,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("end if", &["end if".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 3);
 
     // end program
     indenter
-        .process_logical_line(
-            "end program",
-            &["end program".to_string()],
-            3,
-            3,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("end program", &["end program".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 0);
 }
@@ -144,79 +73,35 @@ fn test_complete_fortran_program() {
 fn test_nested_do_loops() {
     let parser = build_scope_parser(false, false);
     let mut indenter = F90Indenter::new(parser, 0);
+    let params = IndentParams::new(2);
 
     // do i = 1, 10
     indenter
-        .process_logical_line(
-            "do i = 1, 10",
-            &["do i = 1, 10".to_string()],
-            2,
-            2,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("do i = 1, 10", &["do i = 1, 10".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 0);
 
     // do j = 1, 20
     indenter
-        .process_logical_line(
-            "do j = 1, 20",
-            &["do j = 1, 20".to_string()],
-            2,
-            2,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("do j = 1, 20", &["do j = 1, 20".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 2);
 
     // x = i * j
     indenter
-        .process_logical_line(
-            "x = i * j",
-            &["x = i * j".to_string()],
-            2,
-            2,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("x = i * j", &["x = i * j".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 4);
 
     // end do (inner)
     indenter
-        .process_logical_line(
-            "end do",
-            &["end do".to_string()],
-            2,
-            2,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("end do", &["end do".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 2);
 
     // end do (outer)
     indenter
-        .process_logical_line(
-            "end do",
-            &["end do".to_string()],
-            2,
-            2,
-            false,
-            None,
-            false,
-            None,
-        )
+        .process_logical_line("end do", &["end do".to_string()], &params)
         .unwrap();
     assert_eq!(indenter.get_lines_indent()[0], 0);
 }
