@@ -121,20 +121,33 @@ impl F90Indenter {
                             }
                         } else {
                             // Additional END statements after semicolon
-                            // Check if this END matches the current scope (for indentation purposes)
-                            if !self.scope_storage.is_empty() {
-                                let current_scope = self.scope_storage.last().copied();
-                                if let Some(scope) = current_scope {
-                                    let popped_fypp_scope = scope.is_fypp_scope();
-                                    if !parser.spec
-                                        || scope.as_index() == scope_idx
-                                        || (indent_fypp && popped_fypp_scope)
-                                    {
-                                        has_valid_end_after_semicolon = true;
+                            // Check if this END is balanced by an opener on the same line
+                            // If yes, don't count it (they cancel out)
+                            let has_matching_opener = if let Some(opener_parser) =
+                                self.parser.opening.get(scope_idx).and_then(|p| p.as_ref())
+                            {
+                                opener_parser.is_match(&filtered_line)
+                            } else {
+                                false
+                            };
+
+                            if !has_matching_opener {
+                                // No matching opener on this line, so this END closes an outer scope
+                                // Check if this END matches the current scope (for indentation purposes)
+                                if !self.scope_storage.is_empty() {
+                                    let current_scope = self.scope_storage.last().copied();
+                                    if let Some(scope) = current_scope {
+                                        let popped_fypp_scope = scope.is_fypp_scope();
+                                        if !parser.spec
+                                            || scope.as_index() == scope_idx
+                                            || (indent_fypp && popped_fypp_scope)
+                                        {
+                                            has_valid_end_after_semicolon = true;
+                                        }
                                     }
                                 }
+                                additional_end_count += 1;
                             }
-                            additional_end_count += 1;
                         }
                         break;
                     }
