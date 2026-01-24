@@ -1,6 +1,6 @@
 [package]
 name = "fprettier"
-version = "0.2.0-rc.5"
+version = "0.2.0"
 edition = "2021"
 authors = ["Fred Jones"]
 description = "Auto-formatter for modern Fortran source code"

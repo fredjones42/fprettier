@@ -290,27 +290,27 @@ impl F90Indenter {
             // Get continuation indents from either:
             // 1. Manual alignment (when lines have leading &) - preserves original positioning
             // 2. Automatic alignment via F90Aligner
-            let continuation_indents: Vec<usize> = if let Some(manual_indent) = params.manual_lines_indent
-            {
-                // Use manual indents directly (for lines with leading &)
-                // These are already relative offsets
-                manual_indent.to_vec()
-            } else {
-                // Strip leading whitespace from lines before passing to aligner
-                let trimmed_lines: Vec<String> = lines
-                    .iter()
-                    .map(|line| line.trim_start().to_string())
-                    .collect();
+            let continuation_indents: Vec<usize> =
+                if let Some(manual_indent) = params.manual_lines_indent {
+                    // Use manual indents directly (for lines with leading &)
+                    // These are already relative offsets
+                    manual_indent.to_vec()
+                } else {
+                    // Strip leading whitespace from lines before passing to aligner
+                    let trimmed_lines: Vec<String> = lines
+                        .iter()
+                        .map(|line| line.trim_start().to_string())
+                        .collect();
 
-                // Process with aligner to get continuation indents
-                self.aligner.process_logical_line(
-                    logical_line,
-                    &trimmed_lines,
-                    params.continuation_indent,
-                )?;
+                    // Process with aligner to get continuation indents
+                    self.aligner.process_logical_line(
+                        logical_line,
+                        &trimmed_lines,
+                        params.continuation_indent,
+                    )?;
 
-                self.aligner.get_lines_indent().to_vec()
-            };
+                    self.aligner.get_lines_indent().to_vec()
+                };
 
             // First line gets the calculated indent
             self.line_indents.push(line_indent);
@@ -676,7 +676,11 @@ mod tests {
 
         // SUBROUTINE
         indenter
-            .process_logical_line("subroutine foo()", &["subroutine foo()".to_string()], &params)
+            .process_logical_line(
+                "subroutine foo()",
+                &["subroutine foo()".to_string()],
+                &params,
+            )
             .unwrap();
 
         // Inside subroutine

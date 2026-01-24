@@ -493,7 +493,8 @@ fn apply_whitespace_to_lines(
     flags: FormattingFlags,
     ampersand_sep: &[usize],
 ) {
-    if pass_ctx.impose_whitespace && !flags.skip_format && !flags.is_fypp_line && !flags.is_cpp_line {
+    if pass_ctx.impose_whitespace && !flags.skip_format && !flags.is_fypp_line && !flags.is_cpp_line
+    {
         // If there are multiple physical lines (continuations), format each line separately
         // to preserve the continuation structure
         // Track bracket level across continuation lines for proper keyword argument spacing
@@ -608,7 +609,11 @@ fn apply_whitespace_to_lines(
             }
         } else {
             // Single line - format the whole joined line
-            let formatted = format_line(labels.joined_no_label, &pass_ctx.whitespace_flags, pass_ctx.config.format_decl);
+            let formatted = format_line(
+                labels.joined_no_label,
+                &pass_ctx.whitespace_flags,
+                pass_ctx.config.format_decl,
+            );
             if !output_lines.is_empty() {
                 // Note: OMP prefix is handled during indentation, not here
                 output_lines[0] = formatted;
@@ -860,7 +865,10 @@ fn write_output_line<W: Write>(
         let trimmed = line.trim_end();
         // If the line is now empty (comment-only) but was originally indented,
         // preserve one space as a marker for Pass 2
-        if trimmed.is_empty() && origin < write_ctx.lines_were_indented.len() && write_ctx.lines_were_indented[origin] {
+        if trimmed.is_empty()
+            && origin < write_ctx.lines_were_indented.len()
+            && write_ctx.lines_were_indented[origin]
+        {
             " "
         } else {
             trimmed
@@ -870,7 +878,10 @@ fn write_output_line<W: Write>(
         // since the comment provides the separation
         // But preserve one space for originally-indented comment-only lines
         let trimmed = line.trim_end();
-        if trimmed.is_empty() && origin < write_ctx.lines_were_indented.len() && write_ctx.lines_were_indented[origin] {
+        if trimmed.is_empty()
+            && origin < write_ctx.lines_were_indented.len()
+            && write_ctx.lines_were_indented[origin]
+        {
             " "
         } else {
             trimmed
@@ -896,7 +907,9 @@ fn write_output_line<W: Write>(
 
     // Check if we need to detach inline comment to its own line due to line length
     // Also detach if the original line was split (comment goes after all split lines)
-    let should_detach_comment = if has_comment && write_ctx.effective_line_length < LINE_SPLIT_THRESHOLD {
+    let should_detach_comment = if has_comment
+        && write_ctx.effective_line_length < LINE_SPLIT_THRESHOLD
+    {
         let comment = &fortran_line.comments[origin];
         let comment_trimmed = comment.trim();
         let is_comment_only = line_to_write.trim().is_empty();
@@ -1027,7 +1040,8 @@ fn write_output_line<W: Write>(
             } else if is_comment_only && is_ford_comment {
                 // FORD comment-only lines: no extra spacing (indentation handled earlier)
                 0
-            } else if is_comment_only && pass_ctx.impose_indent && (was_indented || in_continuation) {
+            } else if is_comment_only && pass_ctx.impose_indent && (was_indented || in_continuation)
+            {
                 // Comment-only line with indentation - no extra spacing
                 0
             } else if is_comment_only && !was_indented && !in_continuation {
@@ -1387,12 +1401,8 @@ fn format_pass<R: BufRead, W: Write>(
         };
 
         // Extract pre-ampersands and apply whitespace formatting to continuation lines
-        let (pre_ampersand, ampersand_sep, manual_lines_indent) = extract_and_format_pre_ampersands(
-            &mut output_lines,
-            &fortran_line,
-            &pass_ctx,
-            flags,
-        );
+        let (pre_ampersand, ampersand_sep, manual_lines_indent) =
+            extract_and_format_pre_ampersands(&mut output_lines, &fortran_line, &pass_ctx, flags);
 
         // Apply whitespace formatting
         apply_whitespace_to_lines(
@@ -1406,7 +1416,11 @@ fn format_pass<R: BufRead, W: Write>(
 
         // Apply relational operator replacement if enabled
         // This converts between Fortran-style (.lt., .eq., etc.) and C-style (<, ==, etc.)
-        if pass_ctx.config.enable_replacements && !flags.skip_format && !flags.is_fypp_line && !flags.is_cpp_line {
+        if pass_ctx.config.enable_replacements
+            && !flags.skip_format
+            && !flags.is_fypp_line
+            && !flags.is_cpp_line
+        {
             for line in &mut output_lines {
                 *line = replace_relational_operators(line, pass_ctx.config.c_relations);
             }
@@ -1477,8 +1491,11 @@ fn format_pass<R: BufRead, W: Write>(
         } else {
             pass_ctx.config.line_length
         };
-        let line_origins =
-            split_lines_if_needed(&mut output_lines, effective_line_length, pass_ctx.config.indent);
+        let line_origins = split_lines_if_needed(
+            &mut output_lines,
+            effective_line_length,
+            pass_ctx.config.indent,
+        );
 
         // Compute comment placement indices
         let (comment_line_indices, split_origins) = compute_comment_indices(&line_origins);
