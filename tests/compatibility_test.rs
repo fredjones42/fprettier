@@ -2713,6 +2713,10 @@ fn test_assignment_spacing() {
     assert_eq!(result, input, "Assignment spacing mismatch"); // Result should be unchanged from input
 }
 
+/// Verify that a space is inserted between a closing string apostrophe and
+/// a relational operator, e.g. `'A'<=` becomes `'A' <=`.
+/// The context-aware whitespace pass must not lose the leading space when
+/// a second operator pass (logical) trims the first sub-part.
 #[test]
 fn test_space_between_apos_and_op() {
     let input = "\
@@ -2737,7 +2741,7 @@ end module foo
     let result = run_format(&input, &config);
     assert_eq!(
         result, expected,
-        "Incorrect spacing between apostrophe and operation"
+        "Incorrect spacing between apostrophe and operator"
     );
 }
 
