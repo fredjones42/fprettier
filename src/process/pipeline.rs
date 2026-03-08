@@ -1502,9 +1502,14 @@ fn format_pass<R: BufRead, W: Write>(
             }
         } else if !fortran_line.omp_prefix.is_empty() && !output_lines.is_empty() {
             // When indentation is disabled, we still need to add OMP prefix back
-            // Since whitespace formatting doesn't add it anymore
-            let trimmed = output_lines[0].trim_start();
-            output_lines[0] = format!("{}{}", fortran_line.omp_prefix, trimmed);
+            // to ALL lines (not just line 0) so that Pass 2 sees consistent prefixes.
+            // Without this, continuation lines lose their !$ prefix and Pass 2's
+            // alignment computation drifts by the prefix length on each run.
+            let prefix = &fortran_line.omp_prefix;
+            for line in &mut output_lines {
+                let trimmed = line.trim_start();
+                *line = format!("{prefix}{trimmed}");
+            }
         }
 
         // Prepend ampersands back to continuation lines if we extracted them earlier

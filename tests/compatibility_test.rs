@@ -2740,3 +2740,34 @@ end module foo
         "Incorrect spacing between apostrophe and operation"
     );
 }
+
+/// Verify that OMP conditional continuation lines don't gain an extra space
+/// on each successive run of the formatter (idempotency).
+#[test]
+fn test_omp_conditional_continuation_idempotent() {
+    let input = "\
+program main_hello
+    implicit none
+
+!$  integer :: i = &
+!$                 & 7
+
+    print *, \"Hello\"
+end program
+";
+
+    let config = Config {
+        impose_whitespace: true,
+        impose_indent: true,
+        indent: 4,
+        whitespace: 2,
+        ..Default::default()
+    };
+
+    let result1 = run_format(input, &config);
+    let result2 = run_format(&result1, &config);
+    assert_eq!(
+        result1, result2,
+        "OMP conditional continuation should be idempotent"
+    );
+}
