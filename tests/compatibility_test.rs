@@ -2705,11 +2705,10 @@ fn test_operator_spacing() {
 /// Verify that `assignment(=)` is not mangled by operator spacing.
 #[test]
 fn test_assignment_spacing() {
-    let input = "module foo\n   public assignment(=)\n   interface assignment(=)\n   end interface\nend module foo";
-    let expected = "module foo\n   public assignment(=)\n   interface assignment(=)\n   end interface\nend module foo\n";
+    let input = "module foo\n   public assignment(=)\n   interface assignment(=)\n   end interface\nend module foo\n";
 
     let config = Config::default();
 
-    let result = run_format(input, &config);
-    assert_eq!(result, expected, "Assignment spacing mismatch");
+    let result = run_format(&input, &config);
+    assert_eq!(result, input, "Assignment spacing mismatch"); // Result should be unchanged from input
 }
