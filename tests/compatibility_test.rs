@@ -2712,3 +2712,31 @@ fn test_assignment_spacing() {
     let result = run_format(&input, &config);
     assert_eq!(result, input, "Assignment spacing mismatch"); // Result should be unchanged from input
 }
+
+#[test]
+fn test_space_between_apos_and_op() {
+    let input = "\
+module foo
+contains
+   subroutine bar
+      if ('A'<= c .and. c <= 'Z') Name(i:i) = achar(iachar(c) + upper_to_lower)
+   end subroutine bar
+end module foo
+";
+    let expected = "\
+module foo
+contains
+   subroutine bar
+      if ('A' <= c .and. c <= 'Z') Name(i:i) = achar(iachar(c) + upper_to_lower)
+   end subroutine bar
+end module foo
+";
+
+    let config = Config::default();
+
+    let result = run_format(&input, &config);
+    assert_eq!(
+        result, expected,
+        "Incorrect spacing between apostrophe and operation"
+    );
+}

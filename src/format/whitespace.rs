@@ -1052,9 +1052,10 @@ fn add_spacing_around_operator(text: &str, operator_re: &regex::Regex) -> String
     for (i, part) in parts.iter().enumerate() {
         // Only trim leading whitespace (from after the previous operator).
         // Preserve trailing whitespace (may be significant, e.g., before string).
-        // For the first part, also trim trailing since we'll add space before operator.
+        // For the first part, only trim trailing since leading whitespace may be
+        // significant (e.g., space between a preceding string literal and this code).
         let trimmed = if i == 0 {
-            part.trim()
+            part.trim_end()
         } else if i == parts.len() - 1 {
             // Last part: only trim leading (preserve trailing for content after last operator)
             part.trim_start()
