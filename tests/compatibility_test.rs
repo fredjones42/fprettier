@@ -2682,3 +2682,16 @@ fn test_compat_decl_whitespace_zero() {
     let result = run_format(input, &config);
     assert_eq!(result, expected, "Declaration whitespace-decl=0 mismatch");
 }
+
+/// Verify that `operator(==)` is not mangled by relational operator spacing.
+/// The `==` inside `operator()` should not get a trailing space added.
+#[test]
+fn test_equality_operator() {
+    let input = "module foo\n   public operator(==)\ninterface operator(==)\nendinterface\nend module foo";
+    let expected = "module foo\n   public operator(==)\n   interface operator(==)\n   end interface\nend module foo\n";
+
+    let config = Config::default();
+
+    let result = run_format(input, &config);
+    assert_eq!(result, expected, "Equality operator mismatch");
+}
