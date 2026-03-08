@@ -2685,10 +2685,41 @@ fn test_compat_decl_whitespace_zero() {
 
 /// Verify that `operator(==)` is not mangled by relational operator spacing.
 /// The `==` inside `operator()` should not get a trailing space added.
+/// The same goes for `.eq.`, `/=`, and `.ne.`.
 #[test]
-fn test_equality_operator() {
-    let input = "module foo\n   public operator(==)\ninterface operator(==)\nendinterface\nend module foo";
+fn test_operator_spacing() {
+    let input = "module foo\n   public operator(==)\n   interface operator(==)\n   end interface\nend module foo";
     let expected = "module foo\n   public operator(==)\n   interface operator(==)\n   end interface\nend module foo\n";
+
+    let config = Config::default();
+
+    let result = run_format(input, &config);
+    assert_eq!(result, expected, "Equality operator (==) mismatch");
+
+    let input = "module foo\n   public operator(.eq.)\n   interface operator(.eq.)\n   end interface\nend module foo";
+    let expected = "module foo\n   public operator(.eq.)\n   interface operator(.eq.)\n   end interface\nend module foo\n";
+
+    let result = run_format(input, &config);
+    assert_eq!(result, expected, "Equality operator (.eq.) mismatch");
+
+    let input = "module foo\n   public operator(/=)\n   interface operator(/=)\n   end interface\nend module foo";
+    let expected = "module foo\n   public operator(/=)\n   interface operator(/=)\n   end interface\nend module foo\n";
+
+    let result = run_format(input, &config);
+    assert_eq!(result, expected, "Inequality operator (/=) mismatch");
+
+    let input = "module foo\n   public operator(.ne.)\n   interface operator(.ne.)\n   end interface\nend module foo";
+    let expected = "module foo\n   public operator(.ne.)\n   interface operator(.ne.)\n   end interface\nend module foo\n";
+
+    let result = run_format(input, &config);
+    assert_eq!(result, expected, "Inequality operator (.ne.) mismatch");
+}
+
+/// Verify that `assignment(==)` is not mangled by operator spacing.
+#[test]
+fn test_assignment_spacing() {
+    let input = "module foo\n   public assignment(=)\n   interface assignment(=)\n   end interface\nend module foo";
+    let expected = "module foo\n   public assignment(=)\n   interface assignment(=)\n   end interface\nend module foo\n";
 
     let config = Config::default();
 
