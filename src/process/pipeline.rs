@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Cursor, Write};
 use std::sync::LazyLock;
 
-use regex::Regex;
+use regex::{Regex, RegexSet};
 
 use crate::config::Config;
 use crate::format::{
@@ -143,6 +143,7 @@ fn inspect_file<R: BufRead>(
     let mut prev_offset: usize = 0;
     let mut first_indent: Option<usize> = None;
     let mut skip_blank = false; // Track consecutive blank lines
+    let mut prev_was_scope_opener = false; // Track if previous line was a non-IF/DO scope opener
 
     while let Some(fortran_line) = stream.next_fortran_line()? {
         // Skip empty lines
@@ -185,9 +186,12 @@ fn inspect_file<R: BufRead>(
         let mut required_indent = offset.saturating_sub(prev_offset);
 
         // For IF/DO statements, preserve existing indentation if correctly aligned
+        // Disallow stacking (delta=0) when the previous line was a scope-opener
+        // (like ASSOCIATE, SELECT, etc.), so the body gets properly indented.
         if IF_RE.is_match(joined_trimmed) || DO_RE.is_match(joined_trimmed) {
             let indent_misaligned = indent_size > 0 && offset % indent_size != 0;
-            if prev_offset != offset || strict_indent || indent_misaligned {
+            if prev_offset != offset || strict_indent || indent_misaligned || prev_was_scope_opener
+            {
                 required_indent = indent_size;
             }
             // Otherwise keep required_indent as delta (usually 0 if same offset)
@@ -195,6 +199,11 @@ fn inspect_file<R: BufRead>(
             // For non-IF/DO statements, always use indent_size
             required_indent = indent_size;
         }
+
+        // Track whether this line is a block scope opener (not IF/DO, not
+        // module-level constructs like PROGRAM/MODULE/SUBROUTINE/FUNCTION).
+        // Only includes constructs whose body is always indented.
+        prev_was_scope_opener = BLOCK_SCOPE_OPENER_RE.is_match(joined_trimmed);
 
         required_indents.push(required_indent);
         prev_offset = offset;
@@ -205,6 +214,31 @@ fn inspect_file<R: BufRead>(
         first_indent: first_indent.unwrap_or(0),
     })
 }
+
+/// Block scope openers whose body is always indented (excludes IF/DO for stacking,
+/// and module-level constructs like PROGRAM/MODULE/SUBROUTINE/FUNCTION).
+/// Used in `inspect_file` to prevent IF/DO stacking after these constructs.
+static BLOCK_SCOPE_OPENER_RE: LazyLock<RegexSet> = LazyLock::new(|| {
+    let eol = r"\s*;?\s*$";
+    let sol = r"^\s*";
+    RegexSet::new([
+        // ASSOCIATE
+        format!(r"(?i){sol}ASSOCIATE\s*\(.*\){eol}"),
+        // SELECT CASE/RANK/TYPE
+        format!(r"(?i){sol}(\w+\s*:)?\s*SELECT\s*(CASE|RANK|TYPE)\s*\(.*\){eol}"),
+        // TYPE definition
+        format!(r"(?i){sol}TYPE(\s*,\s*(BIND\s*\(\s*C\s*\)|EXTENDS\s*\(.*\)|ABSTRACT|PUBLIC|PRIVATE))*(\s*,\s*)?(\s*::\s*|\s+)\w+{eol}"),
+        // ENUM
+        format!(r"(?i){sol}ENUM(\s*,\s*BIND\s*\(\s*C\s*\))?{eol}"),
+        // BLOCK
+        format!(r"(?i){sol}(\w+\s*:)?\s*BLOCK{eol}"),
+        // WHERE
+        format!(r"(?i){sol}(\w+\s*:\s*)?WHERE\s*\(.*\){eol}"),
+        // FORALL
+        format!(r"(?i){sol}(\w+\s*:\s*)?FORALL\s*\(.*\){eol}"),
+    ])
+    .expect("Invalid regex in BLOCK_SCOPE_OPENER_RE")
+});
 
 /// Fypp line directive pattern - matches lines starting with #!, #:, $:, or @:
 static FYPP_LINE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(#!|#:|\$:|@:)").unwrap());
