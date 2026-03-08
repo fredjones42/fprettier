@@ -1074,9 +1074,9 @@ fn add_spacing_around_operator(text: &str, operator_re: &regex::Regex) -> String
             }
             result.push_str(operators[i]);
             // Don't add space after operator if next part starts with ) or ]
-            let next_starts_with_close = parts
-                .get(i + 1)
-                .is_some_and(|p| p.trim_start().starts_with(')') || p.trim_start().starts_with(']'));
+            let next_starts_with_close = parts.get(i + 1).is_some_and(|p| {
+                p.trim_start().starts_with(')') || p.trim_start().starts_with(']')
+            });
             if !next_starts_with_close {
                 result.push(' ');
             }
