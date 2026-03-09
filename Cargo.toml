@@ -22,3 +22,5 @@ rayon = "1.11"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.9"
 walkdir = "2.5"
+mimalloc = { version = "0.1", default-features = false }
+

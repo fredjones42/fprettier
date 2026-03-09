@@ -3,6 +3,12 @@
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Cursor, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
@@ -74,6 +80,19 @@ fn main() -> Result<()> {
             eprintln!("No Fortran files found to format.");
         }
         return Ok(());
+    }
+
+    // Pre-warm regex patterns on the main thread to avoid contention
+    // during parallel processing. There are ~100 LazyLock<Regex> patterns
+    // across the codebase; formatting a minimal program initializes them all.
+    if args.jobs != Some(1) && !args.stdout {
+        let warmup = b"program x\nend program x\n";
+        let _ = format_file(
+            BufReader::new(Cursor::new(warmup.as_slice())),
+            &mut Vec::new(),
+            base_config.as_ref().unwrap_or(&Config::default()),
+            "warmup",
+        );
     }
 
     // Process files
@@ -417,14 +436,37 @@ fn process_files_parallel(files: &[PathBuf], base_config: Option<&Config>, args:
     let success_count = AtomicUsize::new(0);
     let error_count = AtomicUsize::new(0);
 
+    // Pre-compute per-directory configs to avoid redundant filesystem walks
+    // during parallel processing. Config discovery walks all ancestor directories
+    // checking for fprettier.toml; caching by parent dir eliminates ~10 stat()
+    // calls per file and removes filesystem contention between threads.
+    let dir_configs: HashMap<PathBuf, Config> = if base_config.is_none() {
+        let mut unique_dirs: Vec<PathBuf> = files
+            .iter()
+            .filter_map(|f| f.parent().map(Path::to_path_buf))
+            .collect();
+        unique_dirs.sort();
+        unique_dirs.dedup();
+
+        unique_dirs
+            .into_iter()
+            .filter_map(|dir| build_config(args, Some(&dir)).ok().map(|c| (dir, c)))
+            .collect()
+    } else {
+        HashMap::new()
+    };
+
     files.par_iter().for_each(|path| {
-        // Use base config if provided, otherwise discover per-file config
         let file_result = if let Some(config) = base_config {
             process_single_file(path, config, args)
         } else {
-            match build_config(args, Some(path)) {
-                Ok(config) => process_single_file(path, &config, args),
-                Err(e) => Err(e),
+            let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            match dir_configs.get(&dir) {
+                Some(config) => process_single_file(path, config, args),
+                None => match build_config(args, Some(path)) {
+                    Ok(config) => process_single_file(path, &config, args),
+                    Err(e) => Err(e),
+                },
             }
         };
 
@@ -536,28 +578,31 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
         }
     }
 
-    if !args.silent && !args.stdout {
+    if !args.silent && !args.stdout && args.debug {
         eprintln!("Formatting: {}", path.display());
     }
 
-    // Make a per-file copy of config that can be overridden by directives
-    let mut file_config = config.clone();
-    apply_directive_overrides(
-        &mut file_config,
-        &file_contents,
-        args.debug,
-        path.to_str().unwrap_or("unknown"),
-    );
+    // Check for in-file directives; only clone config if overrides are found.
+    // Most files have no directives, so this avoids cloning the Config (with its
+    // HashMaps) for every file in the parallel loop.
+    let source_name = path.to_str().unwrap_or("unknown");
+    let has_directives = {
+        let cursor = Cursor::new(&file_contents);
+        find_directive(&mut BufReader::new(cursor)).is_some()
+    };
+    let mut file_config;
+    let effective_config = if has_directives {
+        file_config = config.clone();
+        apply_directive_overrides(&mut file_config, &file_contents, args.debug, source_name);
+        &file_config
+    } else {
+        config
+    };
 
     // Format the file
     let reader = BufReader::new(Cursor::new(&file_contents));
-    let mut output = Vec::new();
-    format_file(
-        reader,
-        &mut output,
-        &file_config,
-        path.to_str().unwrap_or("unknown"),
-    )?;
+    let mut output = Vec::with_capacity(file_contents.len());
+    format_file(reader, &mut output, effective_config, source_name)?;
 
     // Output results
     if args.stdout {
@@ -569,8 +614,10 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
         }
         io::stdout().write_all(&output)?;
     } else {
-        // Write back to file (in-place)
-        std::fs::write(path, &output)?;
+        // Write back to file only if content changed
+        if output != file_contents {
+            std::fs::write(path, &output)?;
+        }
     }
 
     Ok(())
