@@ -221,21 +221,37 @@ fn inspect_file<R: BufRead>(
 static BLOCK_SCOPE_OPENER_RE: LazyLock<RegexSet> = LazyLock::new(|| {
     let eol = r"\s*;?\s*$";
     let sol = r"^\s*";
+    let associate = format!(r"(?xi) {sol} ASSOCIATE \s* \( .* \) {eol}");
+    let case_rank_type =
+        format!(r"(?xi) {sol} (\w+\s*:)? \s* SELECT \s* (CASE|RANK|TYPE) \s* \( .* \) {eol}");
+    let type_definition = format!(
+        r"(?xi) {sol}
+        TYPE
+        (\s* , \s*
+            ( BIND \s* \( \s* C \s* \)
+            | EXTENDS \s* \( .* \)
+            | ABSTRACT
+            | PUBLIC
+            | PRIVATE
+            )
+        )*
+        (\s* , \s*)?
+        (\s* :: \s* | \s+)
+        \w+                 # The actual type name
+        {eol}"
+    );
+    let enum_decl = format!(r"(?xi) {sol} ENUM ( \s* , \s* BIND \s* \( \s* C \s* \) )? {eol}");
+    let block = format!(r"(?xi) {sol} (\w+ \s* :)? \s* BLOCK {eol}");
+    let where_block = format!(r"(?xi) {sol} (\w+ \s* : \s*)? WHERE \s* \( .* \) {eol}");
+    let forall = format!(r"(?xi) {sol} (\w+ \s* : \s*)? FORALL \s* \( .* \) {eol}");
     RegexSet::new([
-        // ASSOCIATE
-        format!(r"(?i){sol}ASSOCIATE\s*\(.*\){eol}"),
-        // SELECT CASE/RANK/TYPE
-        format!(r"(?i){sol}(\w+\s*:)?\s*SELECT\s*(CASE|RANK|TYPE)\s*\(.*\){eol}"),
-        // TYPE definition
-        format!(r"(?i){sol}TYPE(\s*,\s*(BIND\s*\(\s*C\s*\)|EXTENDS\s*\(.*\)|ABSTRACT|PUBLIC|PRIVATE))*(\s*,\s*)?(\s*::\s*|\s+)\w+{eol}"),
-        // ENUM
-        format!(r"(?i){sol}ENUM(\s*,\s*BIND\s*\(\s*C\s*\))?{eol}"),
-        // BLOCK
-        format!(r"(?i){sol}(\w+\s*:)?\s*BLOCK{eol}"),
-        // WHERE
-        format!(r"(?i){sol}(\w+\s*:\s*)?WHERE\s*\(.*\){eol}"),
-        // FORALL
-        format!(r"(?i){sol}(\w+\s*:\s*)?FORALL\s*\(.*\){eol}"),
+        associate,
+        case_rank_type,
+        type_definition,
+        enum_decl,
+        block,
+        where_block,
+        forall,
     ])
     .expect("Invalid regex in BLOCK_SCOPE_OPENER_RE")
 });
