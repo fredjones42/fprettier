@@ -138,7 +138,7 @@ pub fn build_cli() -> Command {
             Arg::new("indent")
                 .short('i')
                 .long("indent")
-                .help("Number of spaces per indent level [default: 3]")
+                .help("Number of spaces per indent level [default: 4]")
                 .value_name("NUM")
                 .value_parser(clap::value_parser!(usize)),
         )

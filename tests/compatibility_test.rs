@@ -2696,7 +2696,7 @@ fn test_operator_spacing() {
     ];
 
     for op in &ops {
-        let input = format!("module foo\n   public operator({op})\n   interface operator({op})\n   end interface\nend module foo\n");
+        let input = format!("module foo\n    public operator({op})\n    interface operator({op})\n    end interface\nend module foo\n");
         let result = run_format(&input, &config);
         assert_eq!(result, input, "Operator spacing mismatch"); // Result should be unchanged from input
     }
@@ -2705,7 +2705,7 @@ fn test_operator_spacing() {
 /// Verify that `assignment(=)` is not mangled by operator spacing.
 #[test]
 fn test_assignment_spacing() {
-    let input = "module foo\n   public assignment(=)\n   interface assignment(=)\n   end interface\nend module foo\n";
+    let input = "module foo\n    public assignment(=)\n    interface assignment(=)\n    end interface\nend module foo\n";
 
     let config = Config::default();
 
@@ -2722,17 +2722,17 @@ fn test_space_between_apos_and_op() {
     let input = "\
 module foo
 contains
-   subroutine bar
-      if ('A'<= c .and. c <= 'Z') Name(i:i) = achar(iachar(c) + upper_to_lower)
-   end subroutine bar
+    subroutine bar
+        if ('A'<= c .and. c <= 'Z') Name(i:i) = achar(iachar(c) + upper_to_lower)
+    end subroutine bar
 end module foo
 ";
     let expected = "\
 module foo
 contains
-   subroutine bar
-      if ('A' <= c .and. c <= 'Z') Name(i:i) = achar(iachar(c) + upper_to_lower)
-   end subroutine bar
+    subroutine bar
+        if ('A' <= c .and. c <= 'Z') Name(i:i) = achar(iachar(c) + upper_to_lower)
+    end subroutine bar
 end module foo
 ";
 

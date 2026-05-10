@@ -32,7 +32,7 @@ fn dirs_home() -> Option<PathBuf> {
 
 // Serde default functions
 fn default_indent() -> usize {
-    3
+    4
 }
 fn default_line_length() -> usize {
     132
@@ -50,7 +50,7 @@ fn default_comment_spacing() -> usize {
 /// Main configuration struct for fprettier
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Number of spaces per indent level (default: 3)
+    /// Number of spaces per indent level (default: 4)
     #[serde(default = "default_indent")]
     pub indent: usize,
 
@@ -146,7 +146,7 @@ struct PartialConfig {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            indent: 3,
+            indent: 4,
             line_length: 132,
             whitespace: 2,
             whitespace_dict: HashMap::new(),
@@ -419,7 +419,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.indent, 3);
+        assert_eq!(config.indent, 4);
         assert_eq!(config.line_length, 132);
         assert_eq!(config.whitespace, 2);
         assert!(config.impose_indent);
@@ -483,18 +483,18 @@ mod tests {
     #[test]
     fn test_config_apply_partial() {
         let mut base = Config::default();
-        assert_eq!(base.indent, 3);
+        assert_eq!(base.indent, 4);
         assert_eq!(base.line_length, 132);
 
         // Only set indent and line_length, leave others as None
         let partial = PartialConfig {
-            indent: Some(4),
+            indent: Some(2),
             line_length: Some(80),
             ..Default::default()
         };
 
         base.apply_partial(&partial);
-        assert_eq!(base.indent, 4);
+        assert_eq!(base.indent, 2);
         assert_eq!(base.line_length, 80);
         // Other fields should remain at defaults
         assert_eq!(base.whitespace, 2);
@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn test_config_apply_partial_preserves_unset() {
         let mut base = Config::default();
-        base.indent = 4; // Set a non-default value
+        base.indent = 2; // Set a non-default value
 
         // Partial config that only sets line_length
         let partial = PartialConfig {
@@ -514,7 +514,7 @@ mod tests {
 
         base.apply_partial(&partial);
         // indent should be preserved (not reset to default)
-        assert_eq!(base.indent, 4);
+        assert_eq!(base.indent, 2);
         assert_eq!(base.line_length, 80);
     }
 
@@ -553,7 +553,7 @@ mod tests {
         let path = PathBuf::from("/nonexistent/unique/path/file.f90");
         let config = Config::from_discovered_files(&path);
         // Should be default values
-        assert_eq!(config.indent, 3);
+        assert_eq!(config.indent, 4);
         assert_eq!(config.line_length, 132);
         assert_eq!(config.whitespace, 2);
     }

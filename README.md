@@ -25,6 +25,11 @@ Run `fprettier` with no arguments to display the usage information.
 
 ## Revision History
 
+### Version 0.3.0
+
+**Breaking Changes:**
+- Default indentation level changed from 3 to 4 spaces. To preserve the previous behavior, set `indent = 3` in `fprettier.toml` or pass `-i 3` on the command line.
+
 ### Version 0.2.0
 
 **New Features:**

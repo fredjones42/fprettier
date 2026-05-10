@@ -683,7 +683,7 @@ fn print_usage() {
     println!("  cat file.f90 | fprettier        # Pipe through fprettier");
     println!();
     println!("Options:");
-    println!("  -i, --indent <NUM>              Indent size [default: 3]");
+    println!("  -i, --indent <NUM>              Indent size [default: 4]");
     println!("  -l, --line-length <NUM>         Max line length [default: 132]");
     println!("  -w, --whitespace <NUM>          Whitespace level 0-4 [default: 2]");
     println!("                                    0 = minimal (no formatting)");
