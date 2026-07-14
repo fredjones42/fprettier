@@ -2,18 +2,15 @@
 ///
 /// This module handles:
 /// - Joining line continuations (lines ending with &)
-/// - Splitting semicolon-separated statements
 /// - Separating comments from code
 /// - OMP conditional directives (!$)
 /// - Multiline strings (tracking string state across lines)
-use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 
-use anyhow::bail;
+use anyhow::{bail, Result};
 
-use super::char_filter::{CharFilter, StringDelimiter};
+use super::char_filter::{comment_start, CharFilter, StringDelimiter};
 use super::patterns::OMP_COND_RE;
-use crate::error::Result;
 
 /// Maximum number of physical lines allowed in a single logical line.
 /// This prevents memory exhaustion from pathological inputs with many continuations.
@@ -30,11 +27,6 @@ pub struct FortranLine {
     pub lines: Vec<String>,
     /// OMP conditional prefix (e.g., "!$ ") that was stripped during parsing
     pub omp_prefix: String,
-    /// Statement label (e.g., "100 ") that was extracted during preprocessing
-    pub label: String,
-    /// Whether this line came from a semicolon split and should use same-line indent
-    /// When true and line has continuations, forces indent=1 for continuation lines
-    pub use_same_line: bool,
     /// Index of the line containing a semicolon (if any) within continuations
     /// Lines AFTER this index should use minimal indent (indent=1)
     pub semicolon_line_index: Option<usize>,
@@ -47,11 +39,7 @@ pub struct FortranLine {
 /// Handles line continuations and semicolon splitting
 pub struct InputStream<R: BufRead> {
     reader: R,
-    line_buffer: VecDeque<String>,
-    omp_buffer: VecDeque<String>, // OMP prefixes for buffered lines
     line_number: usize,
-    /// When true, next line from buffer came from semicolon split
-    next_use_same_line: bool,
     /// Track string state across lines for multiline string support
     string_state: StringDelimiter,
 }
@@ -64,17 +52,9 @@ impl<R: BufRead> InputStream<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
-            line_buffer: VecDeque::new(),
-            omp_buffer: VecDeque::new(),
             line_number: 0,
-            next_use_same_line: false,
             string_state: StringDelimiter::None,
         }
-    }
-
-    /// Get the current line number
-    pub fn get_line_number(&self) -> usize {
-        self.line_number
     }
 
     /// Read the next logical Fortran line
@@ -91,63 +71,53 @@ impl<R: BufRead> InputStream<R> {
         // Reset string state for each new logical line
         self.string_state = StringDelimiter::None;
 
-        // Track if this line came from semicolon split (use_same_line)
-        let use_same_line = self.next_use_same_line;
-        self.next_use_same_line = false;
-
         loop {
-            // Check line buffer first (for semicolon-split lines)
-            let (mut line, what_omp) = if let Some(buffered) = self.line_buffer.pop_front() {
-                let omp = self.omp_buffer.pop_front().unwrap_or_default();
-                (buffered, omp)
-            } else {
-                // Read next physical line
-                let mut raw_line = String::new();
-                match self.reader.read_line(&mut raw_line) {
-                    Ok(0) => {
-                        // EOF
-                        if lines.is_empty() {
-                            return Ok(None);
-                        }
-                        break;
+            // Read next physical line
+            let mut raw_line = String::new();
+            let (mut line, what_omp) = match self.reader.read_line(&mut raw_line) {
+                Ok(0) => {
+                    // EOF
+                    if lines.is_empty() {
+                        return Ok(None);
                     }
-                    Ok(_) => {
-                        self.line_number += 1;
-                        // Convert tabs to 8 spaces
-                        raw_line = raw_line.replace('\t', "        ");
-                        // Remove trailing newline
-                        if raw_line.ends_with('\n') {
-                            raw_line.pop();
-                            if raw_line.ends_with('\r') {
-                                raw_line.pop();
-                            }
-                        }
-
-                        // Multiline string support: if we're inside a string and the line
-                        // doesn't start with &, prepend & to continue the string
-                        if self.string_state != StringDelimiter::None
-                            && !raw_line.trim_start().starts_with('&')
-                        {
-                            raw_line = format!("&{raw_line}");
-                        }
-
-                        // Check for OMP conditional prefix and strip it temporarily
-                        let omp_prefix = if let Some(caps) = OMP_COND_RE.captures(&raw_line) {
-                            let prefix = caps
-                                .get(1)
-                                .map(|m| m.as_str().to_string())
-                                .unwrap_or_default();
-                            // Remove the OMP prefix from the line
-                            raw_line = OMP_COND_RE.replace(&raw_line, "").to_string();
-                            prefix
-                        } else {
-                            String::new()
-                        };
-
-                        (raw_line, omp_prefix)
-                    }
-                    Err(e) => return Err(e.into()),
+                    break;
                 }
+                Ok(_) => {
+                    self.line_number += 1;
+                    // Convert tabs to 8 spaces
+                    raw_line = raw_line.replace('\t', "        ");
+                    // Remove trailing newline
+                    if raw_line.ends_with('\n') {
+                        raw_line.pop();
+                        if raw_line.ends_with('\r') {
+                            raw_line.pop();
+                        }
+                    }
+
+                    // Multiline string support: if we're inside a string and the line
+                    // doesn't start with &, prepend & to continue the string
+                    if self.string_state != StringDelimiter::None
+                        && !raw_line.trim_start().starts_with('&')
+                    {
+                        raw_line = format!("&{raw_line}");
+                    }
+
+                    // Check for OMP conditional prefix and strip it temporarily
+                    let omp_prefix = if let Some(caps) = OMP_COND_RE.captures(&raw_line) {
+                        let prefix = caps
+                            .get(1)
+                            .map(|m| m.as_str().to_string())
+                            .unwrap_or_default();
+                        // Remove the OMP prefix from the line
+                        raw_line = OMP_COND_RE.replace(&raw_line, "").to_string();
+                        prefix
+                    } else {
+                        String::new()
+                    };
+
+                    (raw_line, omp_prefix)
+                }
+                Err(e) => return Err(e.into()),
             };
 
             // Remember the OMP prefix from the first line
@@ -273,8 +243,6 @@ impl<R: BufRead> InputStream<R> {
             comments,
             lines,
             omp_prefix: first_omp_prefix,
-            label: String::new(), // Labels are extracted in the pipeline
-            use_same_line,
             semicolon_line_index,
             lines_in_string,
         }))
@@ -283,16 +251,7 @@ impl<R: BufRead> InputStream<R> {
 
 /// Split code and comment parts
 fn split_comment(line: &str) -> (&str, &str) {
-    // Find comment start using CharFilter to avoid matching ! in strings
-    let mut comment_pos = None;
-    for (pos, c) in CharFilter::new(line, false, true, true) {
-        if c == '!' {
-            comment_pos = Some(pos);
-            break;
-        }
-    }
-
-    if let Some(pos) = comment_pos {
+    if let Some(pos) = comment_start(line) {
         (&line[..pos], &line[pos..])
     } else {
         (line, "")
@@ -404,21 +363,6 @@ mod tests {
         let input = "";
         let mut stream = InputStream::from_string(input);
         assert!(stream.next_fortran_line().unwrap().is_none());
-    }
-
-    #[test]
-    fn test_line_number_tracking() {
-        let input = "line1\nline2\nline3\n";
-        let mut stream = InputStream::from_string(input);
-
-        stream.next_fortran_line().unwrap();
-        assert_eq!(stream.get_line_number(), 1);
-
-        stream.next_fortran_line().unwrap();
-        assert_eq!(stream.get_line_number(), 2);
-
-        stream.next_fortran_line().unwrap();
-        assert_eq!(stream.get_line_number(), 3);
     }
 
     #[test]

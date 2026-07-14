@@ -12,7 +12,6 @@
 pub mod cli;
 pub mod config;
 pub mod directive;
-pub mod error;
 pub mod format;
 pub mod parser;
 pub mod process;
@@ -22,4 +21,3 @@ pub mod scope;
 pub use cli::{build_cli, parse_args, parse_args_from, CliArgs};
 pub use config::Config;
 pub use directive::{find_directive, parse_directive, DirectiveOverrides};
-pub use error::Result;

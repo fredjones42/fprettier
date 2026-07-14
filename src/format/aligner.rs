@@ -10,7 +10,6 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::error::Result;
 use crate::parser::patterns::{PRIVATE_RE, PUBLIC_RE, REL_OP_RE, USE_RE, VAR_DECL_RE};
 use crate::parser::CharFilter;
 
@@ -70,7 +69,7 @@ impl F90Aligner {
         logical_line: &str,
         lines: &[String],
         relative_indent: usize,
-    ) -> Result<()> {
+    ) {
         self.init_line();
 
         // Detect line type
@@ -89,8 +88,6 @@ impl F90Aligner {
                     .push(self.bracket_indent_stack.last().copied().unwrap_or(0));
             }
         }
-
-        Ok(())
     }
 
     /// Align continuation lines
@@ -298,7 +295,7 @@ mod tests {
         let mut aligner = F90Aligner::new();
         let lines = vec!["x = 1".to_string()];
 
-        aligner.process_logical_line("x = 1", &lines, 3).unwrap();
+        aligner.process_logical_line("x = 1", &lines, 3);
 
         let indents = aligner.get_lines_indent();
         assert_eq!(indents.len(), 1);
@@ -310,9 +307,7 @@ mod tests {
         let mut aligner = F90Aligner::new();
         let lines = vec!["call foo(a,".to_string(), "         b)".to_string()];
 
-        aligner
-            .process_logical_line("call foo(a, b)", &lines, 3)
-            .unwrap();
+        aligner.process_logical_line("call foo(a, b)", &lines, 3);
 
         let indents = aligner.get_lines_indent();
         assert_eq!(indents.len(), 2);
@@ -325,9 +320,7 @@ mod tests {
         let mut aligner = F90Aligner::new();
         let lines = vec!["x = a +".to_string(), "    b".to_string()];
 
-        aligner
-            .process_logical_line("x = a + b", &lines, 3)
-            .unwrap();
+        aligner.process_logical_line("x = a + b", &lines, 3);
 
         let indents = aligner.get_lines_indent();
         assert_eq!(indents.len(), 2);
@@ -340,9 +333,7 @@ mod tests {
         let mut aligner = F90Aligner::new();
         let lines = vec!["integer :: x,".to_string(), "           y".to_string()];
 
-        aligner
-            .process_logical_line("integer :: x, y", &lines, 3)
-            .unwrap();
+        aligner.process_logical_line("integer :: x, y", &lines, 3);
 
         let indents = aligner.get_lines_indent();
         assert_eq!(indents.len(), 2);
@@ -371,9 +362,7 @@ mod tests {
 
         let logical_line = "public :: dp, test_routine, test_function, test_type";
 
-        aligner
-            .process_logical_line(logical_line, &lines, 5)
-            .unwrap();
+        aligner.process_logical_line(logical_line, &lines, 5);
 
         let indents = aligner.get_lines_indent();
         assert_eq!(indents.len(), 2);
@@ -396,9 +385,7 @@ mod tests {
 
         let logical_line = "format(A10, I5, F10.2)";
 
-        aligner
-            .process_logical_line(logical_line, &lines, 3)
-            .unwrap();
+        aligner.process_logical_line(logical_line, &lines, 3);
 
         let indents = aligner.get_lines_indent();
         assert_eq!(indents.len(), 2);

@@ -12,10 +12,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-/// Config file names to search for (in order of priority, later overrides earlier)
-const CONFIG_FILE_NAMES: &[&str] = &["fprettier.toml"];
+/// Config file name to search for
+const CONFIG_FILE_NAME: &str = "fprettier.toml";
 
 /// Get the user's home directory
 fn dirs_home() -> Option<PathBuf> {
@@ -30,32 +30,16 @@ fn dirs_home() -> Option<PathBuf> {
     None
 }
 
-// Serde default functions
-fn default_indent() -> usize {
-    4
-}
-fn default_line_length() -> usize {
-    132
-}
-fn default_whitespace() -> u8 {
-    2
-}
-fn default_true() -> bool {
-    true
-}
-fn default_comment_spacing() -> usize {
-    1
-}
-
 /// Main configuration struct for fprettier
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// TOML parsing goes through [`PartialConfig`]; this struct is never
+/// (de)serialized directly.
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Number of spaces per indent level (default: 4)
-    #[serde(default = "default_indent")]
     pub indent: usize,
 
     /// Maximum line length (default: 132)
-    #[serde(default = "default_line_length")]
     pub line_length: usize,
 
     /// Whitespace formatting level (0-4, default: 2)
@@ -64,57 +48,44 @@ pub struct Config {
     /// 2: standard (adds plusminus)
     /// 3: aggressive (adds multdiv)
     /// 4: maximum (adds type, concat)
-    #[serde(default = "default_whitespace")]
     pub whitespace: u8,
 
     /// Fine-grained whitespace control
-    #[serde(default)]
     pub whitespace_dict: HashMap<String, bool>,
 
     /// Impose indentation (default: true)
-    #[serde(default = "default_true")]
     pub impose_indent: bool,
 
     /// Impose whitespace formatting (default: true)
-    #[serde(default = "default_true")]
     pub impose_whitespace: bool,
 
     /// Strict indentation checking (default: false)
-    #[serde(default)]
     pub strict_indent: bool,
 
     /// Indent fypp preprocessor directives (default: true)
-    #[serde(default = "default_true")]
     pub indent_fypp: bool,
 
     /// Indent module/program/submodule blocks (default: true)
-    #[serde(default = "default_true")]
     pub indent_mod: bool,
 
     /// Normalize comment spacing (use consistent spacing before inline comments, default: false)
-    #[serde(default)]
     pub normalize_comment_spacing: bool,
 
     /// Format declaration statements (default: false)
-    #[serde(default)]
     pub format_decl: bool,
 
     /// Case conversion dictionary
-    #[serde(default)]
     pub case_dict: HashMap<String, i32>,
 
     /// Number of spaces before comments (default: 1)
-    #[serde(default = "default_comment_spacing")]
     pub comment_spacing: usize,
 
     /// Enable relational operator replacement (default: false)
-    #[serde(default)]
     pub enable_replacements: bool,
 
     /// Use C-style relational operators when `enable_replacements` is true (default: false)
     /// If false, uses Fortran-style (.lt., .le., .gt., .ge., .eq., .ne.)
     /// If true, uses C-style (<, <=, >, >=, ==, /=)
-    #[serde(default)]
     pub c_relations: bool,
 }
 
@@ -292,11 +263,9 @@ impl Config {
 
         // Add home directory config first (lowest priority)
         if let Some(home) = dirs_home() {
-            for config_name in CONFIG_FILE_NAMES {
-                let home_config = home.join(config_name);
-                if home_config.is_file() {
-                    config_files.push(home_config);
-                }
+            let home_config = home.join(CONFIG_FILE_NAME);
+            if home_config.is_file() {
+                config_files.push(home_config);
             }
         }
 
@@ -317,11 +286,9 @@ impl Config {
             ancestors.reverse();
 
             for ancestor in ancestors {
-                for config_name in CONFIG_FILE_NAMES {
-                    let config_path = ancestor.join(config_name);
-                    if config_path.is_file() && !config_files.contains(&config_path) {
-                        config_files.push(config_path);
-                    }
+                let config_path = ancestor.join(CONFIG_FILE_NAME);
+                if config_path.is_file() && !config_files.contains(&config_path) {
+                    config_files.push(config_path);
                 }
             }
         }

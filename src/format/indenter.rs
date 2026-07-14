@@ -2,7 +2,6 @@
 ///
 /// Uses a stack to track open scopes (IF, DO, MODULE, etc.) and
 /// calculates indentation levels based on scope depth.
-use crate::error::Result;
 use crate::format::aligner::F90Aligner;
 use crate::parser::char_filter::CharFilter;
 use crate::scope::{ScopeParser, ScopeType};
@@ -17,8 +16,6 @@ pub struct IndentParams<'a> {
     pub indent_fypp: bool,
     /// Manual indent override from aligner
     pub manual_lines_indent: Option<&'a [usize]>,
-    /// If true and there are continuations, force minimal indent for all
-    pub use_same_line: bool,
     /// If Some(idx), force minimal indent only for lines AFTER idx
     pub semicolon_line_index: Option<usize>,
 }
@@ -32,7 +29,6 @@ impl IndentParams<'_> {
             continuation_indent: indent,
             indent_fypp: false,
             manual_lines_indent: None,
-            use_same_line: false,
             semicolon_line_index: None,
         }
     }
@@ -85,7 +81,7 @@ impl F90Indenter {
         logical_line: &str,
         lines: &[String],
         params: &IndentParams<'_>,
-    ) -> Result<()> {
+    ) {
         self.line_indents.clear();
 
         // Filter the line to get only code (no strings/comments)
@@ -307,7 +303,7 @@ impl F90Indenter {
                         logical_line,
                         &trimmed_lines,
                         params.continuation_indent,
-                    )?;
+                    );
 
                     self.aligner.get_lines_indent().to_vec()
                 };
@@ -339,14 +335,8 @@ impl F90Indenter {
             };
 
             // Continuation lines: alignment returns relative offsets, add base
-            // When use_same_line=true, force minimal indent (1) for ALL continuations
             // When semicolon_line_index=Some(idx), force minimal indent only for lines AFTER idx
-            if params.use_same_line {
-                // Force indent=1 for all continuation lines
-                for _ in continuation_indents.iter().skip(1) {
-                    self.line_indents.push(1);
-                }
-            } else if let Some(semicolon_idx) = params.semicolon_line_index {
+            if let Some(semicolon_idx) = params.semicolon_line_index {
                 // Force indent=1 only for lines after the semicolon line
                 for (i, &align_offset) in continuation_indents.iter().skip(1).enumerate() {
                     let line_idx = i + 1; // actual line index (0-based)
@@ -428,7 +418,6 @@ impl F90Indenter {
         }
 
         self.initial = false;
-        Ok(())
     }
 
     /// Calculate indent for the current line
@@ -547,27 +536,21 @@ mod tests {
 
         // IF (x > 0) THEN
         let lines = vec!["if (x > 0) then".to_string()];
-        indenter
-            .process_logical_line("if (x > 0) then", &lines, &params)
-            .unwrap();
+        indenter.process_logical_line("if (x > 0) then", &lines, &params);
 
         let indents = indenter.get_lines_indent();
         assert_eq!(indents[0], 0); // IF line at base level
 
         // x = 5
         let lines = vec!["x = 5".to_string()];
-        indenter
-            .process_logical_line("x = 5", &lines, &params)
-            .unwrap();
+        indenter.process_logical_line("x = 5", &lines, &params);
 
         let indents = indenter.get_lines_indent();
         assert_eq!(indents[0], 3); // Inside IF, indented
 
         // END IF
         let lines = vec!["end if".to_string()];
-        indenter
-            .process_logical_line("end if", &lines, &params)
-            .unwrap();
+        indenter.process_logical_line("end if", &lines, &params);
 
         let indents = indenter.get_lines_indent();
         assert_eq!(indents[0], 0); // END IF back to base
@@ -580,26 +563,18 @@ mod tests {
         let params = IndentParams::new(3);
 
         // IF
-        indenter
-            .process_logical_line("if (x) then", &["if (x) then".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("if (x) then", &["if (x) then".to_string()], &params);
 
         // Inside IF
-        indenter
-            .process_logical_line("x = 1", &["x = 1".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("x = 1", &["x = 1".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 3);
 
         // ELSE
-        indenter
-            .process_logical_line("else", &["else".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("else", &["else".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 0); // ELSE at same level as IF
 
         // Inside ELSE
-        indenter
-            .process_logical_line("x = 2", &["x = 2".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("x = 2", &["x = 2".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 3);
     }
 
@@ -610,35 +585,25 @@ mod tests {
         let params = IndentParams::new(3);
 
         // Outer IF
-        indenter
-            .process_logical_line("if (a) then", &["if (a) then".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("if (a) then", &["if (a) then".to_string()], &params);
         assert_eq!(indenter.scope_depth(), 1);
 
         // Inner IF
-        indenter
-            .process_logical_line("if (b) then", &["if (b) then".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("if (b) then", &["if (b) then".to_string()], &params);
         assert_eq!(indenter.scope_depth(), 2);
         assert_eq!(indenter.get_lines_indent()[0], 3);
 
         // Inside inner IF
-        indenter
-            .process_logical_line("x = 1", &["x = 1".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("x = 1", &["x = 1".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 6);
 
         // End inner IF
-        indenter
-            .process_logical_line("end if", &["end if".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("end if", &["end if".to_string()], &params);
         assert_eq!(indenter.scope_depth(), 1);
         assert_eq!(indenter.get_lines_indent()[0], 3);
 
         // End outer IF
-        indenter
-            .process_logical_line("end if", &["end if".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("end if", &["end if".to_string()], &params);
         assert_eq!(indenter.scope_depth(), 0);
         assert_eq!(indenter.get_lines_indent()[0], 0);
     }
@@ -650,21 +615,15 @@ mod tests {
         let params = IndentParams::new(3);
 
         // DO
-        indenter
-            .process_logical_line("do i = 1, 10", &["do i = 1, 10".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("do i = 1, 10", &["do i = 1, 10".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 0);
 
         // Inside DO
-        indenter
-            .process_logical_line("x = i", &["x = i".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("x = i", &["x = i".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 3);
 
         // END DO
-        indenter
-            .process_logical_line("end do", &["end do".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("end do", &["end do".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 0);
     }
 
@@ -675,24 +634,18 @@ mod tests {
         let params = IndentParams::new(3);
 
         // SUBROUTINE
-        indenter
-            .process_logical_line(
-                "subroutine foo()",
-                &["subroutine foo()".to_string()],
-                &params,
-            )
-            .unwrap();
+        indenter.process_logical_line(
+            "subroutine foo()",
+            &["subroutine foo()".to_string()],
+            &params,
+        );
 
         // Inside subroutine
-        indenter
-            .process_logical_line("x = 1", &["x = 1".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("x = 1", &["x = 1".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 3);
 
         // END SUBROUTINE
-        indenter
-            .process_logical_line("end subroutine", &["end subroutine".to_string()], &params)
-            .unwrap();
+        indenter.process_logical_line("end subroutine", &["end subroutine".to_string()], &params);
         assert_eq!(indenter.get_lines_indent()[0], 0);
     }
 
@@ -705,9 +658,7 @@ mod tests {
 
         // #:if DEBUG > 0
         let lines = vec!["#:if DEBUG > 0".to_string()];
-        indenter
-            .process_logical_line("#:if DEBUG > 0", &lines, &params)
-            .unwrap();
+        indenter.process_logical_line("#:if DEBUG > 0", &lines, &params);
 
         // The #:if line itself should be at indent 0
         assert_eq!(
@@ -724,9 +675,7 @@ mod tests {
 
         // print *, "inside if"
         let lines = vec!["print *, \"inside if\"".to_string()];
-        indenter
-            .process_logical_line("print *, \"inside if\"", &lines, &params)
-            .unwrap();
+        indenter.process_logical_line("print *, \"inside if\"", &lines, &params);
 
         // This should be indented (inside the #:if scope)
         assert_eq!(
@@ -737,9 +686,7 @@ mod tests {
 
         // #:endif
         let lines = vec!["#:endif".to_string()];
-        indenter
-            .process_logical_line("#:endif", &lines, &params)
-            .unwrap();
+        indenter.process_logical_line("#:endif", &lines, &params);
 
         // The #:endif line should close the scope
         assert_eq!(

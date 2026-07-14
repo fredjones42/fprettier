@@ -21,51 +21,35 @@ fn test_complete_fortran_program() {
     let params = IndentParams::new(3);
 
     // program main
-    indenter
-        .process_logical_line("program main", &["program main".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("program main", &["program main".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 0);
 
     // integer :: x, y
-    indenter
-        .process_logical_line("integer :: x, y", &["integer :: x, y".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("integer :: x, y", &["integer :: x, y".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 3);
 
     // if (x > 0) then
-    indenter
-        .process_logical_line("if (x > 0) then", &["if (x > 0) then".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("if (x > 0) then", &["if (x > 0) then".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 3);
 
     // y = x + 1
-    indenter
-        .process_logical_line("y = x + 1", &["y = x + 1".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("y = x + 1", &["y = x + 1".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 6);
 
     // else
-    indenter
-        .process_logical_line("else", &["else".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("else", &["else".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 3);
 
     // y = 0
-    indenter
-        .process_logical_line("y = 0", &["y = 0".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("y = 0", &["y = 0".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 6);
 
     // end if
-    indenter
-        .process_logical_line("end if", &["end if".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("end if", &["end if".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 3);
 
     // end program
-    indenter
-        .process_logical_line("end program", &["end program".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("end program", &["end program".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 0);
 }
 
@@ -76,33 +60,23 @@ fn test_nested_do_loops() {
     let params = IndentParams::new(2);
 
     // do i = 1, 10
-    indenter
-        .process_logical_line("do i = 1, 10", &["do i = 1, 10".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("do i = 1, 10", &["do i = 1, 10".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 0);
 
     // do j = 1, 20
-    indenter
-        .process_logical_line("do j = 1, 20", &["do j = 1, 20".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("do j = 1, 20", &["do j = 1, 20".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 2);
 
     // x = i * j
-    indenter
-        .process_logical_line("x = i * j", &["x = i * j".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("x = i * j", &["x = i * j".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 4);
 
     // end do (inner)
-    indenter
-        .process_logical_line("end do", &["end do".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("end do", &["end do".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 2);
 
     // end do (outer)
-    indenter
-        .process_logical_line("end do", &["end do".to_string()], &params)
-        .unwrap();
+    indenter.process_logical_line("end do", &["end do".to_string()], &params);
     assert_eq!(indenter.get_lines_indent()[0], 0);
 }
 
@@ -215,9 +189,7 @@ fn test_aligner_bracket_continuation() {
     // Function call with argument on continuation line
     let lines = vec!["call foo(a,".to_string(), "         b)".to_string()];
 
-    aligner
-        .process_logical_line("call foo(a, b)", &lines, 3)
-        .unwrap();
+    aligner.process_logical_line("call foo(a, b)", &lines, 3);
 
     let indents = aligner.get_lines_indent();
     assert_eq!(indents.len(), 2);
@@ -236,9 +208,7 @@ fn test_aligner_assignment_continuation() {
     // Assignment with expression on continuation line
     let lines = vec!["result = a +".to_string(), "         b".to_string()];
 
-    aligner
-        .process_logical_line("result = a + b", &lines, 3)
-        .unwrap();
+    aligner.process_logical_line("result = a + b", &lines, 3);
 
     let indents = aligner.get_lines_indent();
     assert_eq!(indents.len(), 2);
@@ -261,9 +231,7 @@ fn test_aligner_declaration_continuation() {
         "           z".to_string(),
     ];
 
-    aligner
-        .process_logical_line("integer :: x, y, z", &lines, 3)
-        .unwrap();
+    aligner.process_logical_line("integer :: x, y, z", &lines, 3);
 
     let indents = aligner.get_lines_indent();
     assert_eq!(indents.len(), 3);
@@ -287,9 +255,7 @@ fn test_aligner_nested_brackets() {
         "               c)".to_string(),
     ];
 
-    aligner
-        .process_logical_line("result = func1(func2(a, b), c)", &lines, 3)
-        .unwrap();
+    aligner.process_logical_line("result = func1(func2(a, b), c)", &lines, 3);
 
     let indents = aligner.get_lines_indent();
     assert_eq!(indents.len(), 3);

@@ -185,15 +185,6 @@ pub static KEYWORD_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
 });
 
-// Pattern to match SELECT CASE/TYPE/RANK constructs
-// Used to exclude them from space-before-paren formatting (MCNP style)
-pub static SELECT_CONSTRUCT_RE: LazyLock<Regex> =
-    LazyLock::new(|| build_re(r"^\s*(?:SELECT\s*(?:CASE|TYPE|RANK)|(?:CASE|RANK))\s*$"));
-
-// ===== LINE CONTINUATION =====
-
-pub static LINEBREAK_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"(&)[\s]*(?:!.*)?$"));
-
 // ===== DECLARATIONS AND STATEMENTS =====
 
 // Variable declarations (integer, real, character, etc.)
@@ -231,12 +222,6 @@ pub static REL_OP_RE: LazyLock<Regex> =
 
 // Logical operators
 pub static LOG_OP_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"\.(?:AND|OR|EQV|NEQV|NOT)\."));
-
-// Plus/minus (excluding scientific notation like 1.0E-5)
-pub static PLUSMINUS_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"(?<=[^ \d])(\+|-)"));
-
-// Multiply/divide (excluding ** and //)
-pub static MULTDIV_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"(?<=[^\*/])(\*|/)(?![/\*])"));
 
 // ===== C PREPROCESSOR =====
 

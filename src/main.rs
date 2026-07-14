@@ -14,8 +14,9 @@ use std::io::{self, BufReader, Cursor, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use anyhow::Result;
 use fprettier::process::format_file;
-use fprettier::{find_directive, parse_args, CliArgs, Config, Result};
+use fprettier::{build_cli, find_directive, parse_args, CliArgs, Config};
 use glob::Pattern;
 use rayon::prelude::*;
 use walkdir::WalkDir;
@@ -38,9 +39,9 @@ fn main() -> Result<()> {
     let use_stdin =
         args.inputs.is_empty() || (args.inputs.len() == 1 && args.inputs[0].as_os_str() == "-");
 
-    // If no inputs and running interactively, print usage; otherwise read from stdin
+    // If no inputs and running interactively, print help; otherwise read from stdin
     if args.inputs.is_empty() && io::stdin().is_terminal() {
-        print_usage();
+        build_cli().print_help()?;
         return Ok(());
     }
 
@@ -166,40 +167,8 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
     }
 
     // Apply fine-grained whitespace overrides
-    if let Some(val) = args.whitespace_comma {
-        config.whitespace_dict.insert("comma".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_assignment {
-        config
-            .whitespace_dict
-            .insert("assignments".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_decl {
-        config.whitespace_dict.insert("decl".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_relational {
-        config.whitespace_dict.insert("relational".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_logical {
-        config.whitespace_dict.insert("logical".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_plusminus {
-        config.whitespace_dict.insert("plusminus".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_multdiv {
-        config.whitespace_dict.insert("multdiv".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_print {
-        config.whitespace_dict.insert("print".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_type {
-        config.whitespace_dict.insert("type".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_intrinsics {
-        config.whitespace_dict.insert("intrinsics".to_string(), val);
-    }
-    if let Some(val) = args.whitespace_concat {
-        config.whitespace_dict.insert("concat".to_string(), val);
+    for (key, val) in &args.whitespace_overrides {
+        config.whitespace_dict.insert(key.clone(), *val);
     }
 
     if args.no_indent {
@@ -254,34 +223,9 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
 
 /// Print configuration values in debug mode
 fn print_config_debug(config: &Config) {
-    eprintln!("[DEBUG] Configuration:");
-    eprintln!("[DEBUG]   indent: {}", config.indent);
-    eprintln!("[DEBUG]   line_length: {}", config.line_length);
-    eprintln!("[DEBUG]   whitespace: {}", config.whitespace);
-    eprintln!("[DEBUG]   impose_indent: {}", config.impose_indent);
-    eprintln!("[DEBUG]   impose_whitespace: {}", config.impose_whitespace);
-    eprintln!("[DEBUG]   strict_indent: {}", config.strict_indent);
-    eprintln!("[DEBUG]   indent_fypp: {}", config.indent_fypp);
-    eprintln!("[DEBUG]   indent_mod: {}", config.indent_mod);
-    eprintln!(
-        "[DEBUG]   normalize_comment_spacing: {}",
-        config.normalize_comment_spacing
-    );
-    eprintln!("[DEBUG]   format_decl: {}", config.format_decl);
-    eprintln!(
-        "[DEBUG]   enable_replacements: {}",
-        config.enable_replacements
-    );
-    eprintln!("[DEBUG]   c_relations: {}", config.c_relations);
-    eprintln!("[DEBUG]   comment_spacing: {}", config.comment_spacing);
-    if !config.whitespace_dict.is_empty() {
-        eprintln!("[DEBUG]   whitespace_dict: {:?}", config.whitespace_dict);
-    }
-    if !config.case_dict.is_empty() {
-        eprintln!("[DEBUG]   case_dict: {:?}", config.case_dict);
-    }
+    eprintln!("[DEBUG] Configuration: {config:#?}");
     let whitespace_flags = config.get_whitespace_flags();
-    eprintln!("[DEBUG]   whitespace_flags array: {whitespace_flags:?}");
+    eprintln!("[DEBUG] whitespace_flags array: {whitespace_flags:?}");
 }
 
 /// Collect all files to process, handling directories and recursive flag
@@ -607,12 +551,6 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
     // Output results
     if args.stdout {
         io::stdout().write_all(&output)?;
-    } else if args.diff {
-        // Show diff (basic: just show formatted output)
-        if !args.silent {
-            println!("=== {} ===", path.display());
-        }
-        io::stdout().write_all(&output)?;
     } else {
         // Write back to file only if content changed
         if output != file_contents {
@@ -657,92 +595,4 @@ fn process_stdin(config: &Config, args: &CliArgs) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn print_usage() {
-    println!(
-        "fprettier v{} - Fortran source code formatter",
-        env!("CARGO_PKG_VERSION")
-    );
-    println!();
-    println!("A fast Fortran formatter written in Rust.");
-    println!();
-    println!("Usage:");
-    println!("  fprettier [OPTIONS] <FILE>...");
-    println!("  fprettier [OPTIONS] -r <DIRECTORY>");
-    println!("  fprettier [OPTIONS] -              # Read from stdin");
-    println!("  cat file.f90 | fprettier           # Pipe input");
-    println!();
-    println!("Examples:");
-    println!("  fprettier file.f90              # Format single file in-place");
-    println!("  fprettier *.f90                 # Format multiple files");
-    println!("  fprettier -r src/               # Recursively format directory");
-    println!("  fprettier --stdout file.f90     # Output to stdout");
-    println!("  fprettier -i 4 file.f90         # Use 4-space indent");
-    println!("  fprettier - < file.f90          # Read from stdin, write to stdout");
-    println!("  cat file.f90 | fprettier        # Pipe through fprettier");
-    println!();
-    println!("Options:");
-    println!("  -i, --indent <NUM>              Indent size [default: 4]");
-    println!("  -l, --line-length <NUM>         Max line length [default: 132]");
-    println!("  -w, --whitespace <NUM>          Whitespace level 0-4 [default: 2]");
-    println!("                                    0 = minimal (no formatting)");
-    println!(
-        "                                    1 = basic (comma, assignment, decl, relational, logical, print, intrinsics)"
-    );
-    println!("                                    2 = standard (+ plus/minus)");
-    println!("                                    3 = extended (+ multiply/divide)");
-    println!("                                    4 = all (+ type %, concat //)");
-    println!("  -r, --recursive                 Process directories recursively");
-    println!("  -e, --exclude <PATTERN>         Exclude files/dirs matching pattern (repeatable)");
-    println!("  -f, --fortran <EXT>             Additional Fortran extension (repeatable)");
-    println!("  -m, --exclude-max-lines <NUM>   Skip files with more than NUM lines");
-    println!("  -D, --debug                     Enable debug output");
-    println!("  -j, --jobs <NUM>                Parallel jobs (0=auto, 1=sequential)");
-    println!("  --case K P O C                  Case conversion (0=none, 1=lower, 2=upper)");
-    println!(
-        "                                    K=keywords, P=procedures, O=operators, C=constants"
-    );
-    println!("  --no-indent                     Disable indentation");
-    println!("  --no-whitespace                 Disable whitespace formatting");
-    println!("  --strict-indent                 Strict indentation (always apply full indent)");
-    println!("  --no-indent-fypp                Don't indent fypp preprocessor directives");
-    println!("  --no-indent-mod                 Don't indent module/program/submodule blocks");
-    println!("  --normalize-comment-spacing     Normalize spacing before inline comments");
-    println!("  --format-decl                   Normalize spacing in declarations");
-    println!("  -s, --stdout                    Output to stdout");
-    println!("  -d, --diff                      Show diff");
-    println!("  -c, --config <FILE>             Config file path (overrides auto-discovery)");
-    println!("  -S, --silent                    Silent mode");
-    println!("  -h, --help                      Print help");
-    println!();
-    println!("Fine-grained whitespace options (override -w level):");
-    println!("  --whitespace-comma [BOOL]       Spacing after commas/semicolons");
-    println!("  --whitespace-assignment [BOOL]  Spacing around = and =>");
-    println!("  --whitespace-decl [BOOL]        Spacing around ::");
-    println!("  --whitespace-relational [BOOL]  Spacing around <, >, ==, /=, .eq., etc.");
-    println!("  --whitespace-logical [BOOL]     Spacing around .and., .or., etc.");
-    println!("  --whitespace-plusminus [BOOL]   Spacing around + and -");
-    println!("  --whitespace-multdiv [BOOL]     Spacing around * and /");
-    println!("  --whitespace-print [BOOL]       Spacing in print/read statements");
-    println!("  --whitespace-type [BOOL]        Spacing around % (type selector)");
-    println!("  --whitespace-intrinsics [BOOL]  Space before intrinsic parentheses");
-    println!("  --whitespace-concat [BOOL]      Spacing around // (concatenation)");
-    println!();
-    println!("Operator replacement:");
-    println!("  --enable-replacements           Convert relational operators");
-    println!(
-        "  --c-relations                   Use C-style (<, ==) instead of Fortran (.lt., .eq.)"
-    );
-    println!();
-    println!("Comment formatting:");
-    println!("  --comment-spacing <NUM>         Spaces before inline comments [default: 1]");
-    println!();
-    println!("Supported extensions: .f90, .f95, .f03, .f08, .f18, .f, .for, .ftn, .fpp (case-insensitive)");
-    println!();
-    println!("Config file auto-discovery:");
-    println!("  Searches for fprettier.toml in parent directories");
-    println!("  starting from the file being formatted up to the root directory.");
-    println!("  Also checks fprettier.toml in the home directory.");
-    println!("  More specific configs (closer to file) override less specific ones.");
 }

@@ -3,24 +3,7 @@
 //! Implements automatic line breaking for long Fortran lines,
 //! inserting continuation markers (&) at appropriate positions.
 
-use crate::parser::CharFilter;
-
-/// Check if a line has a comment (!) outside of strings.
-/// This is a simple state machine that tracks string delimiters.
-fn has_comment_outside_string(text: &str) -> bool {
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-
-    for c in text.chars() {
-        match c {
-            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
-            '"' if !in_single_quote => in_double_quote = !in_double_quote,
-            '!' if !in_single_quote && !in_double_quote => return true,
-            _ => {}
-        }
-    }
-    false
-}
+use crate::parser::{comment_start, CharFilter};
 
 /// Split a line into (code, comment) parts if it contains a detachable inline comment.
 /// Returns None if there's no inline comment or if the split isn't valid.
@@ -33,10 +16,6 @@ fn has_comment_outside_string(text: &str) -> bool {
 /// * `None` if there's no inline comment or the split isn't valid
 #[must_use]
 pub fn split_inline_comment(line: &str) -> Option<(String, String)> {
-    if !line.contains('!') {
-        return None;
-    }
-
     let has_newline = line.ends_with('\n');
     let body = if has_newline {
         &line[..line.len() - 1]
@@ -44,24 +23,7 @@ pub fn split_inline_comment(line: &str) -> Option<(String, String)> {
         line
     };
 
-    // Find the position of '!' outside of strings
-    let mut comment_pos = None;
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-
-    for (i, c) in body.char_indices() {
-        match c {
-            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
-            '"' if !in_single_quote => in_double_quote = !in_double_quote,
-            '!' if !in_single_quote && !in_double_quote => {
-                comment_pos = Some(i);
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    let comment_pos = comment_pos?;
+    let comment_pos = comment_start(body)?;
 
     let code = body[..comment_pos].trim_end();
     let comment = body[comment_pos..].trim_start();
@@ -168,9 +130,7 @@ pub fn auto_split_line(
     };
 
     // Check for inline comments - don't split lines with comments
-    // We need to find '!' that's not inside a string
-    let has_comment = has_comment_outside_string(stripped);
-    if has_comment {
+    if comment_start(stripped).is_some() {
         return None;
     }
 
@@ -415,19 +375,19 @@ mod tests {
     }
 
     #[test]
-    fn test_has_comment_outside_string() {
+    fn test_comment_start() {
         // Basic comment detection
-        assert!(has_comment_outside_string("x = 1 ! comment"));
-        assert!(has_comment_outside_string("call foo() ! end of line"));
+        assert!(comment_start("x = 1 ! comment").is_some());
+        assert!(comment_start("call foo() ! end of line").is_some());
 
         // No comment
-        assert!(!has_comment_outside_string("x = 1"));
-        assert!(!has_comment_outside_string("call foo()"));
+        assert!(comment_start("x = 1").is_none());
+        assert!(comment_start("call foo()").is_none());
 
         // Comment marker inside string should be ignored
-        assert!(!has_comment_outside_string("x = '!' "));
-        assert!(!has_comment_outside_string(r#"x = "!" "#));
-        assert!(!has_comment_outside_string("print *, 'Hello! World'"));
+        assert!(comment_start("x = '!' ").is_none());
+        assert!(comment_start(r#"x = "!" "#).is_none());
+        assert!(comment_start("print *, 'Hello! World'").is_none());
     }
 
     #[test]

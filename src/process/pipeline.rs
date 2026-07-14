@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Cursor, Write};
 use std::sync::LazyLock;
 
+use anyhow::Result;
 use regex::{Regex, RegexSet};
 
 use crate::config::Config;
@@ -22,7 +23,6 @@ use crate::parser::patterns::{
 };
 use crate::parser::{CharFilter, FortranLine, InputStream};
 use crate::scope::build_scope_parser;
-use crate::Result;
 
 /// Maximum line length at which automatic line splitting is attempted.
 ///
@@ -31,21 +31,26 @@ use crate::Result;
 /// This also prevents excessive processing time on pathologically long lines.
 const LINE_SPLIT_THRESHOLD: usize = 1024;
 
-/// Pre-allocated buffer of spaces for indentation.
-/// Using a static buffer avoids allocating a new Vec for each indent write.
-const SPACES: &[u8; 256] = &[b' '; 256];
-
-/// Write `count` spaces to output efficiently using pre-allocated buffer.
+/// Write `count` spaces to output.
 fn write_spaces<W: Write>(output: &mut W, count: usize) -> std::io::Result<()> {
-    if count == 0 {
-        return Ok(());
+    output.write_all(" ".repeat(count).as_bytes())
+}
+
+/// Check whether a line ends with a continuation `&` that is real code,
+/// i.e. not inside a string or comment (a `&` inside a string is content).
+fn ends_with_continuation(line: &str) -> bool {
+    let trimmed = line.trim_end();
+    if !trimmed.ends_with('&') {
+        return false;
     }
-    if count <= SPACES.len() {
-        output.write_all(&SPACES[..count])
-    } else {
-        // Fall back to allocation for unusually large indents
-        output.write_all(&vec![b' '; count])
+    // Check if the trailing & is visible to CharFilter (outside strings)
+    let mut last_amp_outside_string = None;
+    for (pos, c) in CharFilter::new(trimmed, true, true, true) {
+        if c == '&' {
+            last_amp_outside_string = Some(pos);
+        }
     }
+    last_amp_outside_string.is_some_and(|p| p == trimmed.len() - 1)
 }
 
 /// Result of inspecting a Fortran file for indentation info
@@ -477,21 +482,7 @@ fn extract_and_format_pre_ampersands(
             }
             // Format the line content (& has been stripped)
             // Only treat trailing & as continuation if it's NOT inside a string
-            let has_continuation = {
-                let trimmed = line.trim_end();
-                if trimmed.ends_with('&') {
-                    // Check if the trailing & is outside a string using CharFilter
-                    let mut last_amp_outside_string = None;
-                    for (pos, c) in CharFilter::new(trimmed, true, true, true) {
-                        if c == '&' {
-                            last_amp_outside_string = Some(pos);
-                        }
-                    }
-                    last_amp_outside_string.is_some_and(|p| p == trimmed.len() - 1)
-                } else {
-                    false
-                }
-            };
+            let has_continuation = ends_with_continuation(line);
             let line_to_format: Cow<str> = if has_continuation {
                 Cow::Owned(line.trim_end().trim_end_matches('&').to_string())
             } else {
@@ -586,22 +577,7 @@ fn apply_whitespace_to_lines(
                 // Remove continuation marker for formatting, then restore
                 // Note: Only treat trailing & as continuation if it's OUTSIDE strings
                 // (A & inside a string is part of string content, not a continuation marker)
-                let has_continuation = {
-                    let trimmed = line.trim_end();
-                    if trimmed.ends_with('&') {
-                        // Check if the & is inside a string using CharFilter
-                        let mut last_outside_string = None;
-                        for (pos, c) in CharFilter::new(trimmed, true, true, true) {
-                            if c == '&' {
-                                last_outside_string = Some(pos);
-                            }
-                        }
-                        // If the & at the end is visible to CharFilter, it's a continuation
-                        last_outside_string.is_some_and(|p| p == trimmed.len() - 1)
-                    } else {
-                        false
-                    }
-                };
+                let has_continuation = ends_with_continuation(line);
                 let line_content = if has_continuation {
                     line.trim_end().trim_end_matches('&').trim_end()
                 } else {
@@ -692,7 +668,7 @@ fn compute_and_apply_indentation(
     pre_ampersand: &[String],
     manual_lines_indent: Option<&[usize]>,
     is_fypp_line: bool,
-) -> Result<()> {
+) {
     // Get requested indent for this Fortran line from inspection result
     // Falls back to config.indent if no inspection or index out of bounds
     let relative_indent = pass_ctx
@@ -706,13 +682,12 @@ fn compute_and_apply_indentation(
         continuation_indent: pass_ctx.config.indent,
         indent_fypp: pass_ctx.config.indent_fypp,
         manual_lines_indent,
-        use_same_line: fortran_line.use_same_line,
         semicolon_line_index: fortran_line.semicolon_line_index,
     };
 
     // Process the logical line for indentation (without label)
     // Use output_lines (which may have been formatted) for alignment computation
-    indenter.process_logical_line(labels.joined_no_label, output_lines, &indent_params)?;
+    indenter.process_logical_line(labels.joined_no_label, output_lines, &indent_params);
 
     // Get computed indents and save for comment handling
     let indents = indenter.get_lines_indent();
@@ -880,8 +855,6 @@ fn compute_and_apply_indentation(
             }
         }
     }
-
-    Ok(())
 }
 
 /// Write a single output line with labels, comments, and proper indentation
@@ -1514,7 +1487,7 @@ fn format_pass<R: BufRead, W: Write>(
                     &pre_ampersand,
                     manual_lines_indent.as_deref(),
                     flags.is_fypp_line,
-                )?;
+                );
             }
         } else if !fortran_line.omp_prefix.is_empty() && !output_lines.is_empty() {
             // When indentation is disabled, we still need to add OMP prefix back

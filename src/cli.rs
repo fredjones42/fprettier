@@ -6,6 +6,65 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command};
 
+/// Fine-grained whitespace options: (CLI arg name, `whitespace_dict` key, help text)
+const WS_OPTS: [(&str, &str, &str); 11] = [
+    (
+        "whitespace-comma",
+        "comma",
+        "Enable/disable spacing after commas and semicolons",
+    ),
+    (
+        "whitespace-assignment",
+        "assignments",
+        "Enable/disable spacing around assignment operators (=, =>)",
+    ),
+    (
+        "whitespace-decl",
+        "decl",
+        "Enable/disable spacing around declaration operator (::)",
+    ),
+    (
+        "whitespace-relational",
+        "relational",
+        "Enable/disable spacing around relational operators (<, >, ==, /=, .eq., etc.)",
+    ),
+    (
+        "whitespace-logical",
+        "logical",
+        "Enable/disable spacing around logical operators (.and., .or., etc.)",
+    ),
+    (
+        "whitespace-plusminus",
+        "plusminus",
+        "Enable/disable spacing around plus/minus operators",
+    ),
+    (
+        "whitespace-multdiv",
+        "multdiv",
+        "Enable/disable spacing around multiply/divide operators",
+    ),
+    (
+        "whitespace-print",
+        "print",
+        "Enable/disable spacing in print/read statements",
+    ),
+    (
+        "whitespace-type",
+        "type",
+        "Enable/disable spacing around type selector (%)",
+    ),
+    (
+        "whitespace-intrinsics",
+        "intrinsics",
+        "Enable/disable spacing before intrinsic function parentheses",
+    ),
+    (
+        "whitespace-concat",
+        "concat",
+        "Enable/disable spacing around string concatenation operator (//)",
+    ),
+];
+
 /// CLI arguments parsed from command line
 #[derive(Debug, Clone)]
 pub struct CliArgs {
@@ -21,38 +80,9 @@ pub struct CliArgs {
     /// Whitespace formatting level (0-4)
     pub whitespace: Option<u8>,
 
-    /// Fine-grained whitespace: comma/semicolon spacing
-    pub whitespace_comma: Option<bool>,
-
-    /// Fine-grained whitespace: assignment operator spacing (=, =>)
-    pub whitespace_assignment: Option<bool>,
-
-    /// Fine-grained whitespace: declaration spacing (::)
-    pub whitespace_decl: Option<bool>,
-
-    /// Fine-grained whitespace: relational operator spacing (<, >, ==, etc.)
-    pub whitespace_relational: Option<bool>,
-
-    /// Fine-grained whitespace: logical operator spacing (.and., .or., etc.)
-    pub whitespace_logical: Option<bool>,
-
-    /// Fine-grained whitespace: plus/minus spacing
-    pub whitespace_plusminus: Option<bool>,
-
-    /// Fine-grained whitespace: multiply/divide spacing
-    pub whitespace_multdiv: Option<bool>,
-
-    /// Fine-grained whitespace: print/read statement spacing
-    pub whitespace_print: Option<bool>,
-
-    /// Fine-grained whitespace: type selector (%) spacing
-    pub whitespace_type: Option<bool>,
-
-    /// Fine-grained whitespace: intrinsic function spacing
-    pub whitespace_intrinsics: Option<bool>,
-
-    /// Fine-grained whitespace: string concatenation (//) spacing
-    pub whitespace_concat: Option<bool>,
+    /// Fine-grained whitespace overrides, keyed by `whitespace_dict` name
+    /// ("comma", "assignments", "decl", ...)
+    pub whitespace_overrides: Vec<(String, bool)>,
 
     /// Disable indentation
     pub no_indent: bool,
@@ -87,9 +117,6 @@ pub struct CliArgs {
     /// Output to stdout instead of in-place
     pub stdout: bool,
 
-    /// Show diff without modifying files
-    pub diff: bool,
-
     /// Config file path
     pub config: Option<PathBuf>,
 
@@ -122,7 +149,7 @@ pub struct CliArgs {
 /// Build the clap Command for parsing CLI arguments
 #[must_use]
 pub fn build_cli() -> Command {
-    Command::new("fprettier")
+    let mut cmd = Command::new("fprettier")
         .version(env!("CARGO_PKG_VERSION"))
         .author("Fred Jones")
         .about("Auto-formatter for modern Fortran code (Fortran 90+)")
@@ -157,117 +184,6 @@ pub fn build_cli() -> Command {
                 .help("Whitespace level: 0=minimal, 1=+operators, 2=+plusminus, 3=+multdiv, 4=all [default: 2]")
                 .value_name("NUM")
                 .value_parser(clap::value_parser!(u8)),
-        )
-        // Fine-grained whitespace options
-        .arg(
-            Arg::new("whitespace-comma")
-                .long("whitespace-comma")
-                .help("Enable/disable spacing after commas and semicolons")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-assignment")
-                .long("whitespace-assignment")
-                .help("Enable/disable spacing around assignment operators (=, =>)")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-decl")
-                .long("whitespace-decl")
-                .help("Enable/disable spacing around declaration operator (::)")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-relational")
-                .long("whitespace-relational")
-                .help("Enable/disable spacing around relational operators (<, >, ==, /=, .eq., etc.)")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-logical")
-                .long("whitespace-logical")
-                .help("Enable/disable spacing around logical operators (.and., .or., etc.)")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-plusminus")
-                .long("whitespace-plusminus")
-                .help("Enable/disable spacing around plus/minus operators")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-multdiv")
-                .long("whitespace-multdiv")
-                .help("Enable/disable spacing around multiply/divide operators")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-print")
-                .long("whitespace-print")
-                .help("Enable/disable spacing in print/read statements")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-type")
-                .long("whitespace-type")
-                .help("Enable/disable spacing around type selector (%)")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-intrinsics")
-                .long("whitespace-intrinsics")
-                .help("Enable/disable spacing before intrinsic function parentheses")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        )
-        .arg(
-            Arg::new("whitespace-concat")
-                .long("whitespace-concat")
-                .help("Enable/disable spacing around string concatenation operator (//)")
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
         )
         .arg(
             Arg::new("no-indent")
@@ -338,13 +254,6 @@ pub fn build_cli() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("diff")
-                .short('d')
-                .long("diff")
-                .help("Show diff without modifying files")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("config")
                 .short('c')
                 .long("config")
@@ -412,7 +321,22 @@ pub fn build_cli() -> Command {
                 .help("Number of parallel jobs (0=auto, 1=sequential)")
                 .value_name("NUM")
                 .value_parser(clap::value_parser!(usize)),
-        )
+        );
+
+    for (name, _, help) in WS_OPTS {
+        cmd = cmd.arg(
+            Arg::new(name)
+                .long(name)
+                .help(help)
+                .value_name("BOOL")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("true")
+                .value_parser(clap::value_parser!(bool)),
+        );
+    }
+
+    cmd
 }
 
 /// Parse CLI arguments from command line
@@ -446,17 +370,14 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
         indent: matches.get_one::<usize>("indent").copied(),
         line_length: matches.get_one::<usize>("line-length").copied(),
         whitespace: matches.get_one::<u8>("whitespace").copied(),
-        whitespace_comma: matches.get_one::<bool>("whitespace-comma").copied(),
-        whitespace_assignment: matches.get_one::<bool>("whitespace-assignment").copied(),
-        whitespace_decl: matches.get_one::<bool>("whitespace-decl").copied(),
-        whitespace_relational: matches.get_one::<bool>("whitespace-relational").copied(),
-        whitespace_logical: matches.get_one::<bool>("whitespace-logical").copied(),
-        whitespace_plusminus: matches.get_one::<bool>("whitespace-plusminus").copied(),
-        whitespace_multdiv: matches.get_one::<bool>("whitespace-multdiv").copied(),
-        whitespace_print: matches.get_one::<bool>("whitespace-print").copied(),
-        whitespace_type: matches.get_one::<bool>("whitespace-type").copied(),
-        whitespace_intrinsics: matches.get_one::<bool>("whitespace-intrinsics").copied(),
-        whitespace_concat: matches.get_one::<bool>("whitespace-concat").copied(),
+        whitespace_overrides: WS_OPTS
+            .iter()
+            .filter_map(|(name, key, _)| {
+                matches
+                    .get_one::<bool>(name)
+                    .map(|&val| ((*key).to_string(), val))
+            })
+            .collect(),
         no_indent: matches.get_flag("no-indent"),
         no_whitespace: matches.get_flag("no-whitespace"),
         strict_indent: matches.get_flag("strict-indent"),
@@ -468,7 +389,6 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
         c_relations: matches.get_flag("c-relations"),
         comment_spacing: matches.get_one::<usize>("comment-spacing").copied(),
         stdout: matches.get_flag("stdout"),
-        diff: matches.get_flag("diff"),
         config: matches.get_one::<PathBuf>("config").cloned(),
         recursive: matches.get_flag("recursive"),
         exclude: matches
@@ -508,42 +428,40 @@ mod tests {
         assert!(!matches.get_flag("stdout"));
     }
 
+    /// Look up an override value by `whitespace_dict` key
+    fn ws_override(args: &CliArgs, key: &str) -> Option<bool> {
+        args.whitespace_overrides
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|&(_, v)| v)
+    }
+
     #[test]
     fn test_whitespace_comma_flag() {
         // Test --whitespace-comma (no value = true)
         let args = parse_args_from(vec!["fprettier", "--whitespace-comma", "file.f90"]);
-        assert_eq!(args.whitespace_comma, Some(true));
+        assert_eq!(ws_override(&args, "comma"), Some(true));
     }
 
     #[test]
     fn test_whitespace_comma_explicit_true() {
         // Test --whitespace-comma=true
         let args = parse_args_from(vec!["fprettier", "--whitespace-comma=true", "file.f90"]);
-        assert_eq!(args.whitespace_comma, Some(true));
+        assert_eq!(ws_override(&args, "comma"), Some(true));
     }
 
     #[test]
     fn test_whitespace_comma_explicit_false() {
         // Test --whitespace-comma=false
         let args = parse_args_from(vec!["fprettier", "--whitespace-comma=false", "file.f90"]);
-        assert_eq!(args.whitespace_comma, Some(false));
+        assert_eq!(ws_override(&args, "comma"), Some(false));
     }
 
     #[test]
     fn test_whitespace_options_not_set() {
-        // Test that options are None when not specified
+        // Test that no overrides are collected when not specified
         let args = parse_args_from(vec!["fprettier", "file.f90"]);
-        assert_eq!(args.whitespace_comma, None);
-        assert_eq!(args.whitespace_assignment, None);
-        assert_eq!(args.whitespace_decl, None);
-        assert_eq!(args.whitespace_relational, None);
-        assert_eq!(args.whitespace_logical, None);
-        assert_eq!(args.whitespace_plusminus, None);
-        assert_eq!(args.whitespace_multdiv, None);
-        assert_eq!(args.whitespace_print, None);
-        assert_eq!(args.whitespace_type, None);
-        assert_eq!(args.whitespace_intrinsics, None);
-        assert_eq!(args.whitespace_concat, None);
+        assert!(args.whitespace_overrides.is_empty());
     }
 
     #[test]
@@ -556,11 +474,11 @@ mod tests {
             "--whitespace-type=true",
             "file.f90",
         ]);
-        assert_eq!(args.whitespace_comma, Some(true));
-        assert_eq!(args.whitespace_concat, Some(false));
-        assert_eq!(args.whitespace_type, Some(true));
-        // Others should be None
-        assert_eq!(args.whitespace_assignment, None);
+        assert_eq!(ws_override(&args, "comma"), Some(true));
+        assert_eq!(ws_override(&args, "concat"), Some(false));
+        assert_eq!(ws_override(&args, "type"), Some(true));
+        // Others should not be present
+        assert_eq!(ws_override(&args, "assignments"), None);
     }
 
     #[test]
@@ -581,17 +499,17 @@ mod tests {
             "--whitespace-concat=true",
             "file.f90",
         ]);
-        assert_eq!(args.whitespace_comma, Some(true));
-        assert_eq!(args.whitespace_assignment, Some(false));
-        assert_eq!(args.whitespace_decl, Some(true));
-        assert_eq!(args.whitespace_relational, Some(false));
-        assert_eq!(args.whitespace_logical, Some(true));
-        assert_eq!(args.whitespace_plusminus, Some(false));
-        assert_eq!(args.whitespace_multdiv, Some(true));
-        assert_eq!(args.whitespace_print, Some(false));
-        assert_eq!(args.whitespace_type, Some(true));
-        assert_eq!(args.whitespace_intrinsics, Some(false));
-        assert_eq!(args.whitespace_concat, Some(true));
+        assert_eq!(ws_override(&args, "comma"), Some(true));
+        assert_eq!(ws_override(&args, "assignments"), Some(false));
+        assert_eq!(ws_override(&args, "decl"), Some(true));
+        assert_eq!(ws_override(&args, "relational"), Some(false));
+        assert_eq!(ws_override(&args, "logical"), Some(true));
+        assert_eq!(ws_override(&args, "plusminus"), Some(false));
+        assert_eq!(ws_override(&args, "multdiv"), Some(true));
+        assert_eq!(ws_override(&args, "print"), Some(false));
+        assert_eq!(ws_override(&args, "type"), Some(true));
+        assert_eq!(ws_override(&args, "intrinsics"), Some(false));
+        assert_eq!(ws_override(&args, "concat"), Some(true));
     }
 
     #[test]

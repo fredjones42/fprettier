@@ -13,5 +13,5 @@ pub mod char_filter;
 pub mod patterns;
 pub mod stream;
 
-pub use char_filter::{CharFilter, StringDelimiter};
+pub use char_filter::{comment_start, CharFilter, StringDelimiter};
 pub use stream::{FortranLine, InputStream};

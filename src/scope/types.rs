@@ -1,6 +1,3 @@
-/// Scope types for Fortran constructs
-use std::fmt;
-
 /// Fortran scope types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -44,40 +41,17 @@ impl ScopeType {
     /// Create from index (used when popping from stack)
     #[must_use]
     pub fn from_index(idx: usize) -> Option<Self> {
-        match idx {
-            0 => Some(ScopeType::If),
-            1 => Some(ScopeType::Do),
-            2 => Some(ScopeType::Select),
-            3 => Some(ScopeType::Subroutine),
-            4 => Some(ScopeType::Function),
-            5 => Some(ScopeType::Interface),
-            6 => Some(ScopeType::Type),
-            7 => Some(ScopeType::Enum),
-            8 => Some(ScopeType::Associate),
-            9 => Some(ScopeType::EndAny),
-            10 => Some(ScopeType::Block),
-            11 => Some(ScopeType::Where),
-            12 => Some(ScopeType::Forall),
-            13 => Some(ScopeType::Module),
-            14 => Some(ScopeType::Submodule),
-            15 => Some(ScopeType::Program),
-            16 => Some(ScopeType::FyppDef),
-            17 => Some(ScopeType::FyppIf),
-            18 => Some(ScopeType::FyppFor),
-            19 => Some(ScopeType::FyppBlock),
-            20 => Some(ScopeType::FyppCall),
-            21 => Some(ScopeType::FyppMute),
-            _ => None,
-        }
-    }
-
-    /// Check if this is a module-type scope
-    #[must_use]
-    pub fn is_module_scope(self) -> bool {
-        matches!(
-            self,
-            ScopeType::Module | ScopeType::Submodule | ScopeType::Program
-        )
+        use ScopeType::{
+            Associate, Block, Do, EndAny, Enum, Forall, Function, FyppBlock, FyppCall, FyppDef,
+            FyppFor, FyppIf, FyppMute, If, Interface, Module, Program, Select, Submodule,
+            Subroutine, Type, Where,
+        };
+        const ALL: [ScopeType; 22] = [
+            If, Do, Select, Subroutine, Function, Interface, Type, Enum, Associate, EndAny, Block,
+            Where, Forall, Module, Submodule, Program, FyppDef, FyppIf, FyppFor, FyppBlock,
+            FyppCall, FyppMute,
+        ];
+        ALL.get(idx).copied()
     }
 
     /// Check if this is a fypp preprocessor scope
@@ -104,36 +78,6 @@ impl ScopeType {
     }
 }
 
-impl fmt::Display for ScopeType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
-            ScopeType::If => "IF",
-            ScopeType::Do => "DO",
-            ScopeType::Select => "SELECT",
-            ScopeType::Subroutine => "SUBROUTINE",
-            ScopeType::Function => "FUNCTION",
-            ScopeType::Interface => "INTERFACE",
-            ScopeType::Type => "TYPE",
-            ScopeType::Enum => "ENUM",
-            ScopeType::Associate => "ASSOCIATE",
-            ScopeType::EndAny => "END",
-            ScopeType::Block => "BLOCK",
-            ScopeType::Where => "WHERE",
-            ScopeType::Forall => "FORALL",
-            ScopeType::Module => "MODULE",
-            ScopeType::Submodule => "SUBMODULE",
-            ScopeType::Program => "PROGRAM",
-            ScopeType::FyppDef => "FYPP_DEF",
-            ScopeType::FyppIf => "FYPP_IF",
-            ScopeType::FyppFor => "FYPP_FOR",
-            ScopeType::FyppBlock => "FYPP_BLOCK",
-            ScopeType::FyppCall => "FYPP_CALL",
-            ScopeType::FyppMute => "FYPP_MUTE",
-        };
-        write!(f, "{name}")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,13 +98,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_module_scope() {
-        assert!(ScopeType::Module.is_module_scope());
-        assert!(ScopeType::Program.is_module_scope());
-        assert!(!ScopeType::If.is_module_scope());
-    }
-
-    #[test]
     fn test_is_fypp_scope() {
         assert!(ScopeType::FyppIf.is_fypp_scope());
         assert!(!ScopeType::If.is_fypp_scope());
@@ -175,11 +112,5 @@ mod tests {
         assert!(ScopeType::is_fypp_scope_index(21)); // FyppMute
         assert!(!ScopeType::is_fypp_scope_index(22)); // Out of range
         assert!(!ScopeType::is_fypp_scope_index(0)); // If
-    }
-
-    #[test]
-    fn test_display() {
-        assert_eq!(format!("{}", ScopeType::If), "IF");
-        assert_eq!(format!("{}", ScopeType::Subroutine), "SUBROUTINE");
     }
 }
