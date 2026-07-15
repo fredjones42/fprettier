@@ -2247,3 +2247,41 @@ end subroutine test
         lines[5]
     );
 }
+
+#[test]
+fn test_scope_opener_after_semicolon() {
+    // Regression test: a scope opener after a semicolon must open its scope
+    // even when the first statement on the line is not an opener.
+    // Previously "x=i; if(x>1)then" opened no IF scope, so the later
+    // "end if" popped the DO scope and every following END rendered one
+    // level too deep.
+    let input = "do i=1,3\nx=i; if(x>1)then\ny=2\nend if\nend do\n";
+    let config = Config::default();
+
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+    format_file(reader, &mut output, &config, "test.f90").unwrap();
+
+    let result = String::from_utf8(output).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+
+    // y = 2 sits inside both the DO and the IF (two levels deep)
+    assert!(
+        lines[2].starts_with("        y"),
+        "body should be indented under DO and IF: {:?}",
+        lines[2]
+    );
+    // end if dedents to the semicolon line's level
+    assert!(
+        lines[3].starts_with("    end if"),
+        "end if should dedent to IF level: {:?}",
+        lines[3]
+    );
+    // end do dedents to column 0
+    assert!(
+        lines[4].starts_with("end do"),
+        "end do should dedent to column 0: {:?}",
+        lines[4]
+    );
+}

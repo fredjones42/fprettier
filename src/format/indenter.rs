@@ -253,13 +253,14 @@ impl F90Indenter {
             // Push new scope with appropriate indentation
             // relative_indent: 0 for aligned blocks, indent_size otherwise
             self.push_scope(scope, line_indent, params.relative_indent);
+        }
 
-            // Push additional scopes found after semicolons
-            // Each additional scope adds another level of indentation
-            for scope in additional_scopes {
-                let current_indent = *self.indent_storage.last().unwrap_or(&0);
-                self.push_scope(scope, current_indent, params.continuation_indent);
-            }
+        // Push additional scopes found after semicolons (even when part 0
+        // opened no scope, e.g. "x = 1; if (y) then").
+        // Each additional scope adds another level of indentation
+        for scope in additional_scopes {
+            let current_indent = *self.indent_storage.last().unwrap_or(&0);
+            self.push_scope(scope, current_indent, params.continuation_indent);
         }
 
         self.initial = false;
@@ -433,7 +434,9 @@ impl F90Indenter {
 
         // Check for additional scope openers after semicolons
         // Split by semicolon and check each part (except the first which was checked above)
-        if new_scope.is_some() && filtered_line.contains(';') {
+        // Scan regardless of whether part 0 opened a scope: a statement like
+        // "x = 1; if (y) then" opens an IF scope after the semicolon.
+        if filtered_line.contains(';') {
             for part in parts.iter().skip(1) {
                 let part_trimmed = part.trim();
                 for (scope_idx, parser_opt) in self.parser.opening.iter().enumerate() {
