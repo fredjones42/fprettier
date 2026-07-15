@@ -18,7 +18,7 @@ pub mod replacements;
 pub mod whitespace;
 
 pub use aligner::F90Aligner;
-pub use case_convert::{convert_case, CaseSettings};
+pub use case_convert::{convert_case, CaseMode, CaseSettings};
 pub use continuation::{
     get_manual_alignment, prepend_ampersands, remove_pre_ampersands, should_auto_align,
     PreAmpersandResult,

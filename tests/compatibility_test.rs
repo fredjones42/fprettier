@@ -9,6 +9,7 @@
 use std::fs;
 use std::io::{BufReader, Cursor};
 
+use fprettier::format::CaseMode;
 use fprettier::process::format_file;
 use fprettier::Config;
 
@@ -1987,7 +1988,7 @@ fn test_compat_relation_replacement_c() {
 /// Test swap case for keywords (ported from `test_swap_case`)
 #[test]
 fn test_compat_swap_case_keywords() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let tests = [
         ("MODULE exAmple", "module exAmple"),
@@ -2002,11 +2003,11 @@ fn test_compat_swap_case_keywords() {
         ("PURE SUBROUTINE mypure()", "pure subroutine mypure()"),
     ];
 
-    let mut case_dict = HashMap::new();
-    case_dict.insert("keywords".to_string(), 1); // lowercase
-    case_dict.insert("procedures".to_string(), 1); // lowercase
-    case_dict.insert("operators".to_string(), 1); // lowercase
-    case_dict.insert("types".to_string(), 2); // uppercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("keywords".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("procedures".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("operators".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("types".to_string(), CaseMode::Upper); // uppercase
 
     let config = Config {
         impose_whitespace: true,
@@ -2114,18 +2115,18 @@ fn test_compat_space_before_string_literal() {
 /// This file uses the --case annotation to convert keywords to lowercase
 #[test]
 fn test_example_swapcase_compatibility() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = get_example_path("in", "example_swapcase.f90");
     let expected = get_example_path("out", "example_swapcase.f90");
 
     // The file has annotation: ! fprettier: --case 1 1 1 1
     // which means lowercase for keywords, procedures, operators, and types
-    let mut case_dict = HashMap::new();
-    case_dict.insert("keywords".to_string(), 1); // lowercase
-    case_dict.insert("procedures".to_string(), 1); // lowercase
-    case_dict.insert("operators".to_string(), 1); // lowercase
-    case_dict.insert("types".to_string(), 1); // lowercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("keywords".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("procedures".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("operators".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("types".to_string(), CaseMode::Lower); // lowercase
 
     let config = Config {
         impose_whitespace: true,
@@ -2408,7 +2409,7 @@ fn test_compat_fypp_debug_code() {
 /// Test swap case for intrinsic function calls (ported from `test_swap_case`)
 #[test]
 fn test_compat_swap_case_intrinsics() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let tests = [
         (
@@ -2427,11 +2428,11 @@ fn test_compat_swap_case_intrinsics() {
         ),
     ];
 
-    let mut case_dict = HashMap::new();
-    case_dict.insert("keywords".to_string(), 1); // lowercase
-    case_dict.insert("procedures".to_string(), 1); // lowercase
-    case_dict.insert("operators".to_string(), 1); // lowercase
-    case_dict.insert("types".to_string(), 2); // uppercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("keywords".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("procedures".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("operators".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("types".to_string(), CaseMode::Upper); // uppercase
 
     let config = Config {
         impose_whitespace: true,
@@ -2456,7 +2457,7 @@ fn test_compat_swap_case_intrinsics() {
 /// are converted to uppercase when types=2.
 #[test]
 fn test_compat_swap_case_kind_suffixes() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     // Convert all type suffixes and exponents to uppercase when types=2
     let tests = [
@@ -2503,11 +2504,11 @@ fn test_compat_swap_case_kind_suffixes() {
         ),
     ];
 
-    let mut case_dict = HashMap::new();
-    case_dict.insert("keywords".to_string(), 1); // lowercase
-    case_dict.insert("procedures".to_string(), 1); // lowercase
-    case_dict.insert("operators".to_string(), 1); // lowercase
-    case_dict.insert("types".to_string(), 2); // uppercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("keywords".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("procedures".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("operators".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("types".to_string(), CaseMode::Upper); // uppercase
 
     let config = Config {
         impose_whitespace: true,
@@ -2530,7 +2531,7 @@ fn test_compat_swap_case_kind_suffixes() {
 /// Test swap case for CHARACTER with string parameters (ported from `test_swap_case`)
 #[test]
 fn test_compat_swap_case_character() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let tests = [
         (
@@ -2543,11 +2544,11 @@ fn test_compat_swap_case_character() {
         ),
     ];
 
-    let mut case_dict = HashMap::new();
-    case_dict.insert("keywords".to_string(), 1); // lowercase
-    case_dict.insert("procedures".to_string(), 1); // lowercase
-    case_dict.insert("operators".to_string(), 1); // lowercase
-    case_dict.insert("types".to_string(), 2); // uppercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("keywords".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("procedures".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("operators".to_string(), CaseMode::Lower); // lowercase
+    case_dict.insert("types".to_string(), CaseMode::Upper); // uppercase
 
     let config = Config {
         impose_whitespace: true,
@@ -2662,12 +2663,12 @@ fn test_compat_relation_replacement_continuation() {
 /// Test declaration with whitespace-decl=0 (ported from `test_decl`)
 #[test]
 fn test_compat_decl_whitespace_zero() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "integer, dimension(:)    ::     a\n";
     let expected = "integer, dimension(:)::a\n";
 
-    let mut whitespace_dict = HashMap::new();
+    let mut whitespace_dict = BTreeMap::new();
     whitespace_dict.insert("decl".to_string(), false);
 
     let config = Config {

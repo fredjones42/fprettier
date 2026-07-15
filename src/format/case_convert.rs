@@ -5,7 +5,7 @@
 //! - 1: lowercase
 //! - 2: uppercase
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -415,20 +415,39 @@ static NUMERIC_EXP_KIND_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([\d.]*[dDeE])([+-]?\d+)_(\w+)$").unwrap());
 
 /// Case conversion mode
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaseMode {
     NoChange = 0,
     Lower = 1,
     Upper = 2,
 }
 
-impl From<i32> for CaseMode {
-    fn from(value: i32) -> Self {
+impl TryFrom<u8> for CaseMode {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            1 => CaseMode::Lower,
-            2 => CaseMode::Upper,
-            _ => CaseMode::NoChange,
+            0 => Ok(CaseMode::NoChange),
+            1 => Ok(CaseMode::Lower),
+            2 => Ok(CaseMode::Upper),
+            _ => Err(()),
         }
+    }
+}
+
+/// Deserialize from the documented integer encoding (0=none, 1=lower, 2=upper),
+/// rejecting anything else at the parse boundary.
+impl<'de> serde::Deserialize<'de> for CaseMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        CaseMode::try_from(value).map_err(|()| {
+            serde::de::Error::custom(format!(
+                "invalid case mode {value}, expected 0 (none), 1 (lower), or 2 (upper)"
+            ))
+        })
     }
 }
 
@@ -455,15 +474,16 @@ impl Default for CaseSettings {
 }
 
 impl CaseSettings {
-    /// Create from a `HashMap` (like `Config.case_dict`)
+    /// Create from a `BTreeMap` (like `Config.case_dict`)
     #[must_use]
-    pub fn from_dict(dict: &HashMap<String, i32>) -> Self {
+    pub fn from_dict(dict: &BTreeMap<String, CaseMode>) -> Self {
+        let get = |key| dict.get(key).copied().unwrap_or(CaseMode::NoChange);
         Self {
-            keywords: CaseMode::from(*dict.get("keywords").unwrap_or(&0)),
-            procedures: CaseMode::from(*dict.get("procedures").unwrap_or(&0)),
-            operators: CaseMode::from(*dict.get("operators").unwrap_or(&0)),
-            constants: CaseMode::from(*dict.get("constants").unwrap_or(&0)),
-            types: CaseMode::from(*dict.get("types").unwrap_or(&0)),
+            keywords: get("keywords"),
+            procedures: get("procedures"),
+            operators: get("operators"),
+            constants: get("constants"),
+            types: get("types"),
         }
     }
 
@@ -793,11 +813,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_case_mode_from_i32() {
-        assert_eq!(CaseMode::from(0), CaseMode::NoChange);
-        assert_eq!(CaseMode::from(1), CaseMode::Lower);
-        assert_eq!(CaseMode::from(2), CaseMode::Upper);
-        assert_eq!(CaseMode::from(99), CaseMode::NoChange);
+    fn test_case_mode_try_from() {
+        assert_eq!(CaseMode::try_from(0), Ok(CaseMode::NoChange));
+        assert_eq!(CaseMode::try_from(1), Ok(CaseMode::Lower));
+        assert_eq!(CaseMode::try_from(2), Ok(CaseMode::Upper));
+        assert_eq!(CaseMode::try_from(99), Err(()));
     }
 
     #[test]
@@ -867,9 +887,9 @@ mod tests {
 
     #[test]
     fn test_case_settings_from_dict() {
-        let mut dict = HashMap::new();
-        dict.insert("keywords".to_string(), 1);
-        dict.insert("procedures".to_string(), 2);
+        let mut dict = BTreeMap::new();
+        dict.insert("keywords".to_string(), CaseMode::Lower);
+        dict.insert("procedures".to_string(), CaseMode::Upper);
 
         let settings = CaseSettings::from_dict(&dict);
         assert_eq!(settings.keywords, CaseMode::Lower);

@@ -6,6 +6,8 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command};
 
+use crate::format::CaseMode;
+
 /// Fine-grained whitespace options: (CLI arg name, `whitespace_dict` key, help text)
 const WS_OPTS: [(&str, &str, &str); 11] = [
     (
@@ -127,8 +129,7 @@ pub struct CliArgs {
     pub silent: bool,
 
     /// Case conversion settings [keywords, procedures, operators, constants]
-    /// Each value: 0=no change, 1=lowercase, 2=uppercase
-    pub case: Option<[i32; 4]>,
+    pub case: Option<[CaseMode; 4]>,
 
     /// Number of parallel jobs (0 = auto, 1 = sequential)
     pub jobs: Option<usize>,
@@ -312,7 +313,7 @@ pub fn build_cli() -> Command {
                 .help("Enable case formatting: 4 values for keywords, procedures, operators, constants (0=none, 1=lower, 2=upper)")
                 .value_name("NUM")
                 .num_args(4)
-                .value_parser(clap::value_parser!(i32)),
+                .value_parser(clap::value_parser!(u8).range(0..=2)),
         )
         .arg(
             Arg::new("jobs")
@@ -357,8 +358,10 @@ where
 
 /// Convert clap `ArgMatches` to `CliArgs`
 fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
-    let case = matches.get_many::<i32>("case").map(|vals| {
-        let v: Vec<i32> = vals.copied().collect();
+    let case = matches.get_many::<u8>("case").map(|vals| {
+        let v: Vec<CaseMode> = vals
+            .map(|&n| CaseMode::try_from(n).expect("clap validated range 0..=2"))
+            .collect();
         [v[0], v[1], v[2], v[3]]
     });
 

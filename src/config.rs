@@ -9,10 +9,12 @@
 //! Config files are auto-discovered by searching parent directories from the file
 //! being formatted up to the filesystem root, plus the user's home directory.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+
+use crate::format::CaseMode;
 
 /// Config file name to search for
 const CONFIG_FILE_NAME: &str = "fprettier.toml";
@@ -51,7 +53,7 @@ pub struct Config {
     pub whitespace: u8,
 
     /// Fine-grained whitespace control
-    pub whitespace_dict: HashMap<String, bool>,
+    pub whitespace_dict: BTreeMap<String, bool>,
 
     /// Impose indentation (default: true)
     pub impose_indent: bool,
@@ -75,7 +77,7 @@ pub struct Config {
     pub format_decl: bool,
 
     /// Case conversion dictionary
-    pub case_dict: HashMap<String, i32>,
+    pub case_dict: BTreeMap<String, CaseMode>,
 
     /// Number of spaces before comments (default: 1)
     pub comment_spacing: usize,
@@ -99,7 +101,7 @@ struct PartialConfig {
     pub line_length: Option<usize>,
     pub whitespace: Option<u8>,
     #[serde(default)]
-    pub whitespace_dict: HashMap<String, bool>,
+    pub whitespace_dict: BTreeMap<String, bool>,
     pub impose_indent: Option<bool>,
     pub impose_whitespace: Option<bool>,
     pub strict_indent: Option<bool>,
@@ -108,7 +110,7 @@ struct PartialConfig {
     pub normalize_comment_spacing: Option<bool>,
     pub format_decl: Option<bool>,
     #[serde(default)]
-    pub case_dict: HashMap<String, i32>,
+    pub case_dict: BTreeMap<String, CaseMode>,
     pub comment_spacing: Option<usize>,
     pub enable_replacements: Option<bool>,
     pub c_relations: Option<bool>,
@@ -120,7 +122,7 @@ impl Default for Config {
             indent: 4,
             line_length: 132,
             whitespace: 2,
-            whitespace_dict: HashMap::new(),
+            whitespace_dict: BTreeMap::new(),
             impose_indent: true,
             impose_whitespace: true,
             strict_indent: false,
@@ -128,7 +130,7 @@ impl Default for Config {
             indent_mod: true,
             normalize_comment_spacing: false,
             format_decl: false,
-            case_dict: HashMap::new(),
+            case_dict: BTreeMap::new(),
             comment_spacing: 1,
             enable_replacements: false,
             c_relations: false,
@@ -428,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_whitespace_dict_override() {
-        let mut dict = HashMap::new();
+        let mut dict = BTreeMap::new();
         dict.insert("plusminus".to_string(), false);
         dict.insert("multdiv".to_string(), true);
 

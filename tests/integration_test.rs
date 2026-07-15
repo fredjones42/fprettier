@@ -7,7 +7,7 @@
 
 use std::io::{BufReader, Cursor};
 
-use fprettier::format::{F90Indenter, IndentParams};
+use fprettier::format::{CaseMode, F90Indenter, IndentParams};
 use fprettier::process::format_file;
 use fprettier::scope::build_scope_parser;
 use fprettier::Config;
@@ -650,11 +650,11 @@ fn test_binary_plusminus_on_continuation() {
 /// Test case conversion - keywords to uppercase
 #[test]
 fn test_case_conversion_keywords_upper() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "if (x > 0) then\ny = 1\nend if\n";
-    let mut case_dict = HashMap::new();
-    case_dict.insert("keywords".to_string(), 2); // Uppercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("keywords".to_string(), CaseMode::Upper); // Uppercase
 
     let config = Config {
         impose_indent: false,
@@ -686,11 +686,11 @@ fn test_case_conversion_keywords_upper() {
 /// Test case conversion - procedures to lowercase
 #[test]
 fn test_case_conversion_procedures_lower() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "x = SIN(y) + COS(z)\n";
-    let mut case_dict = HashMap::new();
-    case_dict.insert("procedures".to_string(), 1); // Lowercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("procedures".to_string(), CaseMode::Lower); // Lowercase
 
     let config = Config {
         impose_indent: false,
@@ -715,11 +715,11 @@ fn test_case_conversion_procedures_lower() {
 /// Test case conversion - operators to uppercase
 #[test]
 fn test_case_conversion_operators_upper() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "if (x .and. y .or. z) then\nend if\n";
-    let mut case_dict = HashMap::new();
-    case_dict.insert("operators".to_string(), 2); // Uppercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("operators".to_string(), CaseMode::Upper); // Uppercase
 
     let config = Config {
         impose_indent: false,
@@ -750,13 +750,13 @@ fn test_case_conversion_operators_upper() {
 /// Test case conversion combined with whitespace formatting
 #[test]
 fn test_case_conversion_with_whitespace() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "if(x.and.y)then\nx=SIN(y)\nend if\n";
-    let mut case_dict = HashMap::new();
-    case_dict.insert("keywords".to_string(), 2); // Keywords uppercase
-    case_dict.insert("procedures".to_string(), 1); // Procedures lowercase
-    case_dict.insert("operators".to_string(), 2); // Operators uppercase
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("keywords".to_string(), CaseMode::Upper); // Keywords uppercase
+    case_dict.insert("procedures".to_string(), CaseMode::Lower); // Procedures lowercase
+    case_dict.insert("operators".to_string(), CaseMode::Upper); // Operators uppercase
 
     let config = Config {
         impose_indent: false,
@@ -978,12 +978,12 @@ fn test_comment_spacing_option() {
 /// Test --whitespace-comma overrides the default from whitespace level
 #[test]
 fn test_whitespace_comma_override() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "call foo(a,b,c)\n";
 
     // Level 0 normally has comma=false, but we override to true
-    let mut whitespace_dict = HashMap::new();
+    let mut whitespace_dict = BTreeMap::new();
     whitespace_dict.insert("comma".to_string(), true);
 
     let config = Config {
@@ -1011,12 +1011,12 @@ fn test_whitespace_comma_override() {
 /// Test --whitespace-comma=false disables comma spacing
 #[test]
 fn test_whitespace_comma_disable() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "call foo(a, b, c)\n";
 
     // Level 2 normally has comma=true, but we override to false
-    let mut whitespace_dict = HashMap::new();
+    let mut whitespace_dict = BTreeMap::new();
     whitespace_dict.insert("comma".to_string(), false);
 
     let config = Config {
@@ -1044,12 +1044,12 @@ fn test_whitespace_comma_disable() {
 /// Test --whitespace-concat enables string concatenation spacing
 #[test]
 fn test_whitespace_concat_enable() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "str = a//b//c\n";
 
     // Level 2 normally has concat=false, but we override to true
-    let mut whitespace_dict = HashMap::new();
+    let mut whitespace_dict = BTreeMap::new();
     whitespace_dict.insert("concat".to_string(), true);
 
     let config = Config {
@@ -1077,12 +1077,12 @@ fn test_whitespace_concat_enable() {
 /// Test --whitespace-type enables type selector spacing
 #[test]
 fn test_whitespace_type_enable() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "x = mytype%field\n";
 
     // Level 2 normally has type=false, but we override to true
-    let mut whitespace_dict = HashMap::new();
+    let mut whitespace_dict = BTreeMap::new();
     whitespace_dict.insert("type".to_string(), true);
 
     let config = Config {
@@ -1110,12 +1110,12 @@ fn test_whitespace_type_enable() {
 /// Test --whitespace-plusminus=false disables plus/minus spacing
 #[test]
 fn test_whitespace_plusminus_disable() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "x = a + b - c\n";
 
     // Level 2 normally has plusminus=true, but we override to false
-    let mut whitespace_dict = HashMap::new();
+    let mut whitespace_dict = BTreeMap::new();
     whitespace_dict.insert("plusminus".to_string(), false);
 
     let config = Config {
@@ -1143,12 +1143,12 @@ fn test_whitespace_plusminus_disable() {
 /// Test multiple fine-grained overrides together
 #[test]
 fn test_multiple_whitespace_overrides() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "x = a + b, c < d\n";
 
     // Start with level 0 (all off) and enable specific ones
-    let mut whitespace_dict = HashMap::new();
+    let mut whitespace_dict = BTreeMap::new();
     whitespace_dict.insert("comma".to_string(), true);
     whitespace_dict.insert("assignments".to_string(), true);
     whitespace_dict.insert("relational".to_string(), true);
@@ -2049,12 +2049,12 @@ fn test_cpp_lines_no_whitespace_formatting() {
 /// Test that C preprocessor lines skip case conversion
 #[test]
 fn test_cpp_lines_no_case_conversion() {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     let input = "#define MyMacro(x) x\n";
 
-    let mut case_dict = HashMap::new();
-    case_dict.insert("keywords".to_string(), 1); // uppercase keywords
+    let mut case_dict = BTreeMap::new();
+    case_dict.insert("keywords".to_string(), CaseMode::Lower); // uppercase keywords
 
     let config = Config {
         impose_indent: false,

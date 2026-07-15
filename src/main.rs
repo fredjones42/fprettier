@@ -476,7 +476,7 @@ fn apply_directive_overrides(config: &mut Config, contents: &[u8], debug: bool, 
         }
         for (key, value) in overrides.get_case_dict() {
             if debug {
-                eprintln!("[DEBUG]   Directive override: case[{key}] = {value}");
+                eprintln!("[DEBUG]   Directive override: case[{key}] = {value:?}");
             }
             config.case_dict.insert(key, value);
         }

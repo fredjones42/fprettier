@@ -3,10 +3,12 @@
 //! Supports in-file configuration overrides via special comments:
 //! `! fprettier: --indent 4 --no-whitespace`
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
+
+use crate::format::CaseMode;
 
 /// Pattern to match fprettier directives
 static FPRETTIER_DIRECTIVE_RE: LazyLock<Regex> =
@@ -21,10 +23,10 @@ pub struct DirectiveOverrides {
     pub whitespace: Option<u8>,
     pub impose_indent: Option<bool>,
     pub impose_whitespace: Option<bool>,
-    pub case_keywords: Option<i32>,
-    pub case_procedures: Option<i32>,
-    pub case_operators: Option<i32>,
-    pub case_constants: Option<i32>,
+    pub case_keywords: Option<CaseMode>,
+    pub case_procedures: Option<CaseMode>,
+    pub case_operators: Option<CaseMode>,
+    pub case_constants: Option<CaseMode>,
 }
 
 impl DirectiveOverrides {
@@ -42,10 +44,10 @@ impl DirectiveOverrides {
             && self.case_constants.is_none()
     }
 
-    /// Get case overrides as a `HashMap` (for use with `CaseSettings::from_dict`)
+    /// Get case overrides as a `BTreeMap` (for use with `CaseSettings::from_dict`)
     #[must_use]
-    pub fn get_case_dict(&self) -> HashMap<String, i32> {
-        let mut dict = HashMap::new();
+    pub fn get_case_dict(&self) -> BTreeMap<String, CaseMode> {
+        let mut dict = BTreeMap::new();
         if let Some(v) = self.case_keywords {
             dict.insert("keywords".to_string(), v);
         }
@@ -127,18 +129,16 @@ fn parse_directive_args(args_str: &str) -> Option<DirectiveOverrides> {
             "--case" => {
                 // Format: --case 1 2 0 0 (keywords, procedures, operators, constants)
                 // Try to read up to 4 values from subsequent tokens
-                if i + 1 < tokens.len() {
-                    overrides.case_keywords = tokens[i + 1].parse().ok();
-                }
-                if i + 2 < tokens.len() {
-                    overrides.case_procedures = tokens[i + 2].parse().ok();
-                }
-                if i + 3 < tokens.len() {
-                    overrides.case_operators = tokens[i + 3].parse().ok();
-                }
-                if i + 4 < tokens.len() {
-                    overrides.case_constants = tokens[i + 4].parse().ok();
-                }
+                // Invalid values are ignored, consistent with the lenient directive parser
+                let parse_mode = |tok: &&str| -> Option<CaseMode> {
+                    tok.parse::<u8>()
+                        .ok()
+                        .and_then(|v| CaseMode::try_from(v).ok())
+                };
+                overrides.case_keywords = tokens.get(i + 1).and_then(parse_mode);
+                overrides.case_procedures = tokens.get(i + 2).and_then(parse_mode);
+                overrides.case_operators = tokens.get(i + 3).and_then(parse_mode);
+                overrides.case_constants = tokens.get(i + 4).and_then(parse_mode);
                 // Skip the values we consumed (up to 4)
                 let mut skip = 0;
                 for j in 1..=4 {
@@ -223,10 +223,10 @@ mod tests {
     #[test]
     fn test_parse_directive_case() {
         let overrides = parse_directive("! fprettier: --case 1 2 0 1").unwrap();
-        assert_eq!(overrides.case_keywords, Some(1));
-        assert_eq!(overrides.case_procedures, Some(2));
-        assert_eq!(overrides.case_operators, Some(0));
-        assert_eq!(overrides.case_constants, Some(1));
+        assert_eq!(overrides.case_keywords, Some(CaseMode::Lower));
+        assert_eq!(overrides.case_procedures, Some(CaseMode::Upper));
+        assert_eq!(overrides.case_operators, Some(CaseMode::NoChange));
+        assert_eq!(overrides.case_constants, Some(CaseMode::Lower));
     }
 
     #[test]
