@@ -31,19 +31,19 @@ fn replace_fortran_to_c(line: &str) -> String {
 
     // Process character by character, looking for Fortran-style operators
     let mut result = String::with_capacity(line.len());
-    let chars: Vec<char> = line.chars().collect();
+    let chars: Vec<(usize, char)> = line.char_indices().collect();
     let mut i = 0;
 
     while i < chars.len() {
         // Check if this position is safe to modify
-        let byte_pos = line.char_indices().nth(i).map_or(0, |(p, _)| p);
+        let byte_pos = chars[i].0;
         let is_safe = byte_pos < safe_positions.len() && safe_positions[byte_pos];
 
-        if is_safe && chars[i] == '.' {
+        if is_safe && chars[i].1 == '.' {
             // Try to match Fortran operators (case-insensitive)
             // Need at least 4 characters for .xx.
             if i + 3 < chars.len() {
-                let four_chars: String = chars[i..i + 4].iter().collect();
+                let four_chars: String = chars[i..i + 4].iter().map(|&(_, c)| c).collect();
                 let four_lower = four_chars.to_lowercase();
 
                 match four_lower.as_str() {
@@ -83,7 +83,7 @@ fn replace_fortran_to_c(line: &str) -> String {
         }
 
         // Copy character as-is
-        result.push(chars[i]);
+        result.push(chars[i].1);
         i += 1;
     }
 
@@ -97,18 +97,18 @@ fn replace_c_to_fortran(line: &str) -> String {
 
     // Process character by character, looking for C-style operators
     let mut result = String::with_capacity(line.len() + 20);
-    let chars: Vec<char> = line.chars().collect();
+    let chars: Vec<(usize, char)> = line.char_indices().collect();
     let mut i = 0;
 
     while i < chars.len() {
         // Check if this position is safe to modify
-        let byte_pos = line.char_indices().nth(i).map_or(0, |(p, _)| p);
+        let byte_pos = chars[i].0;
         let is_safe = byte_pos < safe_positions.len() && safe_positions[byte_pos];
 
         if is_safe {
             // Check for two-character operators first
             if i + 1 < chars.len() {
-                let two_chars: String = chars[i..=i + 1].iter().collect();
+                let two_chars: String = chars[i..=i + 1].iter().map(|&(_, c)| c).collect();
                 match two_chars.as_str() {
                     "<=" => {
                         result.push_str(".le.");
@@ -141,7 +141,7 @@ fn replace_c_to_fortran(line: &str) -> String {
             }
 
             // Check for single-character operators
-            match chars[i] {
+            match chars[i].1 {
                 '<' => {
                     // Check it's not part of <= (already handled above)
                     result.push_str(".lt.");
@@ -159,7 +159,7 @@ fn replace_c_to_fortran(line: &str) -> String {
         }
 
         // Copy character as-is
-        result.push(chars[i]);
+        result.push(chars[i].1);
         i += 1;
     }
 

@@ -164,7 +164,7 @@ impl F90Aligner {
                 };
 
                 if !is_relational {
-                    let is_pointer = pos + 1 < line.len() && line.chars().nth(pos + 1) == Some('>');
+                    let is_pointer = pos + 1 < line.len() && line[pos + 1..].starts_with('>');
                     equals_position = pos + 1;
 
                     // Don't align if assignment operator directly before line break
@@ -192,8 +192,7 @@ impl F90Aligner {
             }
 
             // Handle USE statement :
-            if is_use && ch == ':' && pos + 1 < line.len() && line.chars().nth(pos + 1) != Some(':')
-            {
+            if is_use && ch == ':' && pos + 1 < line.len() && !line[pos + 1..].starts_with(':') {
                 // Don't align if : directly before line break
                 // Check whole line for ": + whitespace + &" pattern
                 if !USE_BEFORE_BREAK_RE.is_match(line) {
