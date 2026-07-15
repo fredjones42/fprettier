@@ -57,6 +57,50 @@ impl<R: BufRead> InputStream<R> {
         }
     }
 
+    /// Read and normalize the next physical line.
+    ///
+    /// Converts tabs to spaces, strips the line ending, prepends `&` to lines
+    /// that continue a multiline string, and splits off any OMP conditional
+    /// prefix. Returns `(line, omp_prefix)`, or None at EOF.
+    fn read_physical_line(&mut self) -> Result<Option<(String, String)>> {
+        let mut raw_line = String::new();
+        if self.reader.read_line(&mut raw_line)? == 0 {
+            return Ok(None);
+        }
+        self.line_number += 1;
+
+        // Convert tabs to 8 spaces
+        raw_line = raw_line.replace('\t', "        ");
+        // Remove trailing newline
+        if raw_line.ends_with('\n') {
+            raw_line.pop();
+            if raw_line.ends_with('\r') {
+                raw_line.pop();
+            }
+        }
+
+        // Multiline string support: if we're inside a string and the line
+        // doesn't start with &, prepend & to continue the string
+        if self.string_state != StringDelimiter::None && !raw_line.trim_start().starts_with('&') {
+            raw_line = format!("&{raw_line}");
+        }
+
+        // Check for OMP conditional prefix and strip it temporarily
+        let omp_prefix = if let Some(caps) = OMP_COND_RE.captures(&raw_line) {
+            let prefix = caps
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            // Remove the OMP prefix from the line
+            raw_line = OMP_COND_RE.replace(&raw_line, "").to_string();
+            prefix
+        } else {
+            String::new()
+        };
+
+        Ok(Some((raw_line, omp_prefix)))
+    }
+
     /// Read the next logical Fortran line
     ///
     /// Returns None at EOF
@@ -72,52 +116,12 @@ impl<R: BufRead> InputStream<R> {
         self.string_state = StringDelimiter::None;
 
         loop {
-            // Read next physical line
-            let mut raw_line = String::new();
-            let (mut line, what_omp) = match self.reader.read_line(&mut raw_line) {
-                Ok(0) => {
-                    // EOF
-                    if lines.is_empty() {
-                        return Ok(None);
-                    }
-                    break;
+            let Some((mut line, what_omp)) = self.read_physical_line()? else {
+                // EOF
+                if lines.is_empty() {
+                    return Ok(None);
                 }
-                Ok(_) => {
-                    self.line_number += 1;
-                    // Convert tabs to 8 spaces
-                    raw_line = raw_line.replace('\t', "        ");
-                    // Remove trailing newline
-                    if raw_line.ends_with('\n') {
-                        raw_line.pop();
-                        if raw_line.ends_with('\r') {
-                            raw_line.pop();
-                        }
-                    }
-
-                    // Multiline string support: if we're inside a string and the line
-                    // doesn't start with &, prepend & to continue the string
-                    if self.string_state != StringDelimiter::None
-                        && !raw_line.trim_start().starts_with('&')
-                    {
-                        raw_line = format!("&{raw_line}");
-                    }
-
-                    // Check for OMP conditional prefix and strip it temporarily
-                    let omp_prefix = if let Some(caps) = OMP_COND_RE.captures(&raw_line) {
-                        let prefix = caps
-                            .get(1)
-                            .map(|m| m.as_str().to_string())
-                            .unwrap_or_default();
-                        // Remove the OMP prefix from the line
-                        raw_line = OMP_COND_RE.replace(&raw_line, "").to_string();
-                        prefix
-                    } else {
-                        String::new()
-                    };
-
-                    (raw_line, omp_prefix)
-                }
-                Err(e) => return Err(e.into()),
+                break;
             };
 
             // Remember the OMP prefix from the first line
