@@ -650,47 +650,20 @@ pub fn convert_case(line: &str, settings: &CaseSettings) -> String {
 
                 // For procedures, check if followed by '('
                 // Only convert intrinsics when called as procedures
-                let is_procedure_call = if F90_PROCEDURES_RE.is_match(token) {
-                    // Look ahead for '(' - skip whitespace
-                    let mut found_paren = false;
-                    for next in tokens.iter().skip(i + 1) {
-                        if next.trim().is_empty() || next == "\n" {
-                            continue;
-                        }
-                        found_paren = next == "(";
-                        break;
-                    }
-                    found_paren
-                } else {
-                    false
-                };
+                let is_procedure_call = F90_PROCEDURES_RE.is_match(token)
+                    && next_significant_token(&tokens, i) == Some("(");
 
                 // Check if this is "kind" followed by "="
                 if token.eq_ignore_ascii_case("kind") {
-                    // Look ahead for '='
-                    for next in tokens.iter().skip(i + 1) {
-                        if next.trim().is_empty() {
-                            continue;
-                        }
-                        if next == "=" {
-                            after_kind_equals = true;
-                        }
-                        break;
-                    }
+                    after_kind_equals = next_significant_token(&tokens, i) == Some("=");
                 }
 
                 // Also check if we're at "=" and the previous meaningful token was "kind"
-                if token == "=" {
-                    // Look back for "kind"
-                    for prev in tokens[..i].iter().rev() {
-                        if prev.trim().is_empty() {
-                            continue;
-                        }
-                        if prev.eq_ignore_ascii_case("kind") {
-                            after_kind_equals = true;
-                        }
-                        break;
-                    }
+                if token == "="
+                    && prev_significant_token(&tokens, i)
+                        .is_some_and(|prev| prev.eq_ignore_ascii_case("kind"))
+                {
+                    after_kind_equals = true;
                 }
 
                 // Convert the token
@@ -710,6 +683,23 @@ pub fn convert_case(line: &str, settings: &CaseSettings) -> String {
         .collect();
 
     result
+}
+
+/// The first token after index `i` that is not whitespace
+fn next_significant_token(tokens: &[String], i: usize) -> Option<&str> {
+    tokens[i + 1..]
+        .iter()
+        .map(String::as_str)
+        .find(|t| !t.trim().is_empty())
+}
+
+/// The last token before index `i` that is not whitespace
+fn prev_significant_token(tokens: &[String], i: usize) -> Option<&str> {
+    tokens[..i]
+        .iter()
+        .rev()
+        .map(String::as_str)
+        .find(|t| !t.trim().is_empty())
 }
 
 /// Split a string into tokens, preserving separators
