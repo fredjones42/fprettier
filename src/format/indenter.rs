@@ -34,6 +34,18 @@ impl IndentParams<'_> {
     }
 }
 
+/// Result of scanning a logical line for END statements
+struct EndDetection {
+    /// Any part of the line (including after semicolons) is an END statement
+    is_any: bool,
+    /// The leading END validly closed the innermost scope (already popped)
+    valid: bool,
+    /// Number of ENDs after semicolons that close outer scopes
+    additional_count: usize,
+    /// An END after a semicolon matched the current scope
+    valid_after_semicolon: bool,
+}
+
 /// `F90Indenter` tracks scope nesting and calculates indentation
 pub struct F90Indenter {
     /// Stack of open scope types
@@ -92,192 +104,26 @@ impl F90Indenter {
 
         // Check for scope closing (end) FIRST
         // This must be checked before NEW because patterns like SUBR_RE can match "end subroutine"
-        // Also detect multiple END statements on the same line (semicolon separated)
-        // For lines like "end do; end do", we need to check each part separately
-        let mut is_any_end_statement = false;
-        let mut valid_end = false;
-        let mut additional_end_count = 0;
-        let mut has_valid_end_after_semicolon = false;
-
-        for (part_idx, part) in parts.iter().enumerate() {
-            let part_check = format!("  {}", part.trim());
-
-            for (scope_idx, parser_opt) in self.parser.closing.iter().enumerate() {
-                if let Some(parser) = parser_opt {
-                    if parser.is_match(&part_check) {
-                        // Set flag if ANY part contains an END statement (not just part 0)
-                        // This prevents opening a new scope when there's a balanced
-                        // open/close on the same line (e.g., "do i=1,n; ...; end do")
-                        is_any_end_statement = true;
-
-                        if part_idx == 0 {
-                            // - If scopes is non-empty: ALWAYS pop, then check if matches
-                            // - If scopes is empty: valid_end = true
-                            if self.scope_storage.is_empty() {
-                                valid_end = true;
-                            } else {
-                                // Pop from scope_storage
-                                // Safe: we just verified scope_storage is not empty
-                                let popped_scope = self
-                                    .scope_storage
-                                    .pop()
-                                    .expect("scope_storage should be non-empty (checked above)");
-                                // Check if it matches
-                                // When indent_fypp=True and the popped scope was a fypp scope,
-                                // consider the END valid. This allows Fortran END statements
-                                // to close orphan fypp scopes.
-                                let popped_fypp_scope = popped_scope.is_fypp_scope();
-                                if !parser.spec
-                                    || popped_scope.as_index() == scope_idx
-                                    || (params.indent_fypp && popped_fypp_scope)
-                                {
-                                    valid_end = true;
-                                }
-                                // Note: we don't put it back
-                            }
-                        } else {
-                            // Additional END statements after semicolon
-                            // Check if this END is balanced by an opener on the same line
-                            // If yes, don't count it (they cancel out)
-                            let has_matching_opener = if let Some(opener_parser) =
-                                self.parser.opening.get(scope_idx).and_then(|p| p.as_ref())
-                            {
-                                opener_parser.is_match(&filtered_line)
-                            } else {
-                                false
-                            };
-
-                            if !has_matching_opener {
-                                // No matching opener on this line, so this END closes an outer scope
-                                // Check if this END matches the current scope (for indentation purposes)
-                                if !self.scope_storage.is_empty() {
-                                    let current_scope = self.scope_storage.last().copied();
-                                    if let Some(scope) = current_scope {
-                                        let popped_fypp_scope = scope.is_fypp_scope();
-                                        if !parser.spec
-                                            || scope.as_index() == scope_idx
-                                            || (params.indent_fypp && popped_fypp_scope)
-                                        {
-                                            has_valid_end_after_semicolon = true;
-                                        }
-                                    }
-                                }
-                                additional_end_count += 1;
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-        }
+        let end = self.detect_end_statements(&parts, &filtered_line, params.indent_fypp);
 
         // Check for scope continuation (e.g., ELSE, CASE, CONTAINS)
-        let mut is_continue = false;
-        // Track where to pop scopes for fypp continuation
-        let mut fypp_continue_pop_to: Option<usize> = None;
-        for (scope_idx, parser_opt) in self.parser.continue_.iter().enumerate() {
-            if let Some(parser) = parser_opt {
-                if parser.is_match(&filtered_line) {
-                    // For fypp continuation directives (#:else, #:elif, etc.),
-                    // we need to search the ENTIRE scope stack, not just the top.
-                    // This handles cases where Fortran scopes (like DO) are opened
-                    // inside a fypp block - the #:else should continue the fypp scope,
-                    // not the inner Fortran scope.
-                    let is_fypp_scope = ScopeType::is_fypp_scope_index(scope_idx);
+        let (is_continue, fypp_continue_pop_to) = self.detect_continuation(&filtered_line);
 
-                    if is_fypp_scope {
-                        // Search entire stack for matching fypp scope
-                        let mut found_idx = None;
-                        for (i, &scope) in self.scope_storage.iter().enumerate().rev() {
-                            if scope.as_index() == scope_idx {
-                                found_idx = Some(i);
-                                break;
-                            }
-                        }
-                        if let Some(idx) = found_idx {
-                            // Found matching fypp scope
-                            // Record position to pop inner scopes AFTER calculating indent
-                            // This way the continuation directive uses grandparent indent,
-                            // but subsequent lines will use the fypp body level
-                            is_continue = true;
-                            if self.scope_storage.len() > idx + 1 {
-                                fypp_continue_pop_to = Some(idx + 1);
-                            }
-                            break;
-                        }
-                    } else {
-                        // Regular Fortran continuation - check top of stack only
-                        if let Some(&current_scope) = self.scope_storage.last() {
-                            if current_scope.as_index() == scope_idx {
-                                is_continue = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Check for scope opening (new) LAST
-        // Skip if END statement (to avoid SUBR_RE matching "end subroutine")
-        let mut new_scope = None;
-        let mut additional_scopes: Vec<ScopeType> = Vec::new();
-
-        // Only check for new scope if this is NOT an end statement
-        // (scope_storage was already popped if it was an END)
-        if !is_any_end_statement {
-            for (scope_idx, parser_opt) in self.parser.opening.iter().enumerate() {
-                if let Some(parser) = parser_opt {
-                    if parser.is_match(&filtered_line) {
-                        // Special handling for WHERE (11) and FORALL (12):
-                        // Only open scope if nothing follows the closing parenthesis
-                        // e.g., "WHERE (x > 0)" opens scope, but "WHERE (x > 0) y = 1" doesn't
-                        if scope_idx == 11 || scope_idx == 12 {
-                            if Self::is_where_forall_block(&filtered_line) {
-                                new_scope = ScopeType::from_index(scope_idx);
-                            }
-                        } else {
-                            new_scope = ScopeType::from_index(scope_idx);
-                        }
-                        break;
-                    }
-                }
-            }
-
-            // Check for additional scope openers after semicolons
-            // Split by semicolon and check each part (except the first which was checked above)
-            if new_scope.is_some() && filtered_line.contains(';') {
-                for part in parts.iter().skip(1) {
-                    let part_trimmed = part.trim();
-                    for (scope_idx, parser_opt) in self.parser.opening.iter().enumerate() {
-                        if let Some(parser) = parser_opt {
-                            // Create a temporary string that looks like a line start
-                            let temp_line = format!("  {part_trimmed}");
-                            if parser.is_match(&temp_line) {
-                                // Special handling for WHERE (11) and FORALL (12) after semicolons
-                                if scope_idx == 11 || scope_idx == 12 {
-                                    if Self::is_where_forall_block(&temp_line) {
-                                        if let Some(scope) = ScopeType::from_index(scope_idx) {
-                                            additional_scopes.push(scope);
-                                        }
-                                    }
-                                } else if let Some(scope) = ScopeType::from_index(scope_idx) {
-                                    additional_scopes.push(scope);
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Check for scope opening (new) LAST - only if this is NOT an end
+        // statement (to avoid SUBR_RE matching "end subroutine";
+        // scope_storage was already popped if it was an END)
+        let (new_scope, additional_scopes) = if end.is_any {
+            (None, Vec::new())
+        } else {
+            self.detect_new_scopes(&parts, &filtered_line)
+        };
 
         // Calculate indent for this line
-        // Note: scope_storage was already popped if is_any_end_statement=true
+        // Note: scope_storage was already popped if the line is an END
         let line_indent = self.calculate_indent(
             is_continue,
-            is_any_end_statement,
-            valid_end || has_valid_end_after_semicolon,
+            end.is_any,
+            end.valid || end.valid_after_semicolon,
         );
 
         // For continuation lines, calculate alignment BEFORE updating scope stack
@@ -316,7 +162,7 @@ impl F90Indenter {
             // - NEW scopes with manual alignment: line_indent (first line's actual indent)
             // - NEW scopes without manual alignment: indents[-1] (current)
             // - Regular: indents[-1] (current)
-            let base_indent = if (is_any_end_statement && valid_end) || is_continue {
+            let base_indent = if (end.is_any && end.valid) || is_continue {
                 // For valid END and CONTINUE, use grandparent indent
                 if self.indent_storage.len() >= 2 {
                     self.indent_storage[self.indent_storage.len() - 2]
@@ -359,10 +205,10 @@ impl F90Indenter {
 
         // Update indent_storage AFTER calculating alignment
         // Note: scope_storage was already popped during END detection
-        if is_any_end_statement && (valid_end || has_valid_end_after_semicolon) {
-            // Only pop for part 0 END if valid_end is true (not just has_valid_end_after_semicolon)
+        if end.is_any && (end.valid || end.valid_after_semicolon) {
+            // Only pop for part 0 END if end.valid is true (not just end.valid_after_semicolon)
             // This prevents double-popping when the END is after a semicolon
-            if valid_end {
+            if end.valid {
                 if self.indent_storage.len() > 1 {
                     self.indent_storage.pop();
                 } else if let Some(last) = self.indent_storage.last_mut() {
@@ -371,7 +217,7 @@ impl F90Indenter {
             }
 
             // Pop additional END scopes found after semicolons
-            for _ in 0..additional_end_count {
+            for _ in 0..end.additional_count {
                 // Pop from scope_storage
                 if !self.scope_storage.is_empty() {
                     self.scope_storage.pop();
@@ -417,6 +263,202 @@ impl F90Indenter {
         }
 
         self.initial = false;
+    }
+
+    /// Scan the line for END statements and pop the scope stack for a
+    /// leading END. Checks each semicolon-separated part separately so
+    /// lines like "end do; end do" count every END.
+    fn detect_end_statements(
+        &mut self,
+        parts: &[&str],
+        filtered_line: &str,
+        indent_fypp: bool,
+    ) -> EndDetection {
+        let mut end = EndDetection {
+            is_any: false,
+            valid: false,
+            additional_count: 0,
+            valid_after_semicolon: false,
+        };
+
+        for (part_idx, part) in parts.iter().enumerate() {
+            let part_check = format!("  {}", part.trim());
+
+            for (scope_idx, parser_opt) in self.parser.closing.iter().enumerate() {
+                if let Some(parser) = parser_opt {
+                    if parser.is_match(&part_check) {
+                        // Set flag if ANY part contains an END statement (not just part 0)
+                        // This prevents opening a new scope when there's a balanced
+                        // open/close on the same line (e.g., "do i=1,n; ...; end do")
+                        end.is_any = true;
+
+                        if part_idx == 0 {
+                            // - If scopes is non-empty: ALWAYS pop, then check if matches
+                            // - If scopes is empty: the END is valid
+                            if self.scope_storage.is_empty() {
+                                end.valid = true;
+                            } else {
+                                // Pop from scope_storage
+                                // Safe: we just verified scope_storage is not empty
+                                let popped_scope = self
+                                    .scope_storage
+                                    .pop()
+                                    .expect("scope_storage should be non-empty (checked above)");
+                                // Check if it matches
+                                // When indent_fypp=True and the popped scope was a fypp scope,
+                                // consider the END valid. This allows Fortran END statements
+                                // to close orphan fypp scopes.
+                                let popped_fypp_scope = popped_scope.is_fypp_scope();
+                                if !parser.spec
+                                    || popped_scope.as_index() == scope_idx
+                                    || (indent_fypp && popped_fypp_scope)
+                                {
+                                    end.valid = true;
+                                }
+                                // Note: we don't put it back
+                            }
+                        } else {
+                            // Additional END statements after semicolon
+                            // Check if this END is balanced by an opener on the same line
+                            // If yes, don't count it (they cancel out)
+                            let has_matching_opener = if let Some(opener_parser) =
+                                self.parser.opening.get(scope_idx).and_then(|p| p.as_ref())
+                            {
+                                opener_parser.is_match(filtered_line)
+                            } else {
+                                false
+                            };
+
+                            if !has_matching_opener {
+                                // No matching opener on this line, so this END closes an outer scope
+                                // Check if this END matches the current scope (for indentation purposes)
+                                if !self.scope_storage.is_empty() {
+                                    let current_scope = self.scope_storage.last().copied();
+                                    if let Some(scope) = current_scope {
+                                        let popped_fypp_scope = scope.is_fypp_scope();
+                                        if !parser.spec
+                                            || scope.as_index() == scope_idx
+                                            || (indent_fypp && popped_fypp_scope)
+                                        {
+                                            end.valid_after_semicolon = true;
+                                        }
+                                    }
+                                }
+                                end.additional_count += 1;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        end
+    }
+
+    /// Check whether the line continues an open scope (ELSE, CASE, CONTAINS,
+    /// #:else, ...). Returns `(is_continue, fypp_continue_pop_to)`: the
+    /// latter is the target stack length when a fypp continuation needs
+    /// inner Fortran scopes popped after the indent is calculated.
+    fn detect_continuation(&self, filtered_line: &str) -> (bool, Option<usize>) {
+        for (scope_idx, parser_opt) in self.parser.continue_.iter().enumerate() {
+            if let Some(parser) = parser_opt {
+                if parser.is_match(filtered_line) {
+                    // For fypp continuation directives (#:else, #:elif, etc.),
+                    // we need to search the ENTIRE scope stack, not just the top.
+                    // This handles cases where Fortran scopes (like DO) are opened
+                    // inside a fypp block - the #:else should continue the fypp scope,
+                    // not the inner Fortran scope.
+                    let is_fypp_scope = ScopeType::is_fypp_scope_index(scope_idx);
+
+                    if is_fypp_scope {
+                        // Search entire stack for matching fypp scope
+                        let found_idx = self
+                            .scope_storage
+                            .iter()
+                            .rposition(|scope| scope.as_index() == scope_idx);
+                        if let Some(idx) = found_idx {
+                            // Found matching fypp scope
+                            // Record position to pop inner scopes AFTER calculating indent
+                            // This way the continuation directive uses grandparent indent,
+                            // but subsequent lines will use the fypp body level
+                            let pop_to = if self.scope_storage.len() > idx + 1 {
+                                Some(idx + 1)
+                            } else {
+                                None
+                            };
+                            return (true, pop_to);
+                        }
+                    } else {
+                        // Regular Fortran continuation - check top of stack only
+                        if let Some(&current_scope) = self.scope_storage.last() {
+                            if current_scope.as_index() == scope_idx {
+                                return (true, None);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        (false, None)
+    }
+
+    /// Check whether the line opens new scopes. Returns the scope opened by
+    /// the first statement plus any opened by statements after semicolons.
+    fn detect_new_scopes(
+        &self,
+        parts: &[&str],
+        filtered_line: &str,
+    ) -> (Option<ScopeType>, Vec<ScopeType>) {
+        let mut new_scope = None;
+        let mut additional_scopes: Vec<ScopeType> = Vec::new();
+
+        for (scope_idx, parser_opt) in self.parser.opening.iter().enumerate() {
+            if let Some(parser) = parser_opt {
+                if parser.is_match(filtered_line) {
+                    // Special handling for WHERE (11) and FORALL (12):
+                    // Only open scope if nothing follows the closing parenthesis
+                    // e.g., "WHERE (x > 0)" opens scope, but "WHERE (x > 0) y = 1" doesn't
+                    if scope_idx == 11 || scope_idx == 12 {
+                        if Self::is_where_forall_block(filtered_line) {
+                            new_scope = ScopeType::from_index(scope_idx);
+                        }
+                    } else {
+                        new_scope = ScopeType::from_index(scope_idx);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Check for additional scope openers after semicolons
+        // Split by semicolon and check each part (except the first which was checked above)
+        if new_scope.is_some() && filtered_line.contains(';') {
+            for part in parts.iter().skip(1) {
+                let part_trimmed = part.trim();
+                for (scope_idx, parser_opt) in self.parser.opening.iter().enumerate() {
+                    if let Some(parser) = parser_opt {
+                        // Create a temporary string that looks like a line start
+                        let temp_line = format!("  {part_trimmed}");
+                        if parser.is_match(&temp_line) {
+                            // Special handling for WHERE (11) and FORALL (12) after semicolons
+                            if scope_idx == 11 || scope_idx == 12 {
+                                if Self::is_where_forall_block(&temp_line) {
+                                    if let Some(scope) = ScopeType::from_index(scope_idx) {
+                                        additional_scopes.push(scope);
+                                    }
+                                }
+                            } else if let Some(scope) = ScopeType::from_index(scope_idx) {
+                                additional_scopes.push(scope);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        (new_scope, additional_scopes)
     }
 
     /// Calculate indent for the current line
