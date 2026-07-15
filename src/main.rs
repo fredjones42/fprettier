@@ -232,6 +232,13 @@ fn collect_files(args: &CliArgs) -> Vec<PathBuf> {
     // Get custom Fortran extensions
     let custom_extensions = &args.fortran_extensions;
 
+    // A directory entry is formatted when it is a Fortran file and not excluded
+    let wanted = |path: &Path| {
+        path.is_file()
+            && is_fortran_file(path, custom_extensions)
+            && !is_excluded(path, &exclude_patterns)
+    };
+
     let mut files = Vec::new();
 
     for input in &args.inputs {
@@ -251,12 +258,8 @@ fn collect_files(args: &CliArgs) -> Vec<PathBuf> {
                     .into_iter()
                     .filter_map(std::result::Result::ok)
                 {
-                    let path = entry.path();
-                    if path.is_file()
-                        && is_fortran_file(path, custom_extensions)
-                        && !is_excluded(path, &exclude_patterns)
-                    {
-                        files.push(path.to_path_buf());
+                    if wanted(entry.path()) {
+                        files.push(entry.path().to_path_buf());
                     }
                 }
             } else {
@@ -264,10 +267,7 @@ fn collect_files(args: &CliArgs) -> Vec<PathBuf> {
                 if let Ok(entries) = std::fs::read_dir(input) {
                     for entry in entries.filter_map(std::result::Result::ok) {
                         let path = entry.path();
-                        if path.is_file()
-                            && is_fortran_file(&path, custom_extensions)
-                            && !is_excluded(&path, &exclude_patterns)
-                        {
+                        if wanted(&path) {
                             files.push(path);
                         }
                     }
