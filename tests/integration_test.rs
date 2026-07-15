@@ -12,6 +12,14 @@ use fprettier::process::format_file;
 use fprettier::scope::build_scope_parser;
 use fprettier::Config;
 
+/// Helper to run format and return result string
+fn run_format(input: &str, config: &Config) -> String {
+    let reader = BufReader::new(Cursor::new(input.as_bytes()));
+    let mut output = Vec::new();
+    format_file(reader, &mut output, config, "test.f90").unwrap();
+    String::from_utf8(output).unwrap()
+}
+
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_complete_fortran_program() {
@@ -94,13 +102,7 @@ fn test_end_to_end_formatting() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // Verify structure
@@ -135,13 +137,7 @@ fn test_end_to_end_whitespace_only() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Should have spaces around operators and after comma
     assert!(result.contains(" = "));
@@ -161,13 +157,7 @@ fn test_end_to_end_subroutine() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // Verify indentation levels
@@ -277,13 +267,7 @@ fn test_end_to_end_relational_operators() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Should have spaces around relational operators
     assert!(result.contains(" > "));
@@ -303,13 +287,7 @@ fn test_end_to_end_logical_operators() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Should have spaces around logical operators
     assert!(result.contains(" .or. ") || result.contains(" .OR. "));
@@ -327,13 +305,7 @@ fn test_end_to_end_pointer_assignment() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Should have spaces around =>
     assert_eq!(result.trim(), "ptr => target");
@@ -350,13 +322,7 @@ fn test_end_to_end_operators_in_strings() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Operators inside strings should NOT be formatted
     assert!(result.contains("\"x>0.and.y==5\""));
@@ -374,13 +340,7 @@ fn test_omp_conditional_formatting() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // OMP prefix should be preserved
     assert!(result.starts_with("!$ "), "OMP prefix missing: {result}");
@@ -405,13 +365,7 @@ fn test_omp_conditional_with_indent() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // OMP prefix should be at column 0
@@ -442,13 +396,7 @@ fn test_statement_label_formatting() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Label should be preserved
     assert!(result.starts_with("100 "), "Label missing: {result}");
@@ -470,13 +418,7 @@ fn test_statement_label_with_indent() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // Label line should have label at start
@@ -498,13 +440,7 @@ fn test_format_statement_label() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Label should be preserved
     assert!(result.starts_with("200 "), "Label missing: {result}");
@@ -529,11 +465,7 @@ fn test_format_statement_continuation_alignment() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input1.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result1 = String::from_utf8(output).unwrap();
+    let result1 = run_format(input1, &config);
     let lines1: Vec<&str> = result1.lines().collect();
 
     // Count leading spaces on continuation line
@@ -548,11 +480,7 @@ fn test_format_statement_continuation_alignment() {
     // "2  FORMAT(" has "(" at position 10, so continuation should have 10 spaces
     let input2 = "MODULE test\nCONTAINS\n2 FORMAT(A10, I5, &\nF10.2)\nEND MODULE\n";
 
-    let cursor = Cursor::new(input2.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result2 = String::from_utf8(output).unwrap();
+    let result2 = run_format(input2, &config);
     let lines2: Vec<&str> = result2.lines().collect();
 
     // Find the continuation line (should be line 3, after "2  FORMAT(...&")
@@ -579,13 +507,7 @@ fn test_unary_plusminus_in_array_literal() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // Line with -2 should have unary minus (no space between - and 2)
@@ -627,13 +549,7 @@ fn test_binary_plusminus_on_continuation() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // The continuation line should have binary plus with space before
@@ -663,13 +579,7 @@ fn test_case_conversion_keywords_upper() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Keywords should be uppercase
     assert!(result.contains("IF"), "IF should be uppercase: {result}");
@@ -699,13 +609,7 @@ fn test_case_conversion_procedures_lower() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Procedures should be lowercase
     assert!(result.contains("sin("), "sin should be lowercase: {result}");
@@ -728,13 +632,7 @@ fn test_case_conversion_operators_upper() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Operators should be uppercase
     assert!(
@@ -766,13 +664,7 @@ fn test_case_conversion_with_whitespace() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Keywords uppercase
     assert!(result.contains("IF"), "IF should be uppercase: {result}");
@@ -802,13 +694,7 @@ fn test_line_splitting() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // Should be split into multiple lines
@@ -839,13 +725,7 @@ fn test_line_splitting_detaches_comments() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // Comment should be detached to its own line
@@ -904,13 +784,7 @@ fn test_comment_spacing_normalization() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should have exactly 2 spaces before comment
     assert!(
         result.contains("x = 1  ! this is a comment"),
@@ -930,13 +804,7 @@ fn test_comment_spacing_preserved() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Original spacing should be approximately preserved
     assert!(
         result.contains("! keep this spacing"),
@@ -957,13 +825,7 @@ fn test_comment_spacing_option() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should have exactly 4 spaces before comment
     assert!(
         result.contains("x = 1    ! comment"),
@@ -994,13 +856,7 @@ fn test_whitespace_comma_override() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should have spaces after commas even at level 0
     assert!(
         result.contains("a, b, c"),
@@ -1027,13 +883,7 @@ fn test_whitespace_comma_disable() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should NOT have spaces after commas
     assert!(
         result.contains("a,b,c"),
@@ -1060,13 +910,7 @@ fn test_whitespace_concat_enable() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should have spaces around //
     assert!(
         result.contains("a // b // c"),
@@ -1093,13 +937,7 @@ fn test_whitespace_type_enable() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should have spaces around %
     assert!(
         result.contains("mytype % field"),
@@ -1126,13 +964,7 @@ fn test_whitespace_plusminus_disable() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should NOT have spaces around + and -
     assert!(
         result.contains("a+b-c") || result.contains("a +b-c") || result.contains("a+ b- c"),
@@ -1162,13 +994,7 @@ fn test_multiple_whitespace_overrides() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should have: assignment spacing, relational spacing, comma spacing
     assert!(
         result.contains(" = "),
@@ -1198,13 +1024,7 @@ fn test_enable_replacements_to_c_style() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // .lt. should become <, .ge. should become >=
     assert!(
         result.contains('<') && result.contains(">="),
@@ -1229,13 +1049,7 @@ fn test_enable_replacements_to_fortran_style() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // < should become .lt., >= should become .ge.
     assert!(
         result.contains(".lt.") && result.contains(".ge."),
@@ -1257,13 +1071,7 @@ fn test_replacement_preserves_strings() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(&input, &config);
     // String content should be preserved, code should be converted
     assert!(
         result.contains(r#""a .lt. b""#),
@@ -1288,13 +1096,7 @@ fn test_replacement_with_whitespace() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Should have both whitespace formatting and operator replacement
     assert!(
         result.contains('<'),
@@ -1319,13 +1121,7 @@ fn test_all_operator_conversions() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // All operators should be converted
     assert!(
         result.contains('<') && result.contains("<="),
@@ -1353,13 +1149,7 @@ fn test_replacement_disabled_by_default() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Operators should not be changed
     assert!(
         result.contains(".lt."),
@@ -1382,13 +1172,7 @@ fn test_single_line_deactivation() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // First line should be preserved (no whitespace added)
     assert!(
         result.contains("x=1+2"),
@@ -1418,13 +1202,7 @@ b=7+8
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // First line (before block) should be formatted
     assert!(
         result.contains("a = 1 + 2"),
@@ -1465,13 +1243,7 @@ end program
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // Lines inside block should preserve original formatting
     assert!(
         result.contains("if(a.lt.b)then"),
@@ -1500,13 +1272,7 @@ data values / 1,  2,  3,  &
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     // The hand-formatted alignment should be preserved
     assert!(
         result.contains("/ 1,  2,  3,"),
@@ -1534,13 +1300,7 @@ end select casetest
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // select case should have no indent (label at start of line)
@@ -1620,13 +1380,7 @@ end subroutine
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // All CASE statements and SELECT/END SELECT should be at indent 3
@@ -1743,13 +1497,7 @@ end subroutine
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // select type at indent 3
@@ -1818,13 +1566,7 @@ end subroutine
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // select rank at indent 3
@@ -1888,13 +1630,7 @@ end subroutine
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // By default, subroutine body is not indented (no --indent-mod)
@@ -1984,13 +1720,7 @@ end program test
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // CPP lines should be at column 0
@@ -2029,13 +1759,7 @@ fn test_cpp_lines_no_whitespace_formatting() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Whitespace formatting should NOT be applied to CPP line
     // (spaces should NOT be added around + or after commas)
@@ -2063,13 +1787,7 @@ fn test_cpp_lines_no_case_conversion() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Case should NOT be changed for CPP line
     assert!(
@@ -2093,13 +1811,7 @@ fn test_cpp_lines_no_operator_replacement() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // < and > should NOT be converted to .lt. and .gt. (it's C preprocessor, not Fortran)
     assert!(
@@ -2133,13 +1845,7 @@ fn test_cpp_various_directives() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // All CPP lines should be at column 0
@@ -2171,13 +1877,7 @@ fn test_fypp_not_treated_as_cpp() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // Fypp lines should use normal scope-based indentation when indent_fypp=true
     // They are NOT pinned to column 0 like CPP lines
@@ -2209,13 +1909,7 @@ end subroutine test
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // CPP lines should be at column 0 regardless of Fortran scope
@@ -2258,12 +1952,7 @@ fn test_scope_opener_after_semicolon() {
     let input = "do i=1,3\nx=i; if(x>1)then\ny=2\nend if\nend do\n";
     let config = Config::default();
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
     let lines: Vec<&str> = result.lines().collect();
 
     // y = 2 sits inside both the DO and the IF (two levels deep)
