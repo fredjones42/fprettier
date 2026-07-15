@@ -9,6 +9,10 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::parser::patterns::{
+    DEL_CLOSE_RE, DEL_OPEN_RE, END_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOG_OP_RE, REL_OP_RE,
+    USE_RE,
+};
 use crate::parser::CharFilter;
 
 // Print/read statement formatting
@@ -245,546 +249,33 @@ fn add_whitespace_charwise_with_level(
     initial_level: usize,
     prev_line_last_char: Option<char>,
 ) -> (String, usize, Option<char>) {
-    use crate::parser::patterns::{
-        DEL_CLOSE_RE, DEL_OPEN_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, REL_OP_RE,
+    let mut f = Charwise {
+        chars: line.chars().collect(),
+        out: String::with_capacity(line.len() * 2),
+        i: 0,
+        level: initial_level,
+        in_string: None,
+        in_fypp: None,
+        whitespace_flags,
+        format_decl,
+        prev_line_last_char,
     };
 
-    let mut formatted_line = String::with_capacity(line.len() * 2);
-    let mut i = 0;
-    let chars: Vec<char> = line.chars().collect();
-    let mut level = initial_level; // Bracket nesting level (can start > 0 for continuations)
-    let mut in_string: Option<char> = None; // None or Some(quote_char) when in string
-    let mut in_fypp: Option<char> = None; // None or Some(close_char) when in fypp expr
-
-    while i < chars.len() {
-        let ch = chars[i];
-
-        // Track fypp expression state - copy fypp content verbatim without formatting
-        // Fypp expressions: #{...}#, ${...}$, @{...}@
-        if let Some(close_char) = in_fypp {
-            // We're inside a fypp expression - copy verbatim
-            formatted_line.push(ch);
-            i += 1;
-            // Check for closing sequence: }# or }$ or }@
-            if ch == '}' && i < chars.len() && chars[i] == close_char {
-                // Found closing - copy the close char and exit fypp
-                formatted_line.push(chars[i]);
-                i += 1;
-                in_fypp = None;
-            }
-            continue;
+    while f.i < f.chars.len() {
+        let handled = f.try_verbatim_regions()
+            || f.try_open_delimiter()
+            || f.try_close_delimiter()
+            || f.try_comma_semicolon()
+            || f.try_type_component()
+            || f.try_assignment()
+            || f.try_declaration()
+            || f.try_concat()
+            || f.try_plus_minus()
+            || f.try_mult_div();
+        if !handled {
+            f.out.push(f.chars[f.i]);
+            f.i += 1;
         }
-
-        // Check for fypp expression start: #{ or ${ or @{
-        if (ch == '#' || ch == '$' || ch == '@') && i + 1 < chars.len() && chars[i + 1] == '{' {
-            in_fypp = Some(ch); // Store the open char - same char is used for close
-            formatted_line.push(ch);
-            formatted_line.push(chars[i + 1]);
-            i += 2;
-            continue;
-        }
-
-        // Track string state - copy string content verbatim without formatting
-        if let Some(quote) = in_string {
-            // We're inside a string - copy verbatim
-            formatted_line.push(ch);
-            i += 1;
-            // Check for closing quote (handle escaped quotes by checking for double quote)
-            if ch == quote {
-                // Check if it's an escaped quote (doubled)
-                if i < chars.len() && chars[i] == quote {
-                    // Escaped quote - copy it and continue
-                    formatted_line.push(chars[i]);
-                    i += 1;
-                } else {
-                    // Closing quote - exit string
-                    in_string = None;
-                }
-            }
-            continue;
-        }
-
-        // Check for string start
-        if ch == '"' || ch == '\'' {
-            in_string = Some(ch);
-            formatted_line.push(ch);
-            i += 1;
-            continue;
-        }
-
-        // Handle opening delimiters: (, (/, [
-        if ch == '(' || ch == '[' {
-            // Check if this is a delimiter token
-            let remaining: String = chars[i..].iter().take(2).collect();
-            if let Some(m) = DEL_OPEN_RE.find(&remaining) {
-                let delim = m.as_str();
-                level += 1;
-
-                // Check if we need space before opening delimiter
-                let lhs: String = chars[..i].iter().collect();
-                let mut sep1 = false;
-
-                // Check for keywords that need space before (
-                if whitespace_flags[8] {
-                    // Check if lhs ends with %word pattern (e.g., obj%method, hdf5%open)
-                    // This prevents adding space in type component member access
-                    let ends_with_percent_word = if let Some(percent_pos) = lhs.rfind('%') {
-                        // Check if everything after % is alphanumeric/underscore (no spaces)
-                        lhs[percent_pos + 1..]
-                            .chars()
-                            .all(|c| c.is_alphanumeric() || c == '_')
-                    } else {
-                        false
-                    };
-
-                    // Check for intrinsic statements (ALLOCATE, WRITE, etc.)
-                    // or IF, DO WHILE, CASE, etc.
-                    // But NOT if preceded by % (e.g., obj%open should not add space)
-                    if !ends_with_percent_word
-                        && (INTR_STMTS_PAR_RE.is_match(&lhs) || KEYWORD_PAREN_RE.is_match(&lhs))
-                    {
-                        sep1 = true;
-                    }
-                    // Also check after semicolon (e.g., "do i=1,10; if(x)")
-                    // Take portion after last semicolon and check
-                    else if let Some(semi_pos) = lhs.rfind(';') {
-                        let after_semi = &lhs[semi_pos + 1..];
-                        if KEYWORD_PAREN_RE.is_match(after_semi) {
-                            sep1 = true;
-                        }
-                    }
-                }
-
-                // Also need space after closing delimiter before opening
-                // e.g., "write (*, *)(merge" -> "write (*, *) (merge"
-                let prev_non_space = lhs.chars().rev().find(|&c| c != ' ');
-                if prev_non_space == Some(')') || prev_non_space == Some(']') {
-                    sep1 = true;
-                }
-
-                // Also need space after assignment before opening bracket
-                // e.g., "big_arr =[1" -> "big_arr = [1"
-                // But NOT for named parameters in function calls (level > 1)
-                // Note: level was already incremented, so level==1 means top-level assignment
-                if level == 1 && (prev_non_space == Some('=') || prev_non_space == Some('>')) {
-                    sep1 = true;
-                }
-
-                // Also need space after comma before opening bracket
-                // e.g., "[1,(/3" -> "[1, (/3"
-                if prev_non_space == Some(',') {
-                    sep1 = true;
-                }
-
-                // Need space before [ after certain operators like + for array constructors
-                // But NOT before ( after operators (function call style: 3*(x), -(x))
-                if delim == "[" {
-                    if let Some(pc) = prev_non_space {
-                        if pc == '+' || pc == '-' {
-                            sep1 = true;
-                        }
-                    }
-                }
-
-                // General case: add space before ( unless the previous char is a special char
-                // This handles cases like "function name(", "subroutine name(", etc.
-                // Add space UNLESS the previous char is one of: ( [ (/ alphanumeric _ * / = + - :
-                if whitespace_flags[8] && !sep1 {
-                    if let Some(pc) = prev_non_space {
-                        // Skip space if ending with delimiter, operator, alphanumeric, or underscore
-                        let skip_space = pc == '('
-                            || pc == '['
-                            || pc == '/'  // part of (/
-                            || pc.is_alphanumeric()
-                            || pc == '_'  // underscore is valid in variable names
-                            || pc == '*'
-                            || pc == '='
-                            || pc == '+'
-                            || pc == '-'
-                            || pc == ':';
-                        if !skip_space {
-                            sep1 = true;
-                        }
-                    }
-                }
-
-                // Apply formatting
-                // Remove trailing spaces (but preserve if sep1 is true, we'll add it back)
-                // Also preserve space after binary operators (+, -, *, /)
-                // Check the last non-space character in formatted_line
-                let last_non_space_in_ftd = formatted_line.chars().rev().find(|&c| c != ' ');
-                let preserve_space = matches!(last_non_space_in_ftd, Some('+' | '-' | '*' | '/'));
-
-                if !preserve_space {
-                    pop_trailing_spaces(&mut formatted_line);
-                }
-
-                // Add space before if needed (but not if we already preserved one)
-                if sep1 && !formatted_line.ends_with(' ') {
-                    formatted_line.push(' ');
-                }
-
-                // Add the delimiter
-                formatted_line.push_str(delim);
-                i += delim.len();
-
-                // Remove leading spaces from what follows
-                i = skip_spaces(&chars, i);
-                continue;
-            }
-        }
-
-        // Handle closing delimiters: ), /), ]
-        if ch == ')' || ch == ']' || (ch == '/' && i + 1 < chars.len() && chars[i + 1] == ')') {
-            let remaining: String = chars[i..].iter().take(2).collect();
-            if let Some(m) = DEL_CLOSE_RE.find(&remaining) {
-                let delim = m.as_str();
-                level = level.saturating_sub(1);
-
-                // Remove trailing spaces before delimiter
-                pop_trailing_spaces(&mut formatted_line);
-
-                // Add the delimiter
-                formatted_line.push_str(delim);
-                i += delim.len();
-
-                // Count existing spaces after delimiter (before stripping)
-                // This is needed to preserve spacing before :: when format_decl=false
-                let mut space_count = 0;
-                let mut j = i;
-                while j < chars.len() && chars[j] == ' ' {
-                    space_count += 1;
-                    j += 1;
-                }
-
-                // Check if followed by :: (declaration operator)
-                let followed_by_double_colon =
-                    j + 1 < chars.len() && chars[j] == ':' && chars[j + 1] == ':';
-
-                // Skip existing spaces
-                i = skip_spaces(&chars, i);
-
-                // Check what follows and determine spacing
-                if i < chars.len() {
-                    let next_ch = chars[i];
-
-                    // Special handling for :: after closing delimiter
-                    // When format_decl=false, preserve the original spacing
-                    // When format_decl=true, use single space
-                    if followed_by_double_colon {
-                        if !format_decl && space_count > 0 {
-                            // Preserve original spacing
-                            for _ in 0..space_count {
-                                formatted_line.push(' ');
-                            }
-                        } else if format_decl {
-                            // format_decl=true uses single space (handled by :: processing)
-                            // Don't add space here; let the :: handler add it
-                        }
-                        // If format_decl=false and space_count=0, no spaces added
-                        continue;
-                    }
-
-                    // Don't add space before these characters
-                    let skip_space = next_ch == ')'
-                        || next_ch == ']'
-                        || next_ch == ','
-                        || next_ch == '%'
-                        || next_ch == ':'
-                        || next_ch == '/'
-                        || next_ch == '*'
-                        || next_ch == ';'
-                        || (next_ch == '/' && i + 1 < chars.len() && chars[i + 1] == ')');
-
-                    if !skip_space {
-                        formatted_line.push(' ');
-                    }
-                }
-                continue;
-            }
-        }
-
-        // Handle commas and semicolons
-        if (ch == ',' || ch == ';') && whitespace_flags[0] {
-            // Remove trailing space before
-            pop_trailing_spaces(&mut formatted_line);
-            formatted_line.push(ch);
-            // Add space after
-            formatted_line.push(' ');
-            i += 1;
-            // Skip any existing spaces after
-            i = skip_spaces(&chars, i);
-            continue;
-        }
-
-        // Handle type component % (whitespace_flags[7] - remove spaces around %)
-        if ch == '%' {
-            // Remove trailing space before
-            pop_trailing_spaces(&mut formatted_line);
-
-            // Add % with optional spacing (whitespace_flags[7] = 0 means no space)
-            if whitespace_flags[7] {
-                formatted_line.push(' ');
-            }
-            formatted_line.push('%');
-            if whitespace_flags[7] {
-                formatted_line.push(' ');
-            }
-            i += 1;
-
-            // Skip any existing spaces after
-            i = skip_spaces(&chars, i);
-            continue;
-        }
-
-        // Handle assignment operators (= and =>)
-        // Only add space when NOT inside brackets (level == 0), EXCEPT for pointer assignment
-        if ch == '=' && whitespace_flags[1] {
-            // Check if it's => (pointer assignment) first
-            let is_pointer = i + 1 < chars.len() && chars[i + 1] == '>';
-
-            // Check if it's part of a relational operator (==, /=, <=, >=)
-            // But NOT if it's => (pointer assignment)
-            let is_relational = if is_pointer {
-                false // => is not a relational operator
-            } else {
-                let context_start = i.saturating_sub(1);
-                let context_end = (i + 2).min(chars.len());
-                let context: String = chars[context_start..context_end].iter().collect();
-
-                REL_OP_RE.is_match(&context)
-            };
-
-            // Only add spacing at top level (level == 0) or for pointer assignment
-            let should_space = (level == 0 || is_pointer) && !is_relational;
-
-            if should_space {
-                // Remove trailing space before
-                pop_trailing_spaces(&mut formatted_line);
-
-                // Add space before
-                formatted_line.push(' ');
-                formatted_line.push('=');
-
-                if is_pointer {
-                    formatted_line.push('>');
-                    i += 1;
-                }
-
-                // Add space after
-                formatted_line.push(' ');
-                i += 1;
-
-                // Skip any existing spaces after
-                i = skip_spaces(&chars, i);
-                continue;
-            }
-        }
-
-        // Handle declaration operator :: (whitespace_flags[9])
-        // Only reformat when format_decl is enabled; otherwise preserve existing spacing
-        if ch == ':'
-            && i + 1 < chars.len()
-            && chars[i + 1] == ':'
-            && format_decl
-            && whitespace_flags[9]
-        {
-            // Remove trailing space before
-            pop_trailing_spaces(&mut formatted_line);
-
-            // Add space before ::
-            formatted_line.push(' ');
-            formatted_line.push(':');
-            formatted_line.push(':');
-
-            // Add space after ::
-            formatted_line.push(' ');
-            i += 2;
-
-            // Skip any existing spaces after
-            i = skip_spaces(&chars, i);
-            continue;
-        }
-
-        // Handle string concatenation operator // (whitespace_flags[10])
-        // Must distinguish from array constructor delimiters (/ and /)
-        if ch == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
-            // When whitespace_flags[10] is false, normalize by removing surrounding spaces
-            if !whitespace_flags[10] {
-                // Check if the previous non-space character is a comma
-                // If so, preserve the space after comma (controlled by whitespace_flags[0])
-                let prev_non_space = formatted_line.chars().rev().find(|&c| c != ' ');
-                let preserve_comma_space = prev_non_space == Some(',') && whitespace_flags[0];
-
-                // Remove trailing spaces before // (unless preserving comma space)
-                if !preserve_comma_space {
-                    pop_trailing_spaces(&mut formatted_line);
-                }
-
-                // Add the concat operator without spaces
-                formatted_line.push('/');
-                formatted_line.push('/');
-                i += 2;
-
-                // Skip any existing spaces after //
-                i = skip_spaces(&chars, i);
-                continue;
-            }
-
-            // whitespace_flags[10] is true - add spacing around //
-            let prev_char = formatted_line.chars().last();
-            let prev_non_space = formatted_line.chars().rev().find(|&c| c != ' ');
-            let skip_space_before = prev_non_space == Some('(') || prev_non_space == Some('[');
-            let next_after_concat = if i + 2 < chars.len() {
-                Some(chars[i + 2])
-            } else {
-                None
-            };
-            let skip_space_after = next_after_concat == Some(')') || next_after_concat == Some(']');
-
-            // Remove trailing spaces
-            pop_trailing_spaces(&mut formatted_line);
-
-            // Add space before unless after open delimiter
-            if !skip_space_before && prev_char.is_some() {
-                formatted_line.push(' ');
-            }
-
-            // Add the concat operator
-            formatted_line.push('/');
-            formatted_line.push('/');
-            i += 2;
-
-            // Skip existing spaces after
-            i = skip_spaces(&chars, i);
-
-            // Add space after unless before close delimiter
-            if !skip_space_after && i < chars.len() {
-                formatted_line.push(' ');
-            }
-
-            continue;
-        }
-
-        // Handle plus/minus operators
-        if (ch == '+' || ch == '-') && whitespace_flags[4] {
-            // Only add spacing if it's a binary operator, not unary
-            // Check for scientific notation exponent (1.0d-3, 1.0e+5)
-
-            // Look at the last non-space character (we may have added a space after delimiter)
-            let prev_char = formatted_line.chars().rev().find(|&c| c != ' ');
-
-            // Check if this is a scientific notation exponent sign
-            // Must verify that what precedes is actually a number, not a variable name
-            // e.g., "1.0d" is exponential, but "val_1d" is a variable name
-            let is_exponent = match prev_char {
-                Some(c) if c == 'd' || c == 'D' || c == 'e' || c == 'E' => {
-                    // Check if the content before the d/e forms a valid number
-                    let trimmed = formatted_line.trim_end();
-                    SCI_NOTATION_RE.is_match(trimmed)
-                }
-                _ => false,
-            };
-
-            // Simple heuristic: add spacing if preceded by alphanumeric, ), or ]
-            // But NOT if it's part of scientific notation.
-            // For continuation lines, check the previous line's last character.
-            let is_binary = match prev_char {
-                Some(c) => (c.is_alphanumeric() || c == ')' || c == ']') && !is_exponent,
-                None => {
-                    // At start of line: binary only if this is a continuation
-                    // from a line that ended with an operand (alphanumeric, ), or ])
-                    // If prev line ended with comma, delimiter, or operator, it's unary.
-                    if formatted_line.trim().is_empty() {
-                        // Check prev_line_last_char to determine if +/- is binary
-                        match prev_line_last_char {
-                            Some(c) => c.is_alphanumeric() || c == ')' || c == ']',
-                            None => false,
-                        }
-                    } else {
-                        false
-                    }
-                }
-            };
-
-            if is_binary {
-                // Remove trailing space before
-                pop_trailing_spaces(&mut formatted_line);
-
-                // Add space before
-                formatted_line.push(' ');
-                formatted_line.push(ch);
-
-                // Add space after
-                formatted_line.push(' ');
-                i += 1;
-
-                // Skip any existing spaces after
-                i = skip_spaces(&chars, i);
-                continue;
-            }
-        }
-
-        // Handle multiply/divide operators (* and /) (whitespace_flags[5])
-        // Must NOT match ** (exponentiation) or // (concatenation) or (/ /) (array constructor)
-        if (ch == '*' || ch == '/') && whitespace_flags[5] {
-            // Check for ** (exponentiation) - skip
-            if ch == '*' && i + 1 < chars.len() && chars[i + 1] == '*' {
-                formatted_line.push(ch);
-                i += 1;
-                continue;
-            }
-
-            // Check for // (concatenation) - already handled above if whitespace_flags[10]
-            // But if whitespace_flags[10] is false and we see //, just skip both
-            if ch == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
-                formatted_line.push(ch);
-                i += 1;
-                continue;
-            }
-
-            // Check for (/ or /) - array constructor delimiters, skip
-            let prev_non_space = formatted_line.chars().rev().find(|&c| c != ' ');
-            let next_char = if i + 1 < chars.len() {
-                Some(chars[i + 1])
-            } else {
-                None
-            };
-
-            // Skip if this is part of array constructor: (/ or /)
-            if ch == '/' && (prev_non_space == Some('(') || next_char == Some(')')) {
-                formatted_line.push(ch);
-                i += 1;
-                continue;
-            }
-
-            // This is a binary mult/div operator - add spacing
-            // But only if preceded by alphanumeric, ), or ]
-            let is_binary = match prev_non_space {
-                Some(c) => c.is_alphanumeric() || c == ')' || c == ']',
-                None => false,
-            };
-
-            if is_binary {
-                // Remove trailing spaces
-                pop_trailing_spaces(&mut formatted_line);
-
-                // Add space before
-                formatted_line.push(' ');
-                formatted_line.push(ch);
-
-                // Add space after
-                formatted_line.push(' ');
-                i += 1;
-
-                // Skip existing spaces after
-                i = skip_spaces(&chars, i);
-                continue;
-            }
-        }
-
-        formatted_line.push(ch);
-        i += 1;
     }
 
     // Compute last significant character from final formatted output
@@ -792,7 +283,7 @@ fn add_whitespace_charwise_with_level(
     // This is used to determine if leading +/- on next line is binary or unary
     let last_significant_char = {
         let mut last_char = None;
-        for (_, c) in CharFilter::new(&formatted_line, true, true, true) {
+        for (_, c) in CharFilter::new(&f.out, true, true, true) {
             if !c.is_whitespace() {
                 last_char = Some(c);
             }
@@ -800,7 +291,611 @@ fn add_whitespace_charwise_with_level(
         last_char
     };
 
-    (formatted_line, level, last_significant_char)
+    (f.out, f.level, last_significant_char)
+}
+
+/// State for the character-wise whitespace pass.
+///
+/// Each `try_*` handler inspects the character at cursor `i`; when its token
+/// class matches it writes the formatted result to `out`, advances the
+/// cursor, and returns true. Returning false leaves the cursor untouched so
+/// the next handler (or the default copy) runs -- handler order matters.
+struct Charwise<'a> {
+    /// Input line as characters
+    chars: Vec<char>,
+    /// Formatted output buffer
+    out: String,
+    /// Cursor into `chars`
+    i: usize,
+    /// Bracket nesting level (can start > 0 for continuations)
+    level: usize,
+    /// `Some(quote_char)` while inside a string
+    in_string: Option<char>,
+    /// `Some(open_char)` while inside a fypp expression
+    in_fypp: Option<char>,
+    whitespace_flags: &'a [bool; 11],
+    format_decl: bool,
+    /// Last significant char of the previous line (for continuation +/-)
+    prev_line_last_char: Option<char>,
+}
+
+impl Charwise<'_> {
+    /// Copy strings and fypp expressions (`#{...}#`, `${...}$`, `@{...}@`)
+    /// verbatim, tracking their open/close state.
+    fn try_verbatim_regions(&mut self) -> bool {
+        let ch = self.chars[self.i];
+
+        // Inside a fypp expression - copy verbatim
+        if let Some(close_char) = self.in_fypp {
+            self.out.push(ch);
+            self.i += 1;
+            // Check for closing sequence: }# or }$ or }@
+            if ch == '}' && self.i < self.chars.len() && self.chars[self.i] == close_char {
+                // Found closing - copy the close char and exit fypp
+                self.out.push(self.chars[self.i]);
+                self.i += 1;
+                self.in_fypp = None;
+            }
+            return true;
+        }
+
+        // Check for fypp expression start: #{ or ${ or @{
+        if (ch == '#' || ch == '$' || ch == '@')
+            && self.i + 1 < self.chars.len()
+            && self.chars[self.i + 1] == '{'
+        {
+            self.in_fypp = Some(ch); // Store the open char - same char is used for close
+            self.out.push(ch);
+            self.out.push(self.chars[self.i + 1]);
+            self.i += 2;
+            return true;
+        }
+
+        // Inside a string - copy verbatim
+        if let Some(quote) = self.in_string {
+            self.out.push(ch);
+            self.i += 1;
+            // Check for closing quote (handle escaped quotes by checking for double quote)
+            if ch == quote {
+                if self.i < self.chars.len() && self.chars[self.i] == quote {
+                    // Escaped (doubled) quote - copy it and continue
+                    self.out.push(self.chars[self.i]);
+                    self.i += 1;
+                } else {
+                    // Closing quote - exit string
+                    self.in_string = None;
+                }
+            }
+            return true;
+        }
+
+        // Check for string start
+        if ch == '"' || ch == '\'' {
+            self.in_string = Some(ch);
+            self.out.push(ch);
+            self.i += 1;
+            return true;
+        }
+
+        false
+    }
+
+    /// Handle opening delimiters `(`, `(/`, `[`: decide whether a space
+    /// belongs before them, then attach what follows.
+    fn try_open_delimiter(&mut self) -> bool {
+        let ch = self.chars[self.i];
+        if ch != '(' && ch != '[' {
+            return false;
+        }
+        // Check if this is a delimiter token
+        let remaining: String = self.chars[self.i..].iter().take(2).collect();
+        let Some(m) = DEL_OPEN_RE.find(&remaining) else {
+            return false;
+        };
+        let delim = m.as_str();
+        self.level += 1;
+
+        // Check if we need space before opening delimiter
+        let lhs: String = self.chars[..self.i].iter().collect();
+        let mut sep1 = false;
+
+        // Check for keywords that need space before (
+        if self.whitespace_flags[8] {
+            // Check if lhs ends with %word pattern (e.g., obj%method, hdf5%open)
+            // This prevents adding space in type component member access
+            let ends_with_percent_word = if let Some(percent_pos) = lhs.rfind('%') {
+                // Check if everything after % is alphanumeric/underscore (no spaces)
+                lhs[percent_pos + 1..]
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_')
+            } else {
+                false
+            };
+
+            // Check for intrinsic statements (ALLOCATE, WRITE, etc.)
+            // or IF, DO WHILE, CASE, etc.
+            // But NOT if preceded by % (e.g., obj%open should not add space)
+            if !ends_with_percent_word
+                && (INTR_STMTS_PAR_RE.is_match(&lhs) || KEYWORD_PAREN_RE.is_match(&lhs))
+            {
+                sep1 = true;
+            }
+            // Also check after semicolon (e.g., "do i=1,10; if(x)")
+            // Take portion after last semicolon and check
+            else if let Some(semi_pos) = lhs.rfind(';') {
+                let after_semi = &lhs[semi_pos + 1..];
+                if KEYWORD_PAREN_RE.is_match(after_semi) {
+                    sep1 = true;
+                }
+            }
+        }
+
+        // Also need space after closing delimiter before opening
+        // e.g., "write (*, *)(merge" -> "write (*, *) (merge"
+        let prev_non_space = lhs.chars().rev().find(|&c| c != ' ');
+        if prev_non_space == Some(')') || prev_non_space == Some(']') {
+            sep1 = true;
+        }
+
+        // Also need space after assignment before opening bracket
+        // e.g., "big_arr =[1" -> "big_arr = [1"
+        // But NOT for named parameters in function calls (level > 1)
+        // Note: level was already incremented, so level==1 means top-level assignment
+        if self.level == 1 && (prev_non_space == Some('=') || prev_non_space == Some('>')) {
+            sep1 = true;
+        }
+
+        // Also need space after comma before opening bracket
+        // e.g., "[1,(/3" -> "[1, (/3"
+        if prev_non_space == Some(',') {
+            sep1 = true;
+        }
+
+        // Need space before [ after certain operators like + for array constructors
+        // But NOT before ( after operators (function call style: 3*(x), -(x))
+        if delim == "[" {
+            if let Some(pc) = prev_non_space {
+                if pc == '+' || pc == '-' {
+                    sep1 = true;
+                }
+            }
+        }
+
+        // General case: add space before ( unless the previous char is a special char
+        // This handles cases like "function name(", "subroutine name(", etc.
+        // Add space UNLESS the previous char is one of: ( [ (/ alphanumeric _ * / = + - :
+        if self.whitespace_flags[8] && !sep1 {
+            if let Some(pc) = prev_non_space {
+                // Skip space if ending with delimiter, operator, alphanumeric, or underscore
+                let skip_space = pc == '('
+                    || pc == '['
+                    || pc == '/'  // part of (/
+                    || pc.is_alphanumeric()
+                    || pc == '_'  // underscore is valid in variable names
+                    || pc == '*'
+                    || pc == '='
+                    || pc == '+'
+                    || pc == '-'
+                    || pc == ':';
+                if !skip_space {
+                    sep1 = true;
+                }
+            }
+        }
+
+        // Apply formatting
+        // Remove trailing spaces (but preserve if sep1 is true, we'll add it back)
+        // Also preserve space after binary operators (+, -, *, /)
+        // Check the last non-space character in the output
+        let last_non_space_in_out = self.out.chars().rev().find(|&c| c != ' ');
+        let preserve_space = matches!(last_non_space_in_out, Some('+' | '-' | '*' | '/'));
+
+        if !preserve_space {
+            pop_trailing_spaces(&mut self.out);
+        }
+
+        // Add space before if needed (but not if we already preserved one)
+        if sep1 && !self.out.ends_with(' ') {
+            self.out.push(' ');
+        }
+
+        // Add the delimiter
+        self.out.push_str(delim);
+        self.i += delim.len();
+
+        // Remove leading spaces from what follows
+        self.i = skip_spaces(&self.chars, self.i);
+        true
+    }
+
+    /// Handle closing delimiters `)`, `/)`, `]`: attach them to the
+    /// preceding token and decide the spacing that follows.
+    fn try_close_delimiter(&mut self) -> bool {
+        let ch = self.chars[self.i];
+        let is_close_start = ch == ')'
+            || ch == ']'
+            || (ch == '/' && self.i + 1 < self.chars.len() && self.chars[self.i + 1] == ')');
+        if !is_close_start {
+            return false;
+        }
+        let remaining: String = self.chars[self.i..].iter().take(2).collect();
+        let Some(m) = DEL_CLOSE_RE.find(&remaining) else {
+            return false;
+        };
+        let delim = m.as_str();
+        self.level = self.level.saturating_sub(1);
+
+        // Remove trailing spaces before delimiter
+        pop_trailing_spaces(&mut self.out);
+
+        // Add the delimiter
+        self.out.push_str(delim);
+        self.i += delim.len();
+
+        // Count existing spaces after delimiter (before stripping)
+        // This is needed to preserve spacing before :: when format_decl=false
+        let mut space_count = 0;
+        let mut j = self.i;
+        while j < self.chars.len() && self.chars[j] == ' ' {
+            space_count += 1;
+            j += 1;
+        }
+
+        // Check if followed by :: (declaration operator)
+        let followed_by_double_colon =
+            j + 1 < self.chars.len() && self.chars[j] == ':' && self.chars[j + 1] == ':';
+
+        // Skip existing spaces
+        self.i = skip_spaces(&self.chars, self.i);
+
+        // Check what follows and determine spacing
+        if self.i < self.chars.len() {
+            let next_ch = self.chars[self.i];
+
+            // Special handling for :: after closing delimiter
+            // When format_decl=false, preserve the original spacing
+            // When format_decl=true, single space (added by the :: handler, not here)
+            if followed_by_double_colon {
+                if !self.format_decl && space_count > 0 {
+                    // Preserve original spacing
+                    for _ in 0..space_count {
+                        self.out.push(' ');
+                    }
+                }
+                // If format_decl=false and space_count=0, no spaces added
+                return true;
+            }
+
+            // Don't add space before these characters
+            let skip_space = next_ch == ')'
+                || next_ch == ']'
+                || next_ch == ','
+                || next_ch == '%'
+                || next_ch == ':'
+                || next_ch == '/'
+                || next_ch == '*'
+                || next_ch == ';'
+                || (next_ch == '/'
+                    && self.i + 1 < self.chars.len()
+                    && self.chars[self.i + 1] == ')');
+
+            if !skip_space {
+                self.out.push(' ');
+            }
+        }
+        true
+    }
+
+    /// Handle `,` and `;`: no space before, one space after (`whitespace_flags[0]`)
+    fn try_comma_semicolon(&mut self) -> bool {
+        let ch = self.chars[self.i];
+        if (ch != ',' && ch != ';') || !self.whitespace_flags[0] {
+            return false;
+        }
+        // Remove trailing space before
+        pop_trailing_spaces(&mut self.out);
+        self.out.push(ch);
+        // Add space after
+        self.out.push(' ');
+        self.i += 1;
+        // Skip any existing spaces after
+        self.i = skip_spaces(&self.chars, self.i);
+        true
+    }
+
+    /// Handle the type component selector `%` (`whitespace_flags[7]`
+    /// controls whether it gets surrounding spaces)
+    fn try_type_component(&mut self) -> bool {
+        if self.chars[self.i] != '%' {
+            return false;
+        }
+        // Remove trailing space before
+        pop_trailing_spaces(&mut self.out);
+
+        if self.whitespace_flags[7] {
+            self.out.push(' ');
+        }
+        self.out.push('%');
+        if self.whitespace_flags[7] {
+            self.out.push(' ');
+        }
+        self.i += 1;
+
+        // Skip any existing spaces after
+        self.i = skip_spaces(&self.chars, self.i);
+        true
+    }
+
+    /// Handle assignment operators `=` and `=>` (`whitespace_flags[1]`).
+    /// Spacing applies only at top level (level == 0), except pointer
+    /// assignment which is always spaced. Falls through for relational
+    /// operators and bracketed `=` (named arguments).
+    fn try_assignment(&mut self) -> bool {
+        let ch = self.chars[self.i];
+        if ch != '=' || !self.whitespace_flags[1] {
+            return false;
+        }
+        // Check if it's => (pointer assignment) first
+        let is_pointer = self.i + 1 < self.chars.len() && self.chars[self.i + 1] == '>';
+
+        // Check if it's part of a relational operator (==, /=, <=, >=)
+        // But NOT if it's => (pointer assignment)
+        let is_relational = if is_pointer {
+            false // => is not a relational operator
+        } else {
+            let context_start = self.i.saturating_sub(1);
+            let context_end = (self.i + 2).min(self.chars.len());
+            let context: String = self.chars[context_start..context_end].iter().collect();
+
+            REL_OP_RE.is_match(&context)
+        };
+
+        // Only add spacing at top level (level == 0) or for pointer assignment
+        let should_space = (self.level == 0 || is_pointer) && !is_relational;
+        if !should_space {
+            return false;
+        }
+
+        // Remove trailing space before
+        pop_trailing_spaces(&mut self.out);
+
+        // Add space before
+        self.out.push(' ');
+        self.out.push('=');
+
+        if is_pointer {
+            self.out.push('>');
+            self.i += 1;
+        }
+
+        // Add space after
+        self.out.push(' ');
+        self.i += 1;
+
+        // Skip any existing spaces after
+        self.i = skip_spaces(&self.chars, self.i);
+        true
+    }
+
+    /// Handle the declaration operator `::` (`whitespace_flags[9]`).
+    /// Only reformats when `format_decl` is enabled; otherwise existing
+    /// spacing is preserved by falling through.
+    fn try_declaration(&mut self) -> bool {
+        if self.chars[self.i] != ':'
+            || self.i + 1 >= self.chars.len()
+            || self.chars[self.i + 1] != ':'
+            || !self.format_decl
+            || !self.whitespace_flags[9]
+        {
+            return false;
+        }
+        // Remove trailing space before
+        pop_trailing_spaces(&mut self.out);
+
+        // Add space before ::
+        self.out.push(' ');
+        self.out.push(':');
+        self.out.push(':');
+
+        // Add space after ::
+        self.out.push(' ');
+        self.i += 2;
+
+        // Skip any existing spaces after
+        self.i = skip_spaces(&self.chars, self.i);
+        true
+    }
+
+    /// Handle the string concatenation operator `//`: spaced when
+    /// `whitespace_flags[10]` is set, otherwise normalized to no spaces.
+    /// Must be checked before mult/div so `/` is not misread.
+    fn try_concat(&mut self) -> bool {
+        if self.chars[self.i] != '/'
+            || self.i + 1 >= self.chars.len()
+            || self.chars[self.i + 1] != '/'
+        {
+            return false;
+        }
+        // When whitespace_flags[10] is false, normalize by removing surrounding spaces
+        if !self.whitespace_flags[10] {
+            // Check if the previous non-space character is a comma
+            // If so, preserve the space after comma (controlled by whitespace_flags[0])
+            let prev_non_space = self.out.chars().rev().find(|&c| c != ' ');
+            let preserve_comma_space = prev_non_space == Some(',') && self.whitespace_flags[0];
+
+            // Remove trailing spaces before // (unless preserving comma space)
+            if !preserve_comma_space {
+                pop_trailing_spaces(&mut self.out);
+            }
+
+            // Add the concat operator without spaces
+            self.out.push('/');
+            self.out.push('/');
+            self.i += 2;
+
+            // Skip any existing spaces after //
+            self.i = skip_spaces(&self.chars, self.i);
+            return true;
+        }
+
+        // whitespace_flags[10] is true - add spacing around //
+        let prev_char = self.out.chars().last();
+        let prev_non_space = self.out.chars().rev().find(|&c| c != ' ');
+        let skip_space_before = prev_non_space == Some('(') || prev_non_space == Some('[');
+        let next_after_concat = if self.i + 2 < self.chars.len() {
+            Some(self.chars[self.i + 2])
+        } else {
+            None
+        };
+        let skip_space_after = next_after_concat == Some(')') || next_after_concat == Some(']');
+
+        // Remove trailing spaces
+        pop_trailing_spaces(&mut self.out);
+
+        // Add space before unless after open delimiter
+        if !skip_space_before && prev_char.is_some() {
+            self.out.push(' ');
+        }
+
+        // Add the concat operator
+        self.out.push('/');
+        self.out.push('/');
+        self.i += 2;
+
+        // Skip existing spaces after
+        self.i = skip_spaces(&self.chars, self.i);
+
+        // Add space after unless before close delimiter
+        if !skip_space_after && self.i < self.chars.len() {
+            self.out.push(' ');
+        }
+
+        true
+    }
+
+    /// Handle binary `+`/`-` (`whitespace_flags[4]`). Falls through for
+    /// unary signs and scientific-notation exponents (1.0d-3, 1.0e+5).
+    fn try_plus_minus(&mut self) -> bool {
+        let ch = self.chars[self.i];
+        if (ch != '+' && ch != '-') || !self.whitespace_flags[4] {
+            return false;
+        }
+        // Look at the last non-space character (we may have added a space after delimiter)
+        let prev_char = self.out.chars().rev().find(|&c| c != ' ');
+
+        // Check if this is a scientific notation exponent sign
+        // Must verify that what precedes is actually a number, not a variable name
+        // e.g., "1.0d" is exponential, but "val_1d" is a variable name
+        let is_exponent = match prev_char {
+            Some(c) if c == 'd' || c == 'D' || c == 'e' || c == 'E' => {
+                // Check if the content before the d/e forms a valid number
+                let trimmed = self.out.trim_end();
+                SCI_NOTATION_RE.is_match(trimmed)
+            }
+            _ => false,
+        };
+
+        // Simple heuristic: add spacing if preceded by alphanumeric, ), or ]
+        // But NOT if it's part of scientific notation.
+        // For continuation lines, check the previous line's last character.
+        let is_binary = match prev_char {
+            Some(c) => (c.is_alphanumeric() || c == ')' || c == ']') && !is_exponent,
+            None => {
+                // At start of line: binary only if this is a continuation
+                // from a line that ended with an operand (alphanumeric, ), or ])
+                // If prev line ended with comma, delimiter, or operator, it's unary.
+                if self.out.trim().is_empty() {
+                    // Check prev_line_last_char to determine if +/- is binary
+                    match self.prev_line_last_char {
+                        Some(c) => c.is_alphanumeric() || c == ')' || c == ']',
+                        None => false,
+                    }
+                } else {
+                    false
+                }
+            }
+        };
+        if !is_binary {
+            return false;
+        }
+
+        // Remove trailing space before
+        pop_trailing_spaces(&mut self.out);
+
+        // Add space before
+        self.out.push(' ');
+        self.out.push(ch);
+
+        // Add space after
+        self.out.push(' ');
+        self.i += 1;
+
+        // Skip any existing spaces after
+        self.i = skip_spaces(&self.chars, self.i);
+        true
+    }
+
+    /// Handle binary `*`/`/` (`whitespace_flags[5]`), copying through `**`
+    /// (exponentiation), `//` (concatenation with `whitespace_flags[10]`
+    /// off), and `(/` `/)` array constructor delimiters unchanged.
+    fn try_mult_div(&mut self) -> bool {
+        let ch = self.chars[self.i];
+        if (ch != '*' && ch != '/') || !self.whitespace_flags[5] {
+            return false;
+        }
+        // Check for ** (exponentiation) - copy through
+        if ch == '*' && self.i + 1 < self.chars.len() && self.chars[self.i + 1] == '*' {
+            self.out.push(ch);
+            self.i += 1;
+            return true;
+        }
+
+        // Check for // (concatenation) - already handled by try_concat
+        if ch == '/' && self.i + 1 < self.chars.len() && self.chars[self.i + 1] == '/' {
+            self.out.push(ch);
+            self.i += 1;
+            return true;
+        }
+
+        // Check for (/ or /) - array constructor delimiters, copy through
+        let prev_non_space = self.out.chars().rev().find(|&c| c != ' ');
+        let next_char = if self.i + 1 < self.chars.len() {
+            Some(self.chars[self.i + 1])
+        } else {
+            None
+        };
+
+        if ch == '/' && (prev_non_space == Some('(') || next_char == Some(')')) {
+            self.out.push(ch);
+            self.i += 1;
+            return true;
+        }
+
+        // This is a binary mult/div operator - add spacing
+        // But only if preceded by alphanumeric, ), or ]
+        let is_binary = match prev_non_space {
+            Some(c) => c.is_alphanumeric() || c == ')' || c == ']',
+            None => false,
+        };
+        if !is_binary {
+            return false;
+        }
+
+        // Remove trailing spaces
+        pop_trailing_spaces(&mut self.out);
+
+        // Add space before
+        self.out.push(' ');
+        self.out.push(ch);
+
+        // Add space after
+        self.out.push(' ');
+        self.i += 1;
+
+        // Skip existing spaces after
+        self.i = skip_spaces(&self.chars, self.i);
+        true
+    }
 }
 
 /// Add whitespace in a context-aware manner
@@ -813,8 +908,6 @@ fn add_whitespace_charwise_with_level(
 ///
 /// This preserves strings and comments by splitting the line into parts.
 fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
-    use crate::parser::patterns::{END_RE, LOG_OP_RE, REL_OP_RE, USE_RE};
-
     // Placeholder to protect pointer assignment (=>) from relational processing
     const PLACEHOLDER: &str = "\x00POINTER_ASSIGN\x00";
 
