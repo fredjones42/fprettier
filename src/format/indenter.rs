@@ -275,7 +275,6 @@ impl F90Indenter {
         // Calculate indent for this line
         // Note: scope_storage was already popped if is_any_end_statement=true
         let line_indent = self.calculate_indent(
-            new_scope,
             is_continue,
             is_any_end_statement,
             valid_end || has_valid_end_after_semicolon,
@@ -423,7 +422,6 @@ impl F90Indenter {
     /// Calculate indent for the current line
     fn calculate_indent(
         &self,
-        new_scope: Option<ScopeType>,
         is_continue: bool,
         is_any_end_statement: bool,
         valid_end: bool,
@@ -439,9 +437,6 @@ impl F90Indenter {
             } else {
                 0
             }
-        } else if is_any_end_statement {
-            // Invalid END: use current indent
-            parent_indent
         } else if is_continue {
             // CONTINUE (ELSE/CASE for Fortran, #:else/#:elif for fypp):
             // MCNP style: CASE statements should NOT be indented (same level as SELECT)
@@ -452,11 +447,8 @@ impl F90Indenter {
             } else {
                 0
             }
-        } else if new_scope.is_some() {
-            // NEW scope: use current indent
-            parent_indent
         } else {
-            // Regular line: use current indent
+            // Invalid END, NEW scope, or regular line: use current indent
             parent_indent
         }
     }
