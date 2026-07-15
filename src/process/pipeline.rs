@@ -53,6 +53,19 @@ fn ends_with_continuation(line: &str) -> bool {
     last_amp_outside_string.is_some_and(|p| p == trimmed.len() - 1)
 }
 
+/// Check if a logical line is blank (no code, comments, or OMP prefix).
+///
+/// Both `inspect_file` and `format_pass` skip consecutive blank lines using
+/// this predicate; they must agree or their line counts drift out of sync.
+fn is_blank_line(fortran_line: &FortranLine) -> bool {
+    fortran_line.joined_line.trim().is_empty()
+        && fortran_line
+            .comments
+            .iter()
+            .all(std::string::String::is_empty)
+        && fortran_line.omp_prefix.is_empty()
+}
+
 /// Result of inspecting a Fortran file for indentation info
 #[derive(Debug)]
 struct InspectResult {
@@ -156,14 +169,7 @@ fn inspect_file<R: BufRead>(
             continue;
         }
 
-        // Check if this line is blank (empty or whitespace only)
-        // Must match the logic in pass_flines to keep line counts in sync
-        let is_blank = fortran_line.joined_line.trim().is_empty()
-            && fortran_line
-                .comments
-                .iter()
-                .all(std::string::String::is_empty)
-            && fortran_line.omp_prefix.is_empty();
+        let is_blank = is_blank_line(&fortran_line);
 
         // Skip consecutive blank lines (same as formatting pass)
         if is_blank && skip_blank {
@@ -1276,13 +1282,7 @@ fn format_pass<R: BufRead, W: Write>(
         // required_indent for scope-opening statements (IF/DO).
         fortran_line_number += 1;
 
-        // Check if this line is blank (empty or whitespace only)
-        let is_blank = fortran_line.joined_line.trim().is_empty()
-            && fortran_line
-                .comments
-                .iter()
-                .all(std::string::String::is_empty)
-            && fortran_line.omp_prefix.is_empty();
+        let is_blank = is_blank_line(&fortran_line);
 
         // Skip this line if it's blank and we just output a blank line
         if is_blank && skip_blank {
