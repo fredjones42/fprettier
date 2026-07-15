@@ -110,8 +110,6 @@ impl F90Aligner {
         }
 
         let mut equals_position = 0;
-        let mut left_delim_positions: Vec<usize> = Vec::new();
-        let mut left_delimiters: Vec<&str> = Vec::new();
 
         // Get current relative indent from stack
         let relative_indent = self.bracket_indent_stack.last().copied().unwrap_or(0);
@@ -135,33 +133,17 @@ impl F90Aligner {
                 self.level += 1;
                 self.bracket_indent_stack
                     .push(pos + delim.len() + relative_indent);
-                left_delim_positions.push(pos);
-                left_delimiters.push(delim);
             }
 
             // Handle closing delimiters
+            // Unpaired/mismatched delimiters are tolerated - bracket matching
+            // is best-effort for alignment purposes
             if let Some(delim) = what_del_close {
                 end_of_delim = Some(pos + delim.len() - 1);
 
                 if self.level > 0 {
                     self.level -= 1;
                     self.bracket_indent_stack.pop();
-                }
-
-                if !left_delim_positions.is_empty() {
-                    left_delim_positions.pop();
-                    let open_delim = left_delimiters.pop();
-
-                    // Validate matching pairs
-                    let valid = matches!(
-                        (open_delim, delim),
-                        (Some("("), ")") | (Some("(/"), "/)") | (Some("["), "]")
-                    );
-
-                    if !valid {
-                        // Unpaired delimiters - silently continue
-                        // (bracket matching is best-effort for alignment)
-                    }
                 }
             }
 
