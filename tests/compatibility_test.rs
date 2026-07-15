@@ -13,6 +13,15 @@ use fprettier::format::CaseMode;
 use fprettier::process::format_file;
 use fprettier::Config;
 
+/// Helper to run format and return result string
+fn run_format(input: &str, config: &Config) -> String {
+    let cursor = Cursor::new(input.as_bytes());
+    let reader = BufReader::new(cursor);
+    let mut output = Vec::new();
+    format_file(reader, &mut output, config, "test.f90").unwrap();
+    String::from_utf8(output).unwrap()
+}
+
 /// Run fprettier on input and compare with expected output
 fn test_compatibility(input_path: &str, expected_path: &str, config: &Config) {
     // Read input file
@@ -128,12 +137,7 @@ fn test_compat_whitespace_basic() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Whitespace formatting mismatch");
 }
@@ -151,12 +155,7 @@ fn test_compat_indent_if_then() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "IF/THEN indentation mismatch");
 }
@@ -174,12 +173,7 @@ fn test_compat_indent_do_loop() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "DO loop indentation mismatch");
 }
@@ -199,12 +193,7 @@ fn test_compat_indent_module() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Module indentation mismatch");
 }
@@ -223,12 +212,7 @@ fn test_compat_semicolon_statements() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Semicolon statement formatting mismatch");
 }
@@ -246,12 +230,7 @@ fn test_compat_relational_operators() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Relational operator formatting mismatch");
 }
@@ -269,12 +248,7 @@ fn test_compat_pointer_assignment() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Pointer assignment formatting mismatch");
 }
@@ -292,12 +266,7 @@ fn test_compat_type_component() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(
         result, expected,
@@ -318,12 +287,7 @@ fn test_compat_function_call() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Function call formatting mismatch");
 }
@@ -344,12 +308,7 @@ fn test_compat_nested_blocks() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Nested blocks indentation mismatch");
 }
@@ -367,12 +326,7 @@ fn test_compat_select_case() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "SELECT CASE indentation mismatch");
 }
@@ -393,12 +347,7 @@ fn test_compat_combined_formatting() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Combined formatting mismatch");
 }
@@ -426,12 +375,7 @@ fn test_compat_whitespace_levels() {
             ..Default::default()
         };
 
-        let cursor = Cursor::new(input.as_bytes());
-        let reader = BufReader::new(cursor);
-        let mut output = Vec::new();
-
-        format_file(reader, &mut output, &config, "test.f90").unwrap();
-        let result = String::from_utf8(output).unwrap();
+        let result = run_format(input, &config);
 
         assert_eq!(result.trim(), *exp, "Whitespace level {w} mismatch");
     }
@@ -452,12 +396,7 @@ fn test_compat_nested_strict_indent() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Nested strict indent mismatch");
 }
@@ -476,12 +415,7 @@ fn test_compat_associate() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Associate construct mismatch");
 }
@@ -500,12 +434,7 @@ fn test_compat_use_alignment() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "USE statement alignment mismatch");
 }
@@ -523,12 +452,7 @@ fn test_compat_plusminus_simple() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Plus/minus simple formatting mismatch");
 }
@@ -546,12 +470,7 @@ fn test_compat_plusminus_complex() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Plus/minus complex formatting mismatch");
 }
@@ -569,12 +488,7 @@ fn test_compat_whitespace_level3() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result.trim(), expected, "Whitespace level 3 mismatch");
 }
@@ -592,12 +506,7 @@ fn test_compat_do_variable() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // 'do' as variable name should be preserved, not treated as DO loop
     assert_eq!(result, input, "'do' variable name mismatch");
@@ -618,12 +527,7 @@ fn test_compat_module_indent_disabled() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Module indent disabled mismatch");
 }
@@ -641,12 +545,7 @@ fn test_compat_type_selector() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     assert_eq!(result, expected, "Type selector whitespace mismatch");
 }
@@ -663,11 +562,7 @@ fn test_compat_concat_operator() {
         whitespace: 0,
         ..Default::default()
     };
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-    format_file(reader, &mut output, &config_w0, "test.f90").unwrap();
-    let result_w0 = String::from_utf8(output).unwrap();
+    let result_w0 = run_format(input, &config_w0);
     assert_eq!(result_w0.trim(), "str=a//b//c", "Concat w=0 mismatch");
 
     // Level 2: spaces around assignment only
@@ -677,11 +572,7 @@ fn test_compat_concat_operator() {
         whitespace: 2,
         ..Default::default()
     };
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-    format_file(reader, &mut output, &config_w2, "test.f90").unwrap();
-    let result_w2 = String::from_utf8(output).unwrap();
+    let result_w2 = run_format(input, &config_w2);
     assert_eq!(result_w2.trim(), "str = a//b//c", "Concat w=2 mismatch");
 }
 
@@ -697,12 +588,7 @@ fn test_compat_concat_in_string() {
         ..Default::default()
     };
 
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, &config, "test.f90").unwrap();
-    let result = String::from_utf8(output).unwrap();
+    let result = run_format(input, &config);
 
     // URL in string should be preserved
     assert_eq!(result, input, "String content should be preserved");
@@ -711,15 +597,6 @@ fn test_compat_concat_in_string() {
 // ============================================================================
 // Additional Unit Tests
 // ============================================================================
-
-/// Helper to run format and return result string
-fn run_format(input: &str, config: &Config) -> String {
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-    format_file(reader, &mut output, config, "test.f90").unwrap();
-    String::from_utf8(output).unwrap()
-}
 
 /// Test indent options -i in [0, 3, 4] with continuation alignment (ported from `test_indent`)
 #[test]
