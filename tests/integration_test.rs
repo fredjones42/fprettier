@@ -472,8 +472,7 @@ fn test_format_statement_continuation_alignment() {
     let cont_leading1 = lines1[1].len() - lines1[1].trim_start().len();
     assert_eq!(
         cont_leading1, 12,
-        "4-digit label: continuation should have 12 spaces, got {}: {}",
-        cont_leading1, result1
+        "4-digit label: continuation should have 12 spaces, got {cont_leading1}: {result1}"
     );
 
     // Test case 2: 1-digit label inside module (indent=3)
@@ -487,8 +486,7 @@ fn test_format_statement_continuation_alignment() {
     let cont_leading2 = lines2[3].len() - lines2[3].trim_start().len();
     assert_eq!(
         cont_leading2, 10,
-        "1-digit label: continuation should have 10 spaces, got {}: {}",
-        cont_leading2, result2
+        "1-digit label: continuation should have 10 spaces, got {cont_leading2}: {result2}"
     );
 }
 
@@ -555,7 +553,7 @@ fn test_binary_plusminus_on_continuation() {
     // The continuation line should have binary plus with space before
     let cont_line = lines
         .iter()
-        .find(|l| l.trim().starts_with("+") || l.trim().starts_with("+ "))
+        .find(|l| l.trim().starts_with('+') || l.trim().starts_with("+ "))
         .expect("Should have continuation line");
     assert!(
         cont_line.contains("+ c"),
@@ -1388,7 +1386,7 @@ end subroutine
 
     // Line 0: subroutine test() - indent 0
     assert!(
-        !lines[0].starts_with(" "),
+        !lines[0].starts_with(' '),
         "subroutine should be at indent 0: '{}'",
         lines[0]
     );
@@ -1765,8 +1763,7 @@ fn test_cpp_lines_no_whitespace_formatting() {
     // (spaces should NOT be added around + or after commas)
     assert!(
         result.contains("FOO(a,b) a+b"),
-        "CPP line should not have whitespace formatting applied: {}",
-        result
+        "CPP line should not have whitespace formatting applied: {result}"
     );
 }
 
@@ -1792,8 +1789,7 @@ fn test_cpp_lines_no_case_conversion() {
     // Case should NOT be changed for CPP line
     assert!(
         result.contains("MyMacro"),
-        "CPP line should preserve original case: {}",
-        result
+        "CPP line should preserve original case: {result}"
     );
 }
 
@@ -1816,13 +1812,11 @@ fn test_cpp_lines_no_operator_replacement() {
     // < and > should NOT be converted to .lt. and .gt. (it's C preprocessor, not Fortran)
     assert!(
         result.contains('<') && result.contains('>'),
-        "CPP line should preserve C-style operators, not convert to Fortran-style: {}",
-        result
+        "CPP line should preserve C-style operators, not convert to Fortran-style: {result}"
     );
     assert!(
         !result.contains(".lt.") && !result.contains(".gt."),
-        "CPP line should not have Fortran-style operators: {}",
-        result
+        "CPP line should not have Fortran-style operators: {result}"
     );
 }
 
@@ -1853,9 +1847,7 @@ fn test_cpp_various_directives() {
         if !line.is_empty() {
             assert!(
                 line.starts_with('#'),
-                "Line {} should start with # at column 0: {}",
-                i,
-                line
+                "Line {i} should start with # at column 0: {line}"
             );
         }
     }
@@ -1884,8 +1876,7 @@ fn test_fypp_not_treated_as_cpp() {
     // The exact behavior depends on the fypp handling logic
     assert!(
         result.contains("#:if") && result.contains("#:endif"),
-        "Fypp directives should be preserved: {}",
-        result
+        "Fypp directives should be preserved: {result}"
     );
 }
 

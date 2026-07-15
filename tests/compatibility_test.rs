@@ -1988,7 +1988,7 @@ fn test_compat_space_before_string_literal() {
 // File-Based Compatibility Tests - Additional Example Files
 // ============================================================================
 
-/// Test example_swapcase.f90 compatibility
+/// Test `example_swapcase.f90` compatibility
 /// This file uses the --case annotation to convert keywords to lowercase
 #[test]
 fn test_example_swapcase_compatibility() {
@@ -2018,7 +2018,7 @@ fn test_example_swapcase_compatibility() {
     test_compatibility(&input, &expected, &config);
 }
 
-/// Test test_fypp.f90 compatibility
+/// Test `test_fypp.f90` compatibility
 /// This file tests fypp preprocessor directive handling including:
 /// - Fypp directives embedded in Fortran continuation lines
 /// - Nested fypp/Fortran scope tracking
@@ -2040,7 +2040,7 @@ fn test_fypp_file_compatibility() {
     test_compatibility(&input, &expected, &config);
 }
 
-/// Test test_invalid.f90 compatibility
+/// Test `test_invalid.f90` compatibility
 /// This file contains intentionally invalid/incomplete Fortran code
 /// to test error recovery and handling of malformed input
 #[test]
@@ -2060,7 +2060,7 @@ fn test_invalid_file_compatibility() {
     test_compatibility(&input, &expected, &config);
 }
 
-/// Test test_namelist_block_select.f90 compatibility
+/// Test `test_namelist_block_select.f90` compatibility
 /// This file tests namelist, block construct, and select type handling
 #[test]
 fn test_namelist_block_select_compatibility() {
@@ -2079,7 +2079,7 @@ fn test_namelist_block_select_compatibility() {
     test_compatibility(&input, &expected, &config);
 }
 
-/// Test where_forall.f90 compatibility
+/// Test `where_forall.f90` compatibility
 /// This file tests WHERE and FORALL construct handling
 #[test]
 fn test_where_forall_compatibility() {
@@ -2252,7 +2252,7 @@ fn test_compat_fypp_worktype() {
     assert_eq!(result, expected, "Fypp worktype formatting mismatch");
 }
 
-/// Test fypp DEBUG_CODE nested definition (ported from `test_fypp`)
+/// Test fypp `DEBUG_CODE` nested definition (ported from `test_fypp`)
 #[test]
 fn test_compat_fypp_debug_code() {
     let input = concat!(
@@ -2587,7 +2587,7 @@ fn test_assignment_spacing() {
 
     let config = Config::default();
 
-    let result = run_format(&input, &config);
+    let result = run_format(input, &config);
     assert_eq!(result, input, "Assignment spacing mismatch"); // Result should be unchanged from input
 }
 
@@ -2616,7 +2616,7 @@ end module foo
 
     let config = Config::default();
 
-    let result = run_format(&input, &config);
+    let result = run_format(input, &config);
     assert_eq!(
         result, expected,
         "Incorrect spacing between apostrophe and operator"
