@@ -113,7 +113,6 @@ fn main() -> Result<()> {
 ///
 /// If `for_path` is provided and no explicit config file is specified,
 /// uses auto-discovery to find config files in parent directories.
-#[allow(clippy::too_many_lines)]
 fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
     let mut config = if let Some(config_path) = &args.config {
         // Explicit config file specified
@@ -124,35 +123,28 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
             );
         }
         Config::from_toml_file(config_path)?
-    } else if let Some(path) = for_path {
-        // Auto-discover config files from parent directories
-        if args.debug {
-            let discovered = Config::discover_config_files(path);
-            if discovered.is_empty() {
-                eprintln!("[DEBUG] No config files discovered for: {}", path.display());
-            } else {
-                eprintln!("[DEBUG] Discovered config files for {}:", path.display());
-                for f in &discovered {
-                    eprintln!("[DEBUG]   - {}", f.display());
-                }
-            }
-        }
-        Config::from_discovered_files(path)
     } else {
-        // No path provided, use current directory for discovery
+        // Auto-discover config files from parent directories of the target
+        // path, or of the current directory when no path is given
+        let start = for_path.map_or_else(
+            || std::env::current_dir().unwrap_or_default(),
+            Path::to_path_buf,
+        );
         if args.debug {
-            let cwd = std::env::current_dir().unwrap_or_default();
-            let discovered = Config::discover_config_files(&cwd);
+            let discovered = Config::discover_config_files(&start);
             if discovered.is_empty() {
-                eprintln!("[DEBUG] No config files discovered in current directory");
+                eprintln!(
+                    "[DEBUG] No config files discovered for: {}",
+                    start.display()
+                );
             } else {
-                eprintln!("[DEBUG] Discovered config files:");
+                eprintln!("[DEBUG] Discovered config files for {}:", start.display());
                 for f in &discovered {
                     eprintln!("[DEBUG]   - {}", f.display());
                 }
             }
         }
-        Config::from_discovered_files(&std::env::current_dir().unwrap_or_default())
+        Config::from_discovered_files(&start)
     };
 
     // Override with CLI arguments
