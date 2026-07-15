@@ -472,8 +472,10 @@ mod tests {
 
     #[test]
     fn test_config_apply_partial_preserves_unset() {
-        let mut base = Config::default();
-        base.indent = 2; // Set a non-default value
+        let mut base = Config {
+            indent: 2, // A non-default value the partial must not reset
+            ..Default::default()
+        };
 
         // Partial config that only sets line_length
         let partial = PartialConfig {
