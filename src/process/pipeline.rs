@@ -881,26 +881,13 @@ fn write_output_line<W: Write>(
         && write_ctx.comment_line_indices.contains(&line_index);
 
     // Determine what to write for the line portion
-    // If there's a comment and we're stripping, trim trailing spaces from the line
-    // For comment-only lines that were originally indented, preserve one space
-    // so that Pass 2 of two-pass formatting can detect the original indentation
-    let line_to_write = if has_comment && pass_ctx.config.normalize_comment_spacing {
+    // If there's a comment, trim trailing spaces from the line since the
+    // comment provides the separation
+    let line_to_write = if has_comment {
         let trimmed = line.trim_end();
         // If the line is now empty (comment-only) but was originally indented,
-        // preserve one space as a marker for Pass 2
-        if trimmed.is_empty()
-            && origin < write_ctx.lines_were_indented.len()
-            && write_ctx.lines_were_indented[origin]
-        {
-            " "
-        } else {
-            trimmed
-        }
-    } else if has_comment {
-        // Even without normalize_comment_spacing, we should trim trailing spaces
-        // since the comment provides the separation
-        // But preserve one space for originally-indented comment-only lines
-        let trimmed = line.trim_end();
+        // preserve one space as a marker so that Pass 2 of two-pass formatting
+        // can detect the original indentation
         if trimmed.is_empty()
             && origin < write_ctx.lines_were_indented.len()
             && write_ctx.lines_were_indented[origin]
