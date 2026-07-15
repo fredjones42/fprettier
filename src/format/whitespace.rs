@@ -44,6 +44,19 @@ static PLUSMINUS_RE: LazyLock<Regex> =
 static SCI_NOTATION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?:^|[^a-z_])(\d+\.?\d*|\d*\.?\d+)[ed]$").unwrap());
 
+/// Remove trailing spaces from the output buffer
+fn pop_trailing_spaces(s: &mut String) {
+    s.truncate(s.trim_end_matches(' ').len());
+}
+
+/// Return the first index at or after `i` that is not a space
+fn skip_spaces(chars: &[char], mut i: usize) -> usize {
+    while i < chars.len() && chars[i] == ' ' {
+        i += 1;
+    }
+    i
+}
+
 /// Format a single logical Fortran line with whitespace formatting
 ///
 /// Applies the 3-stage whitespace formatting process:
@@ -403,9 +416,7 @@ fn add_whitespace_charwise_with_level(
                 let preserve_space = matches!(last_non_space_in_ftd, Some('+' | '-' | '*' | '/'));
 
                 if !preserve_space {
-                    while formatted_line.ends_with(' ') {
-                        formatted_line.pop();
-                    }
+                    pop_trailing_spaces(&mut formatted_line);
                 }
 
                 // Add space before if needed (but not if we already preserved one)
@@ -418,9 +429,7 @@ fn add_whitespace_charwise_with_level(
                 i += delim.len();
 
                 // Remove leading spaces from what follows
-                while i < chars.len() && chars[i] == ' ' {
-                    i += 1;
-                }
+                i = skip_spaces(&chars, i);
                 continue;
             }
         }
@@ -433,9 +442,7 @@ fn add_whitespace_charwise_with_level(
                 level = level.saturating_sub(1);
 
                 // Remove trailing spaces before delimiter
-                while formatted_line.ends_with(' ') {
-                    formatted_line.pop();
-                }
+                pop_trailing_spaces(&mut formatted_line);
 
                 // Add the delimiter
                 formatted_line.push_str(delim);
@@ -455,9 +462,7 @@ fn add_whitespace_charwise_with_level(
                     j + 1 < chars.len() && chars[j] == ':' && chars[j + 1] == ':';
 
                 // Skip existing spaces
-                while i < chars.len() && chars[i] == ' ' {
-                    i += 1;
-                }
+                i = skip_spaces(&chars, i);
 
                 // Check what follows and determine spacing
                 if i < chars.len() {
@@ -502,26 +507,20 @@ fn add_whitespace_charwise_with_level(
         // Handle commas and semicolons
         if (ch == ',' || ch == ';') && whitespace_flags[0] {
             // Remove trailing space before
-            while formatted_line.ends_with(' ') {
-                formatted_line.pop();
-            }
+            pop_trailing_spaces(&mut formatted_line);
             formatted_line.push(ch);
             // Add space after
             formatted_line.push(' ');
             i += 1;
             // Skip any existing spaces after
-            while i < chars.len() && chars[i] == ' ' {
-                i += 1;
-            }
+            i = skip_spaces(&chars, i);
             continue;
         }
 
         // Handle type component % (whitespace_flags[7] - remove spaces around %)
         if ch == '%' {
             // Remove trailing space before
-            while formatted_line.ends_with(' ') {
-                formatted_line.pop();
-            }
+            pop_trailing_spaces(&mut formatted_line);
 
             // Add % with optional spacing (whitespace_flags[7] = 0 means no space)
             if whitespace_flags[7] {
@@ -534,9 +533,7 @@ fn add_whitespace_charwise_with_level(
             i += 1;
 
             // Skip any existing spaces after
-            while i < chars.len() && chars[i] == ' ' {
-                i += 1;
-            }
+            i = skip_spaces(&chars, i);
             continue;
         }
 
@@ -563,9 +560,7 @@ fn add_whitespace_charwise_with_level(
 
             if should_space {
                 // Remove trailing space before
-                while formatted_line.ends_with(' ') {
-                    formatted_line.pop();
-                }
+                pop_trailing_spaces(&mut formatted_line);
 
                 // Add space before
                 formatted_line.push(' ');
@@ -581,9 +576,7 @@ fn add_whitespace_charwise_with_level(
                 i += 1;
 
                 // Skip any existing spaces after
-                while i < chars.len() && chars[i] == ' ' {
-                    i += 1;
-                }
+                i = skip_spaces(&chars, i);
                 continue;
             }
         }
@@ -597,9 +590,7 @@ fn add_whitespace_charwise_with_level(
             && whitespace_flags[9]
         {
             // Remove trailing space before
-            while formatted_line.ends_with(' ') {
-                formatted_line.pop();
-            }
+            pop_trailing_spaces(&mut formatted_line);
 
             // Add space before ::
             formatted_line.push(' ');
@@ -611,9 +602,7 @@ fn add_whitespace_charwise_with_level(
             i += 2;
 
             // Skip any existing spaces after
-            while i < chars.len() && chars[i] == ' ' {
-                i += 1;
-            }
+            i = skip_spaces(&chars, i);
             continue;
         }
 
@@ -629,9 +618,7 @@ fn add_whitespace_charwise_with_level(
 
                 // Remove trailing spaces before // (unless preserving comma space)
                 if !preserve_comma_space {
-                    while formatted_line.ends_with(' ') {
-                        formatted_line.pop();
-                    }
+                    pop_trailing_spaces(&mut formatted_line);
                 }
 
                 // Add the concat operator without spaces
@@ -640,9 +627,7 @@ fn add_whitespace_charwise_with_level(
                 i += 2;
 
                 // Skip any existing spaces after //
-                while i < chars.len() && chars[i] == ' ' {
-                    i += 1;
-                }
+                i = skip_spaces(&chars, i);
                 continue;
             }
 
@@ -658,9 +643,7 @@ fn add_whitespace_charwise_with_level(
             let skip_space_after = next_after_concat == Some(')') || next_after_concat == Some(']');
 
             // Remove trailing spaces
-            while formatted_line.ends_with(' ') {
-                formatted_line.pop();
-            }
+            pop_trailing_spaces(&mut formatted_line);
 
             // Add space before unless after open delimiter
             if !skip_space_before && prev_char.is_some() {
@@ -673,9 +656,7 @@ fn add_whitespace_charwise_with_level(
             i += 2;
 
             // Skip existing spaces after
-            while i < chars.len() && chars[i] == ' ' {
-                i += 1;
-            }
+            i = skip_spaces(&chars, i);
 
             // Add space after unless before close delimiter
             if !skip_space_after && i < chars.len() {
@@ -728,9 +709,7 @@ fn add_whitespace_charwise_with_level(
 
             if is_binary {
                 // Remove trailing space before
-                while formatted_line.ends_with(' ') {
-                    formatted_line.pop();
-                }
+                pop_trailing_spaces(&mut formatted_line);
 
                 // Add space before
                 formatted_line.push(' ');
@@ -741,9 +720,7 @@ fn add_whitespace_charwise_with_level(
                 i += 1;
 
                 // Skip any existing spaces after
-                while i < chars.len() && chars[i] == ' ' {
-                    i += 1;
-                }
+                i = skip_spaces(&chars, i);
                 continue;
             }
         }
@@ -790,9 +767,7 @@ fn add_whitespace_charwise_with_level(
 
             if is_binary {
                 // Remove trailing spaces
-                while formatted_line.ends_with(' ') {
-                    formatted_line.pop();
-                }
+                pop_trailing_spaces(&mut formatted_line);
 
                 // Add space before
                 formatted_line.push(' ');
@@ -803,9 +778,7 @@ fn add_whitespace_charwise_with_level(
                 i += 1;
 
                 // Skip existing spaces after
-                while i < chars.len() && chars[i] == ' ' {
-                    i += 1;
-                }
+                i = skip_spaces(&chars, i);
                 continue;
             }
         }
