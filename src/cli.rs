@@ -119,6 +119,12 @@ pub struct CliArgs {
     /// Output to stdout instead of in-place
     pub stdout: bool,
 
+    /// Print a unified diff instead of modifying files
+    pub diff: bool,
+
+    /// List files that would change and exit non-zero, instead of modifying files
+    pub check: bool,
+
     /// Config file path
     pub config: Option<PathBuf>,
 
@@ -252,6 +258,21 @@ pub fn build_cli() -> Command {
                 .short('s')
                 .long("stdout")
                 .help("Output to stdout instead of modifying files in-place")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("diff")
+                .short('d')
+                .long("diff")
+                .help("Print a unified diff of formatting changes instead of modifying files")
+                .conflicts_with("stdout")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("check")
+                .long("check")
+                .help("Don't modify files; list files that would be reformatted and exit 1 if any")
+                .conflicts_with("stdout")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -392,6 +413,8 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
         c_relations: matches.get_flag("c-relations"),
         comment_spacing: matches.get_one::<usize>("comment-spacing").copied(),
         stdout: matches.get_flag("stdout"),
+        diff: matches.get_flag("diff"),
+        check: matches.get_flag("check"),
         config: matches.get_one::<PathBuf>("config").cloned(),
         recursive: matches.get_flag("recursive"),
         exclude: matches
@@ -429,6 +452,23 @@ mod tests {
         assert!(matches.get_many::<PathBuf>("inputs").is_none());
         assert!(!matches.get_flag("no-indent"));
         assert!(!matches.get_flag("stdout"));
+    }
+
+    #[test]
+    fn test_diff_and_check_flags() {
+        let args = parse_args_from(vec!["fprettier", "-d", "--check", "file.f90"]);
+        assert!(args.diff);
+        assert!(args.check);
+
+        let args = parse_args_from(vec!["fprettier", "file.f90"]);
+        assert!(!args.diff);
+        assert!(!args.check);
+    }
+
+    #[test]
+    fn test_diff_conflicts_with_stdout() {
+        let result = build_cli().try_get_matches_from(vec!["fprettier", "-d", "-s", "file.f90"]);
+        assert!(result.is_err());
     }
 
     /// Look up an override value by `whitespace_dict` key

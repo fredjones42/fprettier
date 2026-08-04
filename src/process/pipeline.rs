@@ -264,7 +264,7 @@ static BLOCK_SCOPE_OPENER_RE: LazyLock<RegexSet> = LazyLock::new(|| {
         where_block,
         forall,
     ])
-    .expect("Invalid regex in BLOCK_SCOPE_OPENER_RE")
+    .expect("invalid regex in BLOCK_SCOPE_OPENER_RE")
 });
 
 /// Fypp line directive pattern - matches lines starting with #!, #:, $:, or @:

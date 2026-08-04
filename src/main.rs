@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Cursor, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
@@ -19,6 +20,7 @@ use fprettier::process::format_file;
 use fprettier::{build_cli, find_directive, parse_args, CliArgs, Config};
 use glob::Pattern;
 use rayon::prelude::*;
+use similar::TextDiff;
 use walkdir::WalkDir;
 
 /// Fortran file extensions to process
@@ -31,7 +33,7 @@ const FORTRAN_EXTENSIONS: &[&str] = &[
 /// Files larger than this are skipped to prevent memory exhaustion
 const DEFAULT_MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
     // Parse CLI arguments
     let args = parse_args();
 
@@ -42,7 +44,7 @@ fn main() -> Result<()> {
     // If no inputs and running interactively, print help; otherwise read from stdin
     if args.inputs.is_empty() && io::stdin().is_terminal() {
         build_cli().print_help()?;
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
 
     if use_stdin {
@@ -80,13 +82,16 @@ fn main() -> Result<()> {
         if !args.silent {
             eprintln!("No Fortran files found to format.");
         }
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
+
+    // Sequential processing keeps stdout/diff/check output deterministic
+    let use_sequential = args.stdout || args.diff || args.check || args.jobs == Some(1);
 
     // Pre-warm regex patterns on the main thread to avoid contention
     // during parallel processing. There are ~100 LazyLock<Regex> patterns
     // across the codebase; formatting a minimal program initializes them all.
-    if args.jobs != Some(1) && !args.stdout {
+    if !use_sequential {
         let warmup = b"program x\nend program x\n";
         let _ = format_file(
             BufReader::new(Cursor::new(warmup.as_slice())),
@@ -97,16 +102,18 @@ fn main() -> Result<()> {
     }
 
     // Process files
-    let use_sequential = args.stdout || args.jobs == Some(1);
-    if use_sequential {
-        // Sequential processing for stdout or --jobs 1
-        process_files_sequential(&files, base_config.as_ref(), &args);
+    let (changed, errors) = if use_sequential {
+        process_files_sequential(&files, base_config.as_ref(), &args)
     } else {
         // Parallel processing for in-place formatting
         process_files_parallel(&files, base_config.as_ref(), &args);
-    }
+        (0, 0)
+    };
 
-    Ok(())
+    if args.check && (changed > 0 || errors > 0) {
+        return Ok(ExitCode::FAILURE);
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Build configuration from CLI args and optional config file
@@ -207,7 +214,7 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
 
     // Validate configuration
     if let Some(error) = config.validate() {
-        anyhow::bail!("Invalid configuration: {error}");
+        anyhow::bail!("invalid configuration: {error}");
     }
 
     Ok(config)
@@ -348,8 +355,15 @@ fn is_fortran_file(path: &Path, custom_extensions: &[String]) -> bool {
         })
 }
 
-/// Process files sequentially (for stdout output)
-fn process_files_sequential(files: &[PathBuf], base_config: Option<&Config>, args: &CliArgs) {
+/// Process files sequentially (for stdout/diff/check output).
+/// Returns (files that changed or would change, files that errored).
+fn process_files_sequential(
+    files: &[PathBuf],
+    base_config: Option<&Config>,
+    args: &CliArgs,
+) -> (usize, usize) {
+    let mut changed = 0;
+    let mut errors = 0;
     for path in files {
         // Use base config if provided, otherwise discover per-file config
         let file_result = if let Some(config) = base_config {
@@ -361,10 +375,16 @@ fn process_files_sequential(files: &[PathBuf], base_config: Option<&Config>, arg
             }
         };
 
-        if let Err(e) = file_result {
-            eprintln!("Error formatting {}: {}", path.display(), e);
+        match file_result {
+            Ok(true) => changed += 1,
+            Ok(false) => {}
+            Err(e) => {
+                errors += 1;
+                eprintln!("Error formatting {}: {}", path.display(), e);
+            }
         }
     }
+    (changed, errors)
 }
 
 /// Process files in parallel using Rayon
@@ -407,7 +427,7 @@ fn process_files_parallel(files: &[PathBuf], base_config: Option<&Config>, args:
         };
 
         match file_result {
-            Ok(()) => {
+            Ok(_) => {
                 success_count.fetch_add(1, Ordering::Relaxed);
             }
             Err(e) => {
@@ -475,8 +495,8 @@ fn apply_directive_overrides(config: &mut Config, contents: &[u8], debug: bool, 
     }
 }
 
-/// Process a single file
-fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Result<()> {
+/// Process a single file. Returns whether the file changed (or would change).
+fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Result<bool> {
     // Check file size BEFORE reading to prevent memory exhaustion
     let metadata = std::fs::metadata(path)?;
     let file_size = metadata.len();
@@ -491,7 +511,7 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
                 limit_mb
             );
         }
-        return Ok(());
+        return Ok(false);
     }
 
     // Read input file into memory
@@ -510,7 +530,7 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
                     max_lines
                 );
             }
-            return Ok(());
+            return Ok(false);
         }
     }
 
@@ -541,20 +561,36 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
     format_file(reader, &mut output, effective_config, source_name)?;
 
     // Output results
-    if args.stdout {
-        io::stdout().write_all(&output)?;
-    } else {
-        // Write back to file only if content changed
-        if output != file_contents {
-            std::fs::write(path, &output)?;
+    let changed = output != file_contents;
+    if args.diff || args.check {
+        if changed {
+            if args.check {
+                println!("Would reformat: {}", path.display());
+            }
+            if args.diff {
+                print_diff(&file_contents, &output, source_name);
+            }
         }
+    } else if args.stdout {
+        io::stdout().write_all(&output)?;
+    } else if changed {
+        // Write back to file only if content changed
+        std::fs::write(path, &output)?;
     }
 
-    Ok(())
+    Ok(changed)
+}
+
+/// Print a unified diff between original and formatted contents
+fn print_diff(original: &[u8], formatted: &[u8], name: &str) {
+    let old = String::from_utf8_lossy(original);
+    let new = String::from_utf8_lossy(formatted);
+    let diff = TextDiff::from_lines(old.as_ref(), new.as_ref());
+    print!("{}", diff.unified_diff().header(name, name));
 }
 
 /// Process input from stdin, output to stdout
-fn process_stdin(config: &Config, args: &CliArgs) -> Result<()> {
+fn process_stdin(config: &Config, args: &CliArgs) -> Result<ExitCode> {
     // Read all input from stdin
     let mut stdin_contents = Vec::new();
     io::stdin().read_to_end(&mut stdin_contents)?;
@@ -579,6 +615,23 @@ fn process_stdin(config: &Config, args: &CliArgs) -> Result<()> {
     let mut output = Vec::new();
     format_file(reader, &mut output, &file_config, "stdin")?;
 
+    if args.diff || args.check {
+        let changed = output != stdin_contents;
+        if changed {
+            if args.check {
+                println!("Would reformat: stdin");
+            }
+            if args.diff {
+                print_diff(&stdin_contents, &output, "stdin");
+            }
+        }
+        return Ok(if args.check && changed {
+            ExitCode::FAILURE
+        } else {
+            ExitCode::SUCCESS
+        });
+    }
+
     // Always output to stdout when reading from stdin
     io::stdout().write_all(&output)?;
 
@@ -586,5 +639,5 @@ fn process_stdin(config: &Config, args: &CliArgs) -> Result<()> {
         eprintln!("Formatted stdin successfully.");
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }

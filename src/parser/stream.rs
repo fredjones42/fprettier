@@ -161,7 +161,7 @@ impl<R: BufRead> InputStream<R> {
             // Guard against memory exhaustion from pathological inputs
             if lines.len() > MAX_CONTINUATION_LINES {
                 bail!(
-                    "Line {} exceeds maximum continuation lines ({})",
+                    "line {} exceeds maximum continuation lines ({})",
                     self.line_number,
                     MAX_CONTINUATION_LINES
                 );

@@ -19,7 +19,7 @@ fn build_re(pattern: &str) -> Regex {
         .case_insensitive(true)
         .unicode(true)
         .build()
-        .unwrap_or_else(|_| panic!("Invalid regex pattern: {pattern}"))
+        .unwrap_or_else(|_| panic!("invalid regex pattern: {pattern}"))
 }
 
 // Anchor patterns

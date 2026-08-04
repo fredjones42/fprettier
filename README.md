@@ -23,7 +23,32 @@ cargo install fprettier
 
 Run `fprettier` with no arguments to display the usage information.
 
+Format files in-place:
+
+```sh
+fprettier -r src/
+```
+
+Verify formatting without modifying files — prints the files that would change
+and exits non-zero if there are any, so CI needs just one step:
+
+```sh
+fprettier --check -r src/
+```
+
+Show what would change as a unified diff, without modifying files:
+
+```sh
+fprettier --diff -r src/
+```
+
 ## Revision History
+
+### Version 0.4.0
+
+**New Features:**
+- Added `--check`: list files that would be reformatted and exit 1 if any (for CI)
+- Added `--diff`/`-d`: print a unified diff of formatting changes instead of modifying files
 
 ### Version 0.3.0
 
