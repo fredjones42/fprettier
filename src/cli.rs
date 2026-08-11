@@ -135,7 +135,10 @@ pub struct CliArgs {
     pub silent: bool,
 
     /// Case conversion settings [keywords, procedures, operators, constants]
-    pub case: Option<[CaseMode; 4]>,
+    pub case: Option<Vec<CaseMode>>,
+
+    /// Case of kind= values, literal kind suffixes and exponent letters
+    pub case_types: Option<CaseMode>,
 
     /// Number of parallel jobs (0 = auto, 1 = sequential)
     pub jobs: Option<usize>,
@@ -337,6 +340,15 @@ pub fn build_cli() -> Command {
                 .value_parser(clap::value_parser!(u8).range(0..=2)),
         )
         .arg(
+            // A fifth value on --case would make clap swallow the trailing
+            // file path, so this rides as its own flag
+            Arg::new("case-types")
+                .long("case-types")
+                .help("Case of kind= values, literal kind suffixes and exponent letters (0=none, 1=lower, 2=upper)")
+                .value_name("NUM")
+                .value_parser(clap::value_parser!(u8).range(0..=2)),
+        )
+        .arg(
             Arg::new("jobs")
                 .short('j')
                 .long("jobs")
@@ -379,12 +391,11 @@ where
 
 /// Convert clap `ArgMatches` to `CliArgs`
 fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
-    let case = matches.get_many::<u8>("case").map(|vals| {
-        let v: Vec<CaseMode> = vals
-            .map(|&n| CaseMode::try_from(n).expect("clap validated range 0..=2"))
-            .collect();
-        [v[0], v[1], v[2], v[3]]
-    });
+    let to_mode = |n: u8| CaseMode::try_from(n).expect("clap validated range 0..=2");
+    let case = matches
+        .get_many::<u8>("case")
+        .map(|vals| vals.map(|&n| to_mode(n)).collect());
+    let case_types = matches.get_one::<u8>("case-types").map(|&n| to_mode(n));
 
     CliArgs {
         inputs: matches
@@ -429,6 +440,7 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
         debug: matches.get_flag("debug"),
         silent: matches.get_flag("silent"),
         case,
+        case_types,
         jobs: matches.get_one::<usize>("jobs").copied(),
     }
 }
@@ -553,6 +565,34 @@ mod tests {
         assert_eq!(ws_override(&args, "type"), Some(true));
         assert_eq!(ws_override(&args, "intrinsics"), Some(false));
         assert_eq!(ws_override(&args, "concat"), Some(true));
+    }
+
+    #[test]
+    fn test_case_four_values_then_file() {
+        // --case must not swallow the trailing path: a fifth value on --case
+        // would make clap read "file.f90" as a case mode
+        let args = parse_args_from(vec!["fprettier", "--case", "1", "2", "0", "0", "file.f90"]);
+        assert_eq!(
+            args.case,
+            Some(vec![
+                CaseMode::Lower,
+                CaseMode::Upper,
+                CaseMode::NoChange,
+                CaseMode::NoChange
+            ])
+        );
+        assert_eq!(args.inputs, vec![PathBuf::from("file.f90")]);
+        assert_eq!(args.case_types, None);
+    }
+
+    #[test]
+    fn test_case_types_flag() {
+        let args = parse_args_from(vec!["fprettier", "--case-types", "2", "file.f90"]);
+        assert_eq!(args.case_types, Some(CaseMode::Upper));
+        assert_eq!(args.case, None);
+
+        let args = parse_args_from(vec!["fprettier", "file.f90"]);
+        assert_eq!(args.case_types, None);
     }
 
     #[test]

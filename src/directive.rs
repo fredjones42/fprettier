@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::format::case_convert::CaseMode;
+use crate::format::case_convert::{CaseMode, CASE_KEYS};
 
 /// Pattern to match fprettier directives
 static FPRETTIER_DIRECTIVE_RE: LazyLock<Regex> =
@@ -27,6 +27,7 @@ pub struct DirectiveOverrides {
     pub case_procedures: Option<CaseMode>,
     pub case_operators: Option<CaseMode>,
     pub case_constants: Option<CaseMode>,
+    pub case_types: Option<CaseMode>,
 }
 
 impl DirectiveOverrides {
@@ -42,25 +43,24 @@ impl DirectiveOverrides {
             && self.case_procedures.is_none()
             && self.case_operators.is_none()
             && self.case_constants.is_none()
+            && self.case_types.is_none()
     }
 
     /// Get case overrides as a `BTreeMap` (for use with `CaseSettings::from_dict`)
     #[must_use]
     pub fn get_case_dict(&self) -> BTreeMap<String, CaseMode> {
-        let mut dict = BTreeMap::new();
-        if let Some(v) = self.case_keywords {
-            dict.insert("keywords".to_string(), v);
-        }
-        if let Some(v) = self.case_procedures {
-            dict.insert("procedures".to_string(), v);
-        }
-        if let Some(v) = self.case_operators {
-            dict.insert("operators".to_string(), v);
-        }
-        if let Some(v) = self.case_constants {
-            dict.insert("constants".to_string(), v);
-        }
-        dict
+        let modes = [
+            self.case_keywords,
+            self.case_procedures,
+            self.case_operators,
+            self.case_constants,
+            self.case_types,
+        ];
+        CASE_KEYS
+            .iter()
+            .zip(modes)
+            .filter_map(|(key, mode)| mode.map(|m| ((*key).to_string(), m)))
+            .collect()
     }
 }
 
@@ -92,6 +92,11 @@ fn parse_directive_args(args_str: &str) -> Option<DirectiveOverrides> {
     let mut overrides = DirectiveOverrides::default();
     let tokens: Vec<&str> = args_str.split_whitespace().collect();
     let mut i = 0;
+    let parse_mode = |tok: &&str| -> Option<CaseMode> {
+        tok.parse::<u8>()
+            .ok()
+            .and_then(|v| CaseMode::try_from(v).ok())
+    };
 
     while i < tokens.len() {
         let token = tokens[i];
@@ -130,11 +135,6 @@ fn parse_directive_args(args_str: &str) -> Option<DirectiveOverrides> {
                 // Format: --case 1 2 0 0 (keywords, procedures, operators, constants)
                 // Try to read up to 4 values from subsequent tokens
                 // Invalid values are ignored, consistent with the lenient directive parser
-                let parse_mode = |tok: &&str| -> Option<CaseMode> {
-                    tok.parse::<u8>()
-                        .ok()
-                        .and_then(|v| CaseMode::try_from(v).ok())
-                };
                 overrides.case_keywords = tokens.get(i + 1).and_then(parse_mode);
                 overrides.case_procedures = tokens.get(i + 2).and_then(parse_mode);
                 overrides.case_operators = tokens.get(i + 3).and_then(parse_mode);
@@ -149,6 +149,10 @@ fn parse_directive_args(args_str: &str) -> Option<DirectiveOverrides> {
                     }
                 }
                 i += skip;
+            }
+            "--case-types" => {
+                overrides.case_types = tokens.get(i + 1).and_then(parse_mode);
+                i += 1;
             }
             _ => {
                 // Unknown option, skip
@@ -227,6 +231,19 @@ mod tests {
         assert_eq!(overrides.case_procedures, Some(CaseMode::Upper));
         assert_eq!(overrides.case_operators, Some(CaseMode::NoChange));
         assert_eq!(overrides.case_constants, Some(CaseMode::Lower));
+    }
+
+    #[test]
+    fn test_parse_directive_case_types() {
+        let overrides = parse_directive("! fprettier: --case-types 2").unwrap();
+        assert_eq!(overrides.case_types, Some(CaseMode::Upper));
+        assert_eq!(overrides.case_keywords, None);
+
+        // --case leaves types alone, so the two can be combined
+        let overrides = parse_directive("! fprettier: --case 1 1 1 1 --case-types 2").unwrap();
+        assert_eq!(overrides.case_keywords, Some(CaseMode::Lower));
+        assert_eq!(overrides.case_types, Some(CaseMode::Upper));
+        assert_eq!(overrides.get_case_dict().len(), 5);
     }
 
     #[test]

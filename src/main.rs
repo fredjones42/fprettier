@@ -32,6 +32,7 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
+use fprettier::format::case_convert::CASE_KEYS;
 use fprettier::process::format_file;
 use fprettier::{build_cli, find_directive, parse_args, CliArgs, Config, DirectiveOverrides};
 use glob::Pattern;
@@ -214,11 +215,15 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
     if let Some(spacing) = args.comment_spacing {
         config.comment_spacing = spacing;
     }
-    if let Some(case) = args.case {
-        config.case_dict.insert("keywords".to_string(), case[0]);
-        config.case_dict.insert("procedures".to_string(), case[1]);
-        config.case_dict.insert("operators".to_string(), case[2]);
-        config.case_dict.insert("constants".to_string(), case[3]);
+    if let Some(case) = &args.case {
+        // zip stops at the shorter side: --case sets the first four keys and
+        // leaves `types` to --case-types (or to the config file)
+        for (key, mode) in CASE_KEYS.iter().zip(case) {
+            config.case_dict.insert((*key).to_string(), *mode);
+        }
+    }
+    if let Some(types) = args.case_types {
+        config.case_dict.insert("types".to_string(), types);
     }
 
     // Print final config in debug mode

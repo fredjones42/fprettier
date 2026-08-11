@@ -414,6 +414,10 @@ static NUMERIC_EXPONENT_RE: LazyLock<Regex> =
 static NUMERIC_EXP_KIND_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([\d.]*[dDeE])([+-]?\d+)_(\w+)$").unwrap());
 
+/// The case categories, in the order `--case` and `! fprettier: --case` take
+/// them. Also the accepted keys of the `[case_dict]` config table.
+pub const CASE_KEYS: [&str; 5] = ["keywords", "procedures", "operators", "constants", "types"];
+
 /// Case conversion mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaseMode {
