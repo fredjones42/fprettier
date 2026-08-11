@@ -162,6 +162,16 @@ matrix = [1, 0, &   !&<
 **New Features:**
 - Added `--check`: list files that would be reformatted and exit 1 if any (for CI)
 - Added `--diff`/`-d`: print a unified diff of formatting changes instead of modifying files
+- Added `--case-types` and the matching `! fprettier: --case-types` directive, controlling the case of `kind=` values, literal kind suffixes (`2_int64`) and exponent letters (`1.0e3`). This category was previously reachable only through a `[case_dict]` table in `fprettier.toml`
+- Documented the configuration surface in the README: config file discovery and precedence, every `fprettier.toml` key, the whitespace levels and their per-rule overrides, the case categories, directives, and the `!&` deactivation markers
+
+**Bug Fixes:**
+- Fixed formatting not converging for multi-line fypp directives: continuation lines shifted further right on every run, so formatting the same file twice gave different output
+- Fixed a panic when standard output is a closed pipe, such as `fprettier --check -r . | head`. This affected `--diff` and `--stdout` as well
+- Fixed signed exponents (`1.0e-3`, `2.5d+8`) not being case-converted, while unsigned ones were
+
+**Other:**
+- Requires Rust 1.87 or later, now declared as `rust-version` in `Cargo.toml`
 
 ### Version 0.3.0
 
