@@ -438,22 +438,32 @@ pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Conf
         formatted = intermediate;
     }
 
-    // The parser strips \r along with \n, so every line above ends with a bare
-    // \n. Put CRLF back when the input used it, otherwise formatting a file
-    // rewrites every one of its line endings. A file with mixed endings is
-    // normalized to the ending it uses anywhere.
-    if crlf_input {
-        for chunk in formatted.split_inclusive(|&b| b == b'\n') {
-            match chunk.split_last() {
-                Some((b'\n', body)) => {
-                    output.write_all(body)?;
-                    output.write_all(b"\r\n")?;
-                }
-                _ => output.write_all(chunk)?,
+    write_lines(output, &formatted, crlf_input)?;
+
+    Ok(())
+}
+
+/// Write the formatted bytes, restoring CRLF line endings if the input used
+/// them.
+///
+/// The parser strips `\r` along with `\n`, so every formatted line ends with a
+/// bare `\n`; without this, formatting a file would rewrite every one of its
+/// line endings. A file with mixed endings is normalized to CRLF, the ending
+/// it uses anywhere.
+fn write_lines<W: Write>(output: &mut W, formatted: &[u8], crlf: bool) -> std::io::Result<()> {
+    if !crlf {
+        return output.write_all(formatted);
+    }
+
+    for line in formatted.split_inclusive(|&byte| byte == b'\n') {
+        match line.strip_suffix(b"\n") {
+            Some(body) => {
+                output.write_all(body)?;
+                output.write_all(b"\r\n")?;
             }
+            // Trailing content with no line ending to restore
+            None => output.write_all(line)?,
         }
-    } else {
-        output.write_all(&formatted)?;
     }
 
     Ok(())
