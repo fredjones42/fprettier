@@ -10,8 +10,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{PRIVATE_RE, PUBLIC_RE, REL_OP_RE, USE_RE, VAR_DECL_RE};
-use crate::parser::CharFilter;
 
 // Regex for :: directly before line break (declaration alignment)
 static DECL_BEFORE_BREAK_RE: LazyLock<Regex> =

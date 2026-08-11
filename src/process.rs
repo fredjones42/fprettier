@@ -1,8 +1,20 @@
-//! Two-pass formatting pipeline
+//! File processing and formatting pipeline.
 //!
-//! Implements the main formatting pipeline:
-//! - Pass 1 (optional): Whitespace formatting
-//! - Pass 2 (optional): Indentation
+//! This module orchestrates the two-pass formatting process:
+//!
+//! **Pass 1 - Analysis:**
+//! - Parse the input into logical lines (joining continuations)
+//! - Track scope changes (IF/DO/MODULE/etc.) to determine indentation
+//! - Identify manual alignment markers and deactivation directives
+//!
+//! **Pass 2 - Formatting:**
+//! - Apply indentation based on scope depth
+//! - Format whitespace around operators and punctuation
+//! - Align continuation lines relative to opening delimiters
+//! - Split long lines and convert case as configured
+//!
+//! The main entry point is [`format_file`] which processes a buffered reader
+//! and writes formatted output to any `Write` implementation.
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -13,15 +25,19 @@ use anyhow::Result;
 use regex::{Regex, RegexSet};
 
 use crate::config::Config;
-use crate::format::{
-    convert_case, format_line, format_line_with_level, get_manual_alignment, prepend_ampersands,
-    remove_pre_ampersands, replace_relational_operators, should_auto_align, split_long_lines,
-    CaseSettings, F90Indenter, IndentParams,
+use crate::format::case_convert::{convert_case, CaseSettings};
+use crate::format::continuation::{
+    get_manual_alignment, prepend_ampersands, remove_pre_ampersands, should_auto_align,
 };
+use crate::format::indenter::{F90Indenter, IndentParams};
+use crate::format::line_split::split_long_lines;
+use crate::format::replacements::replace_relational_operators;
+use crate::format::whitespace::{format_line, format_line_with_level};
+use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
     CPP_LINE_RE, DO_RE, IF_RE, MOD_RE, OMP_DIR_RE, PROG_RE, STATEMENT_LABEL_RE,
 };
-use crate::parser::{CharFilter, FortranLine, InputStream};
+use crate::parser::stream::{FortranLine, InputStream};
 use crate::scope::build_scope_parser;
 
 /// Maximum line length at which automatic line splitting is attempted.
@@ -295,12 +311,7 @@ fn extract_label(line: &str) -> (String, String) {
 /// Pass 1: Whitespace formatting (if `impose_whitespace` is true)
 /// Pass 2: Indentation (if `impose_indent` is true)
 /// Case conversion is applied in whichever pass runs (or a dedicated pass if neither)
-pub fn format_file<R: BufRead, W: Write>(
-    input: R,
-    output: &mut W,
-    config: &Config,
-    _filename: &str,
-) -> Result<()> {
+pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Config) -> Result<()> {
     // Check if case conversion is enabled
     let case_settings = CaseSettings::from_dict(&config.case_dict);
     let case_enabled = case_settings.is_enabled();
@@ -448,9 +459,7 @@ fn extract_and_format_pre_ampersands(
         .collect();
 
     // Remove pre-ampersands from lines
-    let Ok(result) = remove_pre_ampersands(output_lines, &is_special) else {
-        return (vec![], vec![], None);
-    };
+    let result = remove_pre_ampersands(output_lines, &is_special);
 
     *output_lines = result.lines;
 
@@ -1250,7 +1259,7 @@ fn format_pass<R: BufRead, W: Write>(
 
     // Create indenter if needed
     let mut indenter = if impose_indent {
-        Some(F90Indenter::new(scope_parser.clone(), first_indent))
+        Some(F90Indenter::new(scope_parser, first_indent))
     } else {
         None
     };
@@ -1577,7 +1586,7 @@ mod tests {
         let reader = BufReader::new(cursor);
         let mut output = Vec::new();
 
-        format_file(reader, &mut output, &config, "test.f90").unwrap();
+        format_file(reader, &mut output, &config).unwrap();
 
         let result = String::from_utf8(output).unwrap();
         // Should have spaces around operators
@@ -1599,7 +1608,7 @@ mod tests {
         let reader = BufReader::new(cursor);
         let mut output = Vec::new();
 
-        format_file(reader, &mut output, &config, "test.f90").unwrap();
+        format_file(reader, &mut output, &config).unwrap();
 
         let result = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = result.lines().collect();
@@ -1626,7 +1635,7 @@ mod tests {
         let reader = BufReader::new(cursor);
         let mut output = Vec::new();
 
-        format_file(reader, &mut output, &config, "test.f90").unwrap();
+        format_file(reader, &mut output, &config).unwrap();
 
         let result = String::from_utf8(output).unwrap();
         // Should have both whitespace and indentation

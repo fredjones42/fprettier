@@ -78,10 +78,8 @@ pub fn get_manual_alignment(lines: &[String], continuation_indent: usize) -> Vec
 ///
 /// Extracts the leading & and trailing whitespace from each line,
 /// and also captures how many spaces were before the & on the previous line.
-pub fn remove_pre_ampersands(
-    lines: &[String],
-    is_special: &[bool],
-) -> Result<PreAmpersandResult, String> {
+#[must_use]
+pub fn remove_pre_ampersands(lines: &[String], is_special: &[bool]) -> PreAmpersandResult {
     let mut result_lines = Vec::with_capacity(lines.len());
     let mut pre_ampersand = Vec::with_capacity(lines.len());
     let mut ampersand_sep = Vec::with_capacity(lines.len());
@@ -133,11 +131,11 @@ pub fn remove_pre_ampersands(
         }
     }
 
-    Ok(PreAmpersandResult {
+    PreAmpersandResult {
         lines: result_lines,
         pre_ampersand,
         ampersand_sep,
-    })
+    }
 }
 
 /// Prepend ampersands back to continuation lines and adjust indent
@@ -206,7 +204,7 @@ mod tests {
             "           &  3, 4]".to_string(),
         ];
         let is_special = vec![false, false];
-        let result = remove_pre_ampersands(&lines, &is_special).unwrap();
+        let result = remove_pre_ampersands(&lines, &is_special);
 
         // First line has no leading &
         assert_eq!(result.pre_ampersand[0], "");

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command};
 
-use crate::format::CaseMode;
+use crate::format::case_convert::CaseMode;
 
 /// Fine-grained whitespace options: (CLI arg name, `whitespace_dict` key, help text)
 const WS_OPTS: [(&str, &str, &str); 11] = [

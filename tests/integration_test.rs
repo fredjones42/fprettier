@@ -7,7 +7,8 @@
 
 use std::io::{BufReader, Cursor};
 
-use fprettier::format::{CaseMode, F90Indenter, IndentParams};
+use fprettier::format::case_convert::CaseMode;
+use fprettier::format::indenter::{F90Indenter, IndentParams};
 use fprettier::process::format_file;
 use fprettier::scope::build_scope_parser;
 use fprettier::Config;
@@ -16,7 +17,7 @@ use fprettier::Config;
 fn run_format(input: &str, config: &Config) -> String {
     let reader = BufReader::new(Cursor::new(input.as_bytes()));
     let mut output = Vec::new();
-    format_file(reader, &mut output, config, "test.f90").unwrap();
+    format_file(reader, &mut output, config).unwrap();
     String::from_utf8(output).unwrap()
 }
 
@@ -172,7 +173,7 @@ fn test_end_to_end_subroutine() {
 /// Test `F90Aligner` bracket alignment
 #[test]
 fn test_aligner_bracket_continuation() {
-    use fprettier::format::F90Aligner;
+    use fprettier::format::aligner::F90Aligner;
 
     let mut aligner = F90Aligner::new();
 
@@ -191,7 +192,7 @@ fn test_aligner_bracket_continuation() {
 /// Test `F90Aligner` assignment alignment
 #[test]
 fn test_aligner_assignment_continuation() {
-    use fprettier::format::F90Aligner;
+    use fprettier::format::aligner::F90Aligner;
 
     let mut aligner = F90Aligner::new();
 
@@ -210,7 +211,7 @@ fn test_aligner_assignment_continuation() {
 /// Test `F90Aligner` declaration alignment
 #[test]
 fn test_aligner_declaration_continuation() {
-    use fprettier::format::F90Aligner;
+    use fprettier::format::aligner::F90Aligner;
 
     let mut aligner = F90Aligner::new();
 
@@ -234,7 +235,7 @@ fn test_aligner_declaration_continuation() {
 /// Test `F90Aligner` nested brackets
 #[test]
 fn test_aligner_nested_brackets() {
-    use fprettier::format::F90Aligner;
+    use fprettier::format::aligner::F90Aligner;
 
     let mut aligner = F90Aligner::new();
 

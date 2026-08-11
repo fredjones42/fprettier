@@ -162,11 +162,6 @@ pub static ENDANY_RE: LazyLock<Regex> =
 pub static CONTAINS_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}CONTAINS{EOL_STR}")));
 
-// ===== DELIMITERS =====
-
-pub static DEL_OPEN_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"(\(\/?|\[)"));
-pub static DEL_CLOSE_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"(\/?\)|\])"));
-
 // ===== KEYWORD-PARENTHESIS SPACING =====
 
 // Intrinsic statements that should have space before parentheses

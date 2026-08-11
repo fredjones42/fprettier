@@ -9,11 +9,10 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
-    DEL_CLOSE_RE, DEL_OPEN_RE, END_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOG_OP_RE, REL_OP_RE,
-    USE_RE,
+    END_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOG_OP_RE, REL_OP_RE, USE_RE,
 };
-use crate::parser::CharFilter;
 
 // Print/read statement formatting
 static PRINT_READ_RE: LazyLock<Regex> =
@@ -23,6 +22,7 @@ static PRINT_READ_RE: LazyLock<Regex> =
 static NML_STMT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^\s*namelist\s*/.*/").unwrap());
 static NML_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(/\w+/)").unwrap());
+static RUN_OF_SPACES_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r" {2,}").unwrap());
 
 // END keyword separation (e.g., ENDIF -> END IF)
 static END_WITH_EQ_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -387,12 +387,14 @@ impl Charwise<'_> {
         if ch != '(' && ch != '[' {
             return false;
         }
-        // Check if this is a delimiter token
-        let remaining: String = self.chars[self.i..].iter().take(2).collect();
-        let Some(m) = DEL_OPEN_RE.find(&remaining) else {
-            return false;
+        // Opening delimiter token: "(/" (array constructor), "(" or "["
+        let delim = if ch == '(' && self.chars.get(self.i + 1) == Some(&'/') {
+            "(/"
+        } else if ch == '(' {
+            "("
+        } else {
+            "["
         };
-        let delim = m.as_str();
         self.level += 1;
 
         // Check if we need space before opening delimiter
@@ -518,11 +520,14 @@ impl Charwise<'_> {
         if !is_close_start {
             return false;
         }
-        let remaining: String = self.chars[self.i..].iter().take(2).collect();
-        let Some(m) = DEL_CLOSE_RE.find(&remaining) else {
-            return false;
+        // Closing delimiter token: "/)" (array constructor), ")" or "]"
+        let delim = if ch == '/' {
+            "/)"
+        } else if ch == ')' {
+            ")"
+        } else {
+            "]"
         };
-        let delim = m.as_str();
         self.level = self.level.saturating_sub(1);
 
         // Remove trailing spaces before delimiter
@@ -1023,9 +1028,7 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
         // Add spaces around /word/ patterns
         result = NML_RE.replace_all(&result, " $1 ").to_string();
         // Clean up any double spaces that might have been introduced
-        while result.contains("  ") {
-            result = result.replace("  ", " ");
-        }
+        result = RUN_OF_SPACES_RE.replace_all(&result, " ").to_string();
     }
 
     // Separate compound END keywords (e.g., ENDIF -> END IF) if whitespace_flags[8] is true

@@ -14,23 +14,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::format::CaseMode;
+use crate::format::case_convert::CaseMode;
 
 /// Config file name to search for
 const CONFIG_FILE_NAME: &str = "fprettier.toml";
-
-/// Get the user's home directory
-fn dirs_home() -> Option<PathBuf> {
-    // Try HOME environment variable first (works on Unix and some Windows setups)
-    if let Ok(home) = std::env::var("HOME") {
-        return Some(PathBuf::from(home));
-    }
-    // Fallback for Windows
-    if let Ok(userprofile) = std::env::var("USERPROFILE") {
-        return Some(PathBuf::from(userprofile));
-    }
-    None
-}
 
 /// Main configuration struct for fprettier
 ///
@@ -139,61 +126,14 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Minimum reasonable line length (must fit at least some code)
-    const MIN_LINE_LENGTH: usize = 40;
-    /// Maximum reasonable line length
-    const MAX_LINE_LENGTH: usize = 1000;
-    /// Maximum reasonable indent size
-    const MAX_INDENT: usize = 20;
-    /// Maximum whitespace level
-    const MAX_WHITESPACE_LEVEL: u8 = 4;
-    /// Maximum comment spacing
-    const MAX_COMMENT_SPACING: usize = 10;
-
-    /// Validate configuration values are within reasonable bounds
+    /// Validate configuration values, returning an error message if invalid.
     ///
-    /// Returns an error message if validation fails, None if valid.
+    /// Only `indent` is checked. Out-of-range values elsewhere degrade
+    /// harmlessly: `whitespace > 4` falls through to the level-2 defaults,
+    /// and a `line_length` under 40 short-circuits in `auto_split_line`.
     #[must_use]
     pub fn validate(&self) -> Option<String> {
-        if self.indent == 0 {
-            return Some("indent must be at least 1".to_string());
-        }
-        if self.indent > Self::MAX_INDENT {
-            return Some(format!(
-                "indent {} exceeds maximum of {}",
-                self.indent,
-                Self::MAX_INDENT
-            ));
-        }
-        if self.line_length < Self::MIN_LINE_LENGTH {
-            return Some(format!(
-                "line_length {} is below minimum of {}",
-                self.line_length,
-                Self::MIN_LINE_LENGTH
-            ));
-        }
-        if self.line_length > Self::MAX_LINE_LENGTH {
-            return Some(format!(
-                "line_length {} exceeds maximum of {}",
-                self.line_length,
-                Self::MAX_LINE_LENGTH
-            ));
-        }
-        if self.whitespace > Self::MAX_WHITESPACE_LEVEL {
-            return Some(format!(
-                "whitespace level {} exceeds maximum of {}",
-                self.whitespace,
-                Self::MAX_WHITESPACE_LEVEL
-            ));
-        }
-        if self.comment_spacing > Self::MAX_COMMENT_SPACING {
-            return Some(format!(
-                "comment_spacing {} exceeds maximum of {}",
-                self.comment_spacing,
-                Self::MAX_COMMENT_SPACING
-            ));
-        }
-        None
+        (self.indent == 0).then(|| "indent must be at least 1".to_string())
     }
 
     /// Load configuration from a TOML file
@@ -264,7 +204,7 @@ impl Config {
         let mut config_files = Vec::new();
 
         // Add home directory config first (lowest priority)
-        if let Some(home) = dirs_home() {
+        if let Some(home) = std::env::home_dir() {
             let home_config = home.join(CONFIG_FILE_NAME);
             if home_config.is_file() {
                 config_files.push(home_config);
@@ -546,52 +486,5 @@ mod tests {
         };
         assert!(config.validate().is_some());
         assert!(config.validate().unwrap().contains("indent"));
-    }
-
-    #[test]
-    fn test_validate_indent_too_large() {
-        let config = Config {
-            indent: 100,
-            ..Default::default()
-        };
-        assert!(config.validate().is_some());
-    }
-
-    #[test]
-    fn test_validate_line_length_too_small() {
-        let config = Config {
-            line_length: 10,
-            ..Default::default()
-        };
-        assert!(config.validate().is_some());
-        assert!(config.validate().unwrap().contains("line_length"));
-    }
-
-    #[test]
-    fn test_validate_line_length_too_large() {
-        let config = Config {
-            line_length: 5000,
-            ..Default::default()
-        };
-        assert!(config.validate().is_some());
-    }
-
-    #[test]
-    fn test_validate_whitespace_level() {
-        let config = Config {
-            whitespace: 10,
-            ..Default::default()
-        };
-        assert!(config.validate().is_some());
-        assert!(config.validate().unwrap().contains("whitespace"));
-    }
-
-    #[test]
-    fn test_validate_comment_spacing() {
-        let config = Config {
-            comment_spacing: 50,
-            ..Default::default()
-        };
-        assert!(config.validate().is_some());
     }
 }

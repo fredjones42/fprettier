@@ -121,19 +121,6 @@ impl<'a> CharFilter<'a> {
         self.state.instring
     }
 
-    /// Get the filtered content as a string
-    ///
-    /// Pre-allocates the result string based on the input size for efficiency.
-    pub fn filter_all(&mut self) -> String {
-        // Pre-allocate based on remaining chars (filtering only reduces size)
-        let size_hint = self.chars.size_hint().0;
-        let mut result = String::with_capacity(size_hint);
-        for (_, c) in self.by_ref() {
-            result.push(c);
-        }
-        result
-    }
-
     /// Peek at the next character without consuming
     fn peek_next_char(&mut self) -> Option<char> {
         self.chars.peek().map(|&(_, c)| c)

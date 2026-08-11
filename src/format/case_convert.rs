@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::parser::CharFilter;
+use crate::parser::char_filter::CharFilter;
 
 /// Fortran keywords
 static F90_KEYWORDS_RE: LazyLock<Regex> = LazyLock::new(|| {

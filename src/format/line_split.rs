@@ -3,7 +3,7 @@
 //! Implements automatic line breaking for long Fortran lines,
 //! inserting continuation markers (&) at appropriate positions.
 
-use crate::parser::{comment_start, CharFilter};
+use crate::parser::char_filter::{comment_start, CharFilter};
 
 /// Split a line into (code, comment) parts if it contains a detachable inline comment.
 /// Returns None if there's no inline comment or if the split isn't valid.

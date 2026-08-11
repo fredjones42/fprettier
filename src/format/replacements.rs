@@ -3,7 +3,7 @@
 //! Converts between Fortran-style (.lt., .le., .gt., .ge., .eq., .ne.)
 //! and C-style (<, <=, >, >=, ==, /=) relational operators.
 
-use crate::parser::CharFilter;
+use crate::parser::char_filter::CharFilter;
 
 /// Replace relational operators in a line
 ///

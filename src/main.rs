@@ -33,17 +33,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
 use fprettier::process::format_file;
-use fprettier::{build_cli, find_directive, parse_args, CliArgs, Config};
+use fprettier::{build_cli, find_directive, parse_args, CliArgs, Config, DirectiveOverrides};
 use glob::Pattern;
 use rayon::prelude::*;
 use similar::TextDiff;
 use walkdir::WalkDir;
 
-/// Fortran file extensions to process
-const FORTRAN_EXTENSIONS: &[&str] = &[
-    "f90", "f95", "f03", "f08", "f18", "f", "for", "ftn", "fpp", "F90", "F95", "F03", "F08", "F18",
-    "F", "FOR", "FTN", "FPP",
-];
+/// Fortran file extensions to process, matched case-insensitively
+const FORTRAN_EXTENSIONS: &[&str] = &["f90", "f95", "f03", "f08", "f18", "f", "for", "ftn", "fpp"];
 
 /// Default maximum file size in bytes (100 MB)
 /// Files larger than this are skipped to prevent memory exhaustion
@@ -104,18 +101,17 @@ fn main() -> Result<ExitCode> {
     // Sequential processing keeps stdout/diff/check output deterministic
     let use_sequential = args.stdout || args.diff || args.check || args.jobs == Some(1);
 
-    // Measured 2026-08-10: worth 10-40 ms, i.e. ~1-3% of a 3000-file run.
-    // It is a fixed one-time cost, so the percentage shrinks as trees grow.
     // Pre-warm regex patterns on the main thread to avoid contention
     // during parallel processing. There are ~100 LazyLock<Regex> patterns
     // across the codebase; formatting a minimal program initializes them all.
+    // Measured 2026-08-10: worth 10-40 ms, i.e. ~1-3% of a 3000-file run.
+    // It is a fixed one-time cost, so the percentage shrinks as trees grow.
     if !use_sequential {
         let warmup = b"program x\nend program x\n";
         let _ = format_file(
             BufReader::new(Cursor::new(warmup.as_slice())),
             &mut Vec::new(),
             base_config.as_ref().unwrap_or(&Config::default()),
-            "warmup",
         );
     }
 
@@ -227,7 +223,11 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
 
     // Print final config in debug mode
     if args.debug {
-        print_config_debug(&config);
+        eprintln!("[DEBUG] Configuration: {config:#?}");
+        eprintln!(
+            "[DEBUG] whitespace_flags array: {:?}",
+            config.get_whitespace_flags()
+        );
     }
 
     // Validate configuration
@@ -236,13 +236,6 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
     }
 
     Ok(config)
-}
-
-/// Print configuration values in debug mode
-fn print_config_debug(config: &Config) {
-    eprintln!("[DEBUG] Configuration: {config:#?}");
-    let whitespace_flags = config.get_whitespace_flags();
-    eprintln!("[DEBUG] whitespace_flags array: {whitespace_flags:?}");
 }
 
 /// Collect all files to process, handling directories and recursive flag
@@ -272,30 +265,19 @@ fn collect_files(args: &CliArgs) -> Vec<PathBuf> {
                 files.push(input.clone());
             }
         } else if input.is_dir() {
-            if args.recursive {
-                // Recursive directory traversal
-                // Note: WalkDir detects symlink loops when follow_links(true) and
-                // returns errors for them. We skip errors via filter_map(ok).
-                // max_depth prevents runaway traversal in pathological directory structures.
-                for entry in WalkDir::new(input)
-                    .follow_links(true)
-                    .max_depth(256)
-                    .into_iter()
-                    .filter_map(std::result::Result::ok)
-                {
-                    if wanted(entry.path()) {
-                        files.push(entry.path().to_path_buf());
-                    }
-                }
-            } else {
-                // Non-recursive: only direct children
-                if let Ok(entries) = std::fs::read_dir(input) {
-                    for entry in entries.filter_map(std::result::Result::ok) {
-                        let path = entry.path();
-                        if wanted(&path) {
-                            files.push(path);
-                        }
-                    }
+            // Note: WalkDir detects symlink loops when follow_links(true) and
+            // returns errors for them. We skip errors via filter_map(ok).
+            // max_depth prevents runaway traversal in pathological directory
+            // structures, and pins the non-recursive case to direct children.
+            let max_depth = if args.recursive { 256 } else { 1 };
+            for entry in WalkDir::new(input)
+                .follow_links(true)
+                .max_depth(max_depth)
+                .into_iter()
+                .filter_map(std::result::Result::ok)
+            {
+                if wanted(entry.path()) {
+                    files.push(entry.path().to_path_buf());
                 }
             }
         }
@@ -338,18 +320,10 @@ fn is_excluded(path: &Path, patterns: &[Pattern]) -> bool {
     false
 }
 
-/// Count the number of lines in a byte buffer
-#[allow(clippy::naive_bytecount)] // Simple use case, no need for bytecount crate
+/// Count the lines in a byte buffer, for the `--exclude-max-lines` check
+#[allow(clippy::naive_bytecount)] // one comparison per byte; not worth a crate
 fn count_lines(contents: &[u8]) -> usize {
-    // Count newlines; add 1 if file doesn't end with newline and has content
-    let newlines = contents.iter().filter(|&&b| b == b'\n').count();
-    if contents.is_empty() {
-        0
-    } else if contents.last() == Some(&b'\n') {
-        newlines
-    } else {
-        newlines + 1
-    }
+    contents.iter().filter(|&&b| b == b'\n').count()
 }
 
 /// Check if a file has a Fortran extension
@@ -358,18 +332,12 @@ fn is_fortran_file(path: &Path, custom_extensions: &[String]) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| {
-            // Check default extensions
-            if FORTRAN_EXTENSIONS.contains(&ext) {
-                return true;
-            }
-            // Check custom extensions (with or without leading dot)
-            for custom in custom_extensions {
-                let custom_ext = custom.strip_prefix('.').unwrap_or(custom);
-                if ext == custom_ext {
-                    return true;
-                }
-            }
-            false
+            FORTRAN_EXTENSIONS
+                .iter()
+                .any(|e| ext.eq_ignore_ascii_case(e))
+                || custom_extensions
+                    .iter()
+                    .any(|c| ext == c.strip_prefix('.').unwrap_or(c))
         })
 }
 
@@ -467,49 +435,51 @@ fn process_files_parallel(files: &[PathBuf], base_config: Option<&Config>, args:
     }
 }
 
-/// Apply directive overrides from file contents to a configuration
-fn apply_directive_overrides(config: &mut Config, contents: &[u8], debug: bool, source_name: &str) {
-    let cursor = Cursor::new(contents);
-    if let Some(overrides) = find_directive(&mut BufReader::new(cursor)) {
+/// Apply directive overrides parsed from a file to a configuration
+fn apply_directive_overrides(
+    config: &mut Config,
+    overrides: &DirectiveOverrides,
+    debug: bool,
+    source_name: &str,
+) {
+    if debug {
+        eprintln!("[DEBUG] Found file directive in {source_name}");
+    }
+    if let Some(indent) = overrides.indent {
         if debug {
-            eprintln!("[DEBUG] Found file directive in {source_name}");
+            eprintln!("[DEBUG]   Directive override: indent = {indent}");
         }
-        if let Some(indent) = overrides.indent {
-            if debug {
-                eprintln!("[DEBUG]   Directive override: indent = {indent}");
-            }
-            config.indent = indent;
+        config.indent = indent;
+    }
+    if let Some(line_length) = overrides.line_length {
+        if debug {
+            eprintln!("[DEBUG]   Directive override: line_length = {line_length}");
         }
-        if let Some(line_length) = overrides.line_length {
-            if debug {
-                eprintln!("[DEBUG]   Directive override: line_length = {line_length}");
-            }
-            config.line_length = line_length;
+        config.line_length = line_length;
+    }
+    if let Some(whitespace) = overrides.whitespace {
+        if debug {
+            eprintln!("[DEBUG]   Directive override: whitespace = {whitespace}");
         }
-        if let Some(whitespace) = overrides.whitespace {
-            if debug {
-                eprintln!("[DEBUG]   Directive override: whitespace = {whitespace}");
-            }
-            config.whitespace = whitespace;
+        config.whitespace = whitespace;
+    }
+    if let Some(impose_indent) = overrides.impose_indent {
+        if debug {
+            eprintln!("[DEBUG]   Directive override: impose_indent = {impose_indent}");
         }
-        if let Some(impose_indent) = overrides.impose_indent {
-            if debug {
-                eprintln!("[DEBUG]   Directive override: impose_indent = {impose_indent}");
-            }
-            config.impose_indent = impose_indent;
+        config.impose_indent = impose_indent;
+    }
+    if let Some(impose_whitespace) = overrides.impose_whitespace {
+        if debug {
+            eprintln!("[DEBUG]   Directive override: impose_whitespace = {impose_whitespace}");
         }
-        if let Some(impose_whitespace) = overrides.impose_whitespace {
-            if debug {
-                eprintln!("[DEBUG]   Directive override: impose_whitespace = {impose_whitespace}");
-            }
-            config.impose_whitespace = impose_whitespace;
+        config.impose_whitespace = impose_whitespace;
+    }
+    for (key, value) in overrides.get_case_dict() {
+        if debug {
+            eprintln!("[DEBUG]   Directive override: case[{key}] = {value:?}");
         }
-        for (key, value) in overrides.get_case_dict() {
-            if debug {
-                eprintln!("[DEBUG]   Directive override: case[{key}] = {value:?}");
-            }
-            config.case_dict.insert(key, value);
-        }
+        config.case_dict.insert(key, value);
     }
 }
 
@@ -560,23 +530,20 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
     // Most files have no directives, so this avoids cloning the Config (with its
     // HashMaps) for every file in the parallel loop.
     let source_name = path.to_str().unwrap_or("unknown");
-    let has_directives = {
-        let cursor = Cursor::new(&file_contents);
-        find_directive(&mut BufReader::new(cursor)).is_some()
-    };
     let mut file_config;
-    let effective_config = if has_directives {
-        file_config = config.clone();
-        apply_directive_overrides(&mut file_config, &file_contents, args.debug, source_name);
-        &file_config
-    } else {
-        config
-    };
+    let effective_config =
+        if let Some(overrides) = find_directive(&mut BufReader::new(Cursor::new(&file_contents))) {
+            file_config = config.clone();
+            apply_directive_overrides(&mut file_config, &overrides, args.debug, source_name);
+            &file_config
+        } else {
+            config
+        };
 
     // Format the file
     let reader = BufReader::new(Cursor::new(&file_contents));
     let mut output = Vec::with_capacity(file_contents.len());
-    format_file(reader, &mut output, effective_config, source_name)?;
+    format_file(reader, &mut output, effective_config)?;
 
     // Output results
     let changed = output != file_contents;
@@ -646,12 +613,14 @@ fn process_stdin(config: &Config, args: &CliArgs) -> Result<ExitCode> {
 
     // Make a copy of config that can be overridden by directives
     let mut file_config = config.clone();
-    apply_directive_overrides(&mut file_config, &stdin_contents, args.debug, "stdin");
+    if let Some(overrides) = find_directive(&mut BufReader::new(Cursor::new(&stdin_contents))) {
+        apply_directive_overrides(&mut file_config, &overrides, args.debug, "stdin");
+    }
 
     // Format the input
     let reader = BufReader::new(Cursor::new(&stdin_contents));
     let mut output = Vec::new();
-    format_file(reader, &mut output, &file_config, "stdin")?;
+    format_file(reader, &mut output, &file_config)?;
 
     if args.diff || args.check {
         let changed = output != stdin_contents;

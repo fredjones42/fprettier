@@ -18,6 +18,6 @@ pub mod process;
 pub mod scope;
 
 // Re-export commonly used types
-pub use cli::{build_cli, parse_args, parse_args_from, CliArgs};
+pub use cli::{build_cli, parse_args, CliArgs};
 pub use config::Config;
 pub use directive::{find_directive, parse_directive, DirectiveOverrides};

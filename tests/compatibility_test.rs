@@ -9,7 +9,7 @@
 use std::fs;
 use std::io::{BufReader, Cursor};
 
-use fprettier::format::CaseMode;
+use fprettier::format::case_convert::CaseMode;
 use fprettier::process::format_file;
 use fprettier::Config;
 
@@ -18,7 +18,7 @@ fn run_format(input: &str, config: &Config) -> String {
     let cursor = Cursor::new(input.as_bytes());
     let reader = BufReader::new(cursor);
     let mut output = Vec::new();
-    format_file(reader, &mut output, config, "test.f90").unwrap();
+    format_file(reader, &mut output, config).unwrap();
     String::from_utf8(output).unwrap()
 }
 
@@ -37,7 +37,7 @@ fn test_compatibility(input_path: &str, expected_path: &str, config: &Config) {
     let reader = BufReader::new(cursor);
     let mut output = Vec::new();
 
-    format_file(reader, &mut output, config, input_path)
+    format_file(reader, &mut output, config)
         .unwrap_or_else(|e| panic!("fprettier failed on {input_path}: {e}"));
 
     let result = String::from_utf8(output)
