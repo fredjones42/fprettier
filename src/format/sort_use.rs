@@ -145,8 +145,10 @@ fn sort_only_list(unit: &mut Unit) {
     if !unit.is_use || unit.frozen {
         return;
     }
-    let (all_but_last, last) = unit.lines.split_at(unit.lines.len() - 1);
-    if all_but_last
+    let Some((last_line, leading_lines)) = unit.lines.split_last() else {
+        return;
+    };
+    if leading_lines
         .iter()
         .any(|line| !split_at_comment(body(line)).1.is_empty())
     {
@@ -163,19 +165,18 @@ fn sort_only_list(unit: &mut Unit) {
     }
     items.sort_by_key(|item| sort_key_of(item));
 
-    let last = body(&last[0]);
-    let (last_code, comment) = split_at_comment(last);
+    let (last_code, comment) = split_at_comment(body(last_line));
     let mut out = format!(
         "{}{prefix} {}",
         leading_whitespace(&unit.lines[0]),
         items.join(", ")
     );
     if !comment.is_empty() {
-        // Keep the gap the comment had on the line it came from
-        out.push_str(&last_code[last_code.trim_end().len()..]);
+        let gap_before_comment = &last_code[last_code.trim_end().len()..];
+        out.push_str(gap_before_comment);
         out.push_str(comment);
     }
-    out.push_str(line_ending(&unit.lines[unit.lines.len() - 1]));
+    out.push_str(line_ending(last_line));
     unit.lines = vec![out];
 }
 
