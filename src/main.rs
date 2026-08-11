@@ -5,6 +5,22 @@
 
 use mimalloc::MiMalloc;
 
+/// Benchmarked 2026-08-10 on a 3000-file / 18 MB tree (8 cores), against an
+/// otherwise identical build using the system allocator. mimalloc wins by
+/// 5.5-9.5% (best-of-7 wall clock) at every thread count:
+///
+/// | -j | mimalloc | system |
+/// |----|----------|--------|
+/// |  1 |  3432 ms | 3791 ms|
+/// |  2 |  2157 ms | 2303 ms|
+/// |  4 |  1335 ms | 1412 ms|
+/// |  8 |   746 ms |  799 ms|
+///
+/// Note the win is *largest single-threaded* and does not grow with thread
+/// count, so this is not about heap lock contention between rayon workers
+/// (as 4066bee claimed) - formatting just churns many small short-lived
+/// Strings, and mimalloc is faster per allocation. Don't drop this without
+/// re-running the comparison.
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -88,6 +104,8 @@ fn main() -> Result<ExitCode> {
     // Sequential processing keeps stdout/diff/check output deterministic
     let use_sequential = args.stdout || args.diff || args.check || args.jobs == Some(1);
 
+    // Measured 2026-08-10: worth 10-40 ms, i.e. ~1-3% of a 3000-file run.
+    // It is a fixed one-time cost, so the percentage shrinks as trees grow.
     // Pre-warm regex patterns on the main thread to avoid contention
     // during parallel processing. There are ~100 LazyLock<Regex> patterns
     // across the codebase; formatting a minimal program initializes them all.
