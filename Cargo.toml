@@ -2,6 +2,9 @@
 name = "fprettier"
 version = "0.4.0"
 edition = "2021"
+# Floor set by unsigned is_multiple_of, stabilized in 1.87 and used by the
+# indent alignment check. Verified with `cargo +1.87.0 check --all-targets`.
+rust-version = "1.87"
 authors = ["Fred Jones"]
 description = "Auto-formatter for modern Fortran source code"
 license = "MIT OR Apache-2.0"
