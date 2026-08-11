@@ -583,14 +583,14 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
     if args.diff || args.check {
         if changed {
             if args.check {
-                println!("Would reformat: {}", path.display());
+                write_stdout(format!("Would reformat: {}\n", path.display()).as_bytes())?;
             }
             if args.diff {
-                print_diff(&file_contents, &output, source_name);
+                print_diff(&file_contents, &output, source_name)?;
             }
         }
     } else if args.stdout {
-        io::stdout().write_all(&output)?;
+        write_stdout(&output)?;
     } else if changed {
         // Write back to file only if content changed
         std::fs::write(path, &output)?;
@@ -599,12 +599,32 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
     Ok(changed)
 }
 
+/// Write to stdout, exiting quietly when the reader has closed the pipe.
+///
+/// Every stdout write goes through here. `--check` listings, `--diff` output
+/// and `--stdout` contents are all routinely piped into `head` or `less`,
+/// which close the pipe early. Rust ignores SIGPIPE, so the write comes back
+/// as `BrokenPipe` and the `print!`/`println!` macros panic on it. A quiet
+/// exit is the conventional CLI behavior; under a normal shell the pipeline's
+/// status comes from the reader anyway.
+fn write_stdout(bytes: &[u8]) -> Result<()> {
+    match io::stdout().write_all(bytes) {
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => std::process::exit(0),
+        result => Ok(result?),
+    }
+}
+
 /// Print a unified diff between original and formatted contents
-fn print_diff(original: &[u8], formatted: &[u8], name: &str) {
+fn print_diff(original: &[u8], formatted: &[u8], name: &str) -> Result<()> {
     let old = String::from_utf8_lossy(original);
     let new = String::from_utf8_lossy(formatted);
     let diff = TextDiff::from_lines(old.as_ref(), new.as_ref());
-    print!("{}", diff.unified_diff().header(name, name));
+    write_stdout(
+        diff.unified_diff()
+            .header(name, name)
+            .to_string()
+            .as_bytes(),
+    )
 }
 
 /// Process input from stdin, output to stdout
@@ -637,10 +657,10 @@ fn process_stdin(config: &Config, args: &CliArgs) -> Result<ExitCode> {
         let changed = output != stdin_contents;
         if changed {
             if args.check {
-                println!("Would reformat: stdin");
+                write_stdout(b"Would reformat: stdin\n")?;
             }
             if args.diff {
-                print_diff(&stdin_contents, &output, "stdin");
+                print_diff(&stdin_contents, &output, "stdin")?;
             }
         }
         return Ok(if args.check && changed {
@@ -651,7 +671,7 @@ fn process_stdin(config: &Config, args: &CliArgs) -> Result<ExitCode> {
     }
 
     // Always output to stdout when reading from stdin
-    io::stdout().write_all(&output)?;
+    write_stdout(&output)?;
 
     if !args.silent {
         eprintln!("Formatted stdin successfully.");
