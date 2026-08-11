@@ -2366,6 +2366,25 @@ fn test_compat_swap_case_kind_suffixes() {
             "REAL(kind=real64), PARAMETER :: r64c = .0e3_real64\n",
             "real(kind=REAL64), parameter :: r64c = .0E3_REAL64\n",
         ),
+        // Signed exponents too. The tokenizer splits on +/-, so these arrive
+        // as three tokens and have to be rejoined before they can be cased.
+        (
+            "REAL, PARAMETER :: r32 = 1.0e-3\n",
+            "real, parameter :: r32 = 1.0E-3\n",
+        ),
+        (
+            "REAL, PARAMETER :: r32 = 1.0e+3\n",
+            "real, parameter :: r32 = 1.0E+3\n",
+        ),
+        (
+            "REAL(kind=real64), PARAMETER :: r64 = 2.5d-8_real64\n",
+            "real(kind=REAL64), parameter :: r64 = 2.5D-8_REAL64\n",
+        ),
+        // ...but a bare subtraction is not an exponent
+        (
+            "INTEGER, PARAMETER :: i1 = x-3\n",
+            "integer, parameter :: i1 = x - 3\n",
+        ),
         // Exponents without kind suffix are also converted (e3 -> E3, d3 -> D3)
         (
             "REAL, PARAMETER :: r32 = 2.e3\n",

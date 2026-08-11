@@ -706,6 +706,9 @@ fn prev_significant_token(tokens: &[String], i: usize) -> Option<&str> {
         .find(|t| !t.trim().is_empty())
 }
 
+/// A numeric literal cut off at its exponent letter, e.g. "1.0e" of "1.0e-3"
+static EXPONENT_HEAD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\d.]+[dDeE]$").unwrap());
+
 /// Split a string into tokens, preserving separators
 fn split_preserving_separators(s: &str) -> Vec<String> {
     let mut tokens = Vec::new();
@@ -728,7 +731,37 @@ fn split_preserving_separators(s: &str) -> Vec<String> {
         tokens.push(current);
     }
 
-    tokens
+    rejoin_signed_exponents(&tokens)
+}
+
+/// Re-join the sign of an exponent onto its literal: `1.0e-3` arrives as
+/// "1.0e", "-", "3" because the splitter breaks on `+`/`-`, which left the
+/// signed branch of the numeric patterns unreachable and signed exponents
+/// unconverted. A sign binds this tightly nowhere else in Fortran: the head
+/// must be digits (or a dot) followed by an exponent letter, and the tail
+/// must be bare digits, optionally with a kind suffix.
+fn rejoin_signed_exponents(tokens: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(tokens.len());
+    let mut i = 0;
+
+    while i < tokens.len() {
+        let joinable = i + 2 < tokens.len()
+            && EXPONENT_HEAD_RE.is_match(&tokens[i])
+            && (tokens[i + 1] == "+" || tokens[i + 1] == "-")
+            && tokens[i + 2]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit());
+        if joinable {
+            out.push(format!("{}{}{}", tokens[i], tokens[i + 1], tokens[i + 2]));
+            i += 3;
+        } else {
+            out.push(tokens[i].clone());
+            i += 1;
+        }
+    }
+
+    out
 }
 
 /// Convert a single token based on its type, with context for procedures
