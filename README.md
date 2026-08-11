@@ -158,6 +158,8 @@ use beta, only: alfa => tango, zulu
 use gamma, only: beta, delta
 ```
 
+![Sorting use statements with --sort-use and --sort-use-only](assets/sort-use.gif)
+
 A group is a run of `use` statements with nothing between them. A blank line, a
 comment, a preprocessor directive, or any other statement ends the group and
 starts a new one, so `use` statements in different `#:if` branches never mix.
