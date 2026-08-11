@@ -57,6 +57,21 @@ fn indent_of(line: &str) -> usize {
     line.len() - line.trim_start().len()
 }
 
+/// Re-base a fypp continuation line onto its directive's new indent, keeping
+/// the offset it had relative to the directive's first line.
+///
+/// Using the continuation's own absolute indent instead would re-add
+/// `base_indent` on every run, so the block would walk further right each
+/// time the file was formatted.
+fn rebase_fypp_continuation(line: &str, first_line: &str, base_indent: usize) -> String {
+    let offset_from_first = indent_of(line).saturating_sub(indent_of(first_line));
+    format!(
+        "{}{}",
+        " ".repeat(base_indent + offset_from_first),
+        line.trim_start()
+    )
+}
+
 /// Check whether a line ends with a continuation `&` that is real code,
 /// i.e. not inside a string or comment (a `&` inside a string is content).
 fn ends_with_continuation(line: &str) -> bool {
@@ -828,16 +843,9 @@ fn compute_and_apply_indentation(
                 // Example: input "    & content" (4 spaces) + scope indent (6)
                 //          -> output "          & content" (10 spaces)
                 if pass_ctx.config.indent_fypp && is_multiline_fypp_directive && i > 0 {
-                    // Keep the continuation's offset *relative to the
-                    // directive's first line*, re-based onto that line's new
-                    // indent. Adding the absolute original indent instead
-                    // re-adds base_indent on every run, so the block walks
-                    // right a little further each time the file is formatted.
-                    let first_original = fortran_line.lines.first().map_or(0, |l| indent_of(l));
-                    let original_indent = indent_of(line);
+                    let first_line = fortran_line.lines.first().map_or("", String::as_str);
                     let base_indent = computed_indents.first().copied().unwrap_or(0);
-                    let new_indent = base_indent + original_indent.saturating_sub(first_original);
-                    *line = format!("{}{}", " ".repeat(new_indent), line.trim_start());
+                    *line = rebase_fypp_continuation(line, first_line, base_indent);
                 }
                 // Otherwise preserve original indentation as-is
                 continue;
