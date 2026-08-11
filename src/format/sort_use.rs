@@ -74,20 +74,7 @@ fn split_into_units(src: &str) -> Vec<Unit> {
 
     for line in src.split_inclusive('\n') {
         let (code, comment) = split_at_comment(body(line));
-
-        // Deactivation markers, matching `detect_skip_format` in process.rs
-        let marker = comment.trim();
-        if marker.starts_with("!&<") {
-            in_deactivated_block = true;
-        } else if marker.starts_with("!&>") {
-            frozen = true;
-            in_deactivated_block = false;
-        } else if marker.starts_with("!&") {
-            frozen = true;
-        }
-        if in_deactivated_block || is_preprocessor(code) || has_semicolon_outside_strings(code) {
-            frozen = true;
-        }
+        frozen |= freezes_statement(code, comment, &mut in_deactivated_block);
 
         current.push(line.to_string());
 
@@ -106,6 +93,23 @@ fn split_into_units(src: &str) -> Vec<Unit> {
         units.push(make_unit(current, frozen));
     }
     units
+}
+
+/// Whether this line pins its statement in place: a deactivation marker, a
+/// preprocessor directive, or a semicolon (which puts a second statement on the
+/// line). Carries the `!&<`...`!&>` block state across lines, the same way
+/// `detect_skip_format` in process.rs does.
+fn freezes_statement(code: &str, comment: &str, in_deactivated_block: &mut bool) -> bool {
+    let marker = comment.trim();
+    if marker.starts_with("!&<") {
+        *in_deactivated_block = true;
+    } else if marker.starts_with("!&>") {
+        *in_deactivated_block = false;
+        return true;
+    } else if marker.starts_with("!&") {
+        return true;
+    }
+    *in_deactivated_block || is_preprocessor(code) || has_semicolon_outside_strings(code)
 }
 
 fn make_unit(lines: Vec<String>, frozen: bool) -> Unit {
