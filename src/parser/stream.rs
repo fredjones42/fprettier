@@ -34,6 +34,16 @@ pub struct FortranLine {
     pub lines_in_string: Vec<bool>,
 }
 
+impl FortranLine {
+    /// Whether physical line `i` starts inside a multiline string, i.e. its
+    /// text is string content rather than code. Every formatting rule has to
+    /// leave such a line alone.
+    #[must_use]
+    pub fn starts_in_string(&self, i: usize) -> bool {
+        self.lines_in_string.get(i).copied().unwrap_or(false)
+    }
+}
+
 /// `InputStream` reads logical Fortran lines from a reader
 ///
 /// Handles line continuations and semicolon splitting

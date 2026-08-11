@@ -519,9 +519,7 @@ fn extract_and_format_pre_ampersands(
             let is_fypp_continuation = flags.is_fypp_line && i > 0;
             // Or if this specific line is a fypp directive
             let is_fypp = i > 0 && FYPP_LINE_RE.is_match(line.trim_start());
-            let is_in_string =
-                i < fortran_line.lines_in_string.len() && fortran_line.lines_in_string[i];
-            is_fypp_continuation || is_fypp || is_in_string
+            is_fypp_continuation || is_fypp || fortran_line.starts_in_string(i)
         })
         .collect();
 
@@ -556,10 +554,7 @@ fn extract_and_format_pre_ampersands(
             if is_special.get(i).copied().unwrap_or(false) {
                 continue; // Skip special (fypp) lines
             }
-            // Check if this line is inside a multiline string
-            let is_in_string =
-                i < fortran_line.lines_in_string.len() && fortran_line.lines_in_string[i];
-            if is_in_string {
+            if fortran_line.starts_in_string(i) {
                 continue;
             }
             // Format the line content (& has been stripped)
@@ -647,12 +642,8 @@ fn apply_whitespace_to_lines(
                     continue;
                 }
 
-                // Check if this line starts inside a multiline string
-                // If so, skip whitespace formatting to preserve string content
-                let is_in_string =
-                    i < fortran_line.lines_in_string.len() && fortran_line.lines_in_string[i];
-                if is_in_string {
-                    // Preserve lines inside multiline strings as-is
+                // Preserve lines inside multiline strings as-is
+                if fortran_line.starts_in_string(i) {
                     continue;
                 }
 
@@ -1266,9 +1257,7 @@ fn apply_pre_ampersand_indentation(
     for (i, line) in output_lines.iter_mut().enumerate() {
         if i > 0 && i < computed_indents.len() {
             // Skip lines inside multiline strings
-            let is_in_string =
-                i < fortran_line.lines_in_string.len() && fortran_line.lines_in_string[i];
-            if is_in_string {
+            if fortran_line.starts_in_string(i) {
                 continue;
             }
             // Skip fypp continuation lines - they preserve original indentation
@@ -1508,23 +1497,13 @@ fn format_pass<R: BufRead, W: Write>(
 
         // Apply relational operator replacement if enabled
         // This converts between Fortran-style (.lt., .eq., etc.) and C-style (<, ==, etc.)
-        // Lines inside a multiline string are content, not code: rewriting an
-        // operator or a keyword's case there changes the string's value.
-        let is_string_body = |i: usize| {
-            fortran_line
-                .lines_in_string
-                .get(i)
-                .copied()
-                .unwrap_or(false)
-        };
-
         if pass_ctx.config.enable_replacements
             && !flags.skip_format
             && !flags.is_fypp_line
             && !flags.is_cpp_line
         {
             for (i, line) in output_lines.iter_mut().enumerate() {
-                if !is_string_body(i) {
+                if !fortran_line.starts_in_string(i) {
                     *line = replace_relational_operators(line, pass_ctx.config.c_relations);
                 }
             }
@@ -1539,7 +1518,7 @@ fn format_pass<R: BufRead, W: Write>(
             && !flags.is_fypp_line
         {
             for (i, line) in output_lines.iter_mut().enumerate() {
-                if !is_string_body(i) {
+                if !fortran_line.starts_in_string(i) {
                     *line = convert_case(line, &case_settings);
                 }
             }
