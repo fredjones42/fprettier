@@ -12,6 +12,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context;
 use serde::Deserialize;
 
 use crate::format::case_convert::CaseMode;
@@ -89,6 +90,7 @@ pub struct Config {
 /// All fields are `Option<T>` so we can distinguish between
 /// "explicitly set" and "not specified" when merging configs.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PartialConfig {
     pub indent: Option<usize>,
     pub line_length: Option<usize>,
@@ -257,26 +259,19 @@ impl Config {
     /// Load and merge configuration from discovered config files
     ///
     /// Later files override earlier ones (only explicitly set values).
-    /// Returns default config if no files found.
-    #[must_use]
-    pub fn from_discovered_files(start_path: &Path) -> Self {
-        let config_files = Self::discover_config_files(start_path);
-
-        if config_files.is_empty() {
-            return Self::default();
-        }
-
+    /// Returns default config if no files found. A config file that exists but
+    /// cannot be read or parsed is an error: carrying on with the defaults
+    /// would silently reformat the tree with settings nobody asked for.
+    pub fn from_discovered_files(start_path: &Path) -> anyhow::Result<Self> {
         let mut config = Self::default();
-        for path in &config_files {
-            match std::fs::read_to_string(path) {
-                Ok(contents) => match toml::from_str::<PartialConfig>(&contents) {
-                    Ok(partial) => config.apply_partial(&partial),
-                    Err(e) => eprintln!("Warning: failed to parse {}: {e}", path.display()),
-                },
-                Err(e) => eprintln!("Warning: failed to read {}: {e}", path.display()),
-            }
+        for path in &Self::discover_config_files(start_path) {
+            let contents = std::fs::read_to_string(path)
+                .with_context(|| format!("failed to read {}", path.display()))?;
+            let partial: PartialConfig = toml::from_str(&contents)
+                .with_context(|| format!("failed to parse {}", path.display()))?;
+            config.apply_partial(&partial);
         }
-        config
+        Ok(config)
     }
 
     /// Get the whitespace array based on whitespace level and dictionary overrides
@@ -478,7 +473,7 @@ mod tests {
     fn test_from_discovered_files_returns_default_when_empty() {
         // When no config files exist, should return default config
         let path = PathBuf::from("/nonexistent/unique/path/file.f90");
-        let config = Config::from_discovered_files(&path);
+        let config = Config::from_discovered_files(&path).unwrap();
         // Should be default values
         assert_eq!(config.indent, 4);
         assert_eq!(config.line_length, 132);

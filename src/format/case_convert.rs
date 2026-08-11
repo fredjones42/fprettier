@@ -591,20 +591,23 @@ pub fn convert_case(line: &str, settings: &CaseSettings) -> String {
     // Collect parts of the line, separating strings from code
     let mut parts: Vec<String> = Vec::new();
     let mut current_part = String::new();
-    let mut last_pos: Option<usize> = None;
+    // Byte position just past the last character CharFilter yielded. Computed
+    // from the character's own width, so multi-byte characters do not make the
+    // skipped-content slices land inside a character.
+    let mut next_byte: Option<usize> = None;
 
     // Use CharFilter to iterate through non-string, non-comment positions
     for (pos, c) in CharFilter::new(line, false, true, true) {
         // If we skipped positions, there was a string
-        if let Some(prev) = last_pos {
-            if pos > prev + 1 {
+        if let Some(prev_end) = next_byte {
+            if pos > prev_end {
                 // Save current part
                 if !current_part.is_empty() {
                     parts.push(current_part);
                     current_part = String::new();
                 }
                 // Add the skipped string part unchanged
-                parts.push(line[prev + 1..pos].to_string());
+                parts.push(line[prev_end..pos].to_string());
             }
         } else if pos > 0 {
             // String at the beginning
@@ -612,17 +615,17 @@ pub fn convert_case(line: &str, settings: &CaseSettings) -> String {
         }
 
         current_part.push(c);
-        last_pos = Some(pos);
+        next_byte = Some(pos + c.len_utf8());
     }
 
     // Handle remaining content
     if !current_part.is_empty() {
         parts.push(current_part);
     }
-    if let Some(prev) = last_pos {
-        if prev + 1 < line.len() {
+    if let Some(prev_end) = next_byte {
+        if prev_end < line.len() {
             // Remaining string/comment at the end
-            parts.push(line[prev + 1..].to_string());
+            parts.push(line[prev_end..].to_string());
         }
     } else if !line.is_empty() {
         // Entire line was skipped (string or comment)

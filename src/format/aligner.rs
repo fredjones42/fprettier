@@ -155,13 +155,14 @@ impl F90Aligner {
 
             // Handle assignment operator (not in brackets, not relational)
             if self.level == 0 && !is_decl && ch == '=' {
-                // Check if it's a relational operator (==, /=, <=, >=)
-                let is_relational = if pos > 0 && pos + 1 < line.len() {
-                    let context = &line[pos.saturating_sub(1)..=(pos + 1).min(line.len() - 1)];
-                    REL_OP_RE.is_match(context)
-                } else {
-                    false
-                };
+                // Check if it's a relational operator (==, /=, <=, >=).
+                // `get` rather than indexing: a neighboring non-ASCII
+                // character would put the window edge inside a character.
+                let is_relational = pos > 0
+                    && pos + 1 < line.len()
+                    && line
+                        .get(pos - 1..=pos + 1)
+                        .is_some_and(|context| REL_OP_RE.is_match(context));
 
                 if !is_relational {
                     let is_pointer = pos + 1 < line.len() && line[pos + 1..].starts_with('>');
@@ -183,7 +184,7 @@ impl F90Aligner {
             }
 
             // Handle declaration operator ::
-            if is_decl && pos + 1 < line.len() && &line[pos..pos + 2] == "::" {
+            if is_decl && line[pos..].starts_with("::") {
                 // Don't align if :: directly before line break
                 // Check whole line for ":: + whitespace + &" pattern (not just from pos)
                 if !DECL_BEFORE_BREAK_RE.is_match(line) {

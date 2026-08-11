@@ -131,97 +131,102 @@ impl Iterator for CharFilter<'_> {
     type Item = (usize, char);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (pos, c) = self.chars.next()?;
+        // Loops rather than recursing: a filtered run is as long as the string
+        // or comment it covers, and one stack frame per skipped character
+        // overflows the stack on a megabyte-long literal.
+        loop {
+            let (pos, c) = self.chars.next()?;
 
-        // Check for comment start (only if not in string)
-        if self.state.instring == StringDelimiter::None && c == '!' {
-            self.state.incomment = true;
-            if self.filter_comments {
-                return self.next(); // Skip the ! itself
-            }
-        }
-
-        // If filtering and we're in a comment, skip
-        if self.filter_comments && self.state.incomment {
-            return self.next();
-        }
-
-        // Track string state (always, regardless of filter_strings)
-        // This is necessary for multiline string tracking
-        let mut just_closed_string = false;
-        if self.state.instring != StringDelimiter::None {
-            // Check for string close (single or double quote)
-            let is_closing_quote = !self.state.infypp
-                && ((c == '\'' && self.state.instring == StringDelimiter::Single)
-                    || (c == '"' && self.state.instring == StringDelimiter::Double));
-
-            if is_closing_quote {
-                self.state.instring = StringDelimiter::None;
-                just_closed_string = true;
-                if self.filter_strings {
-                    return self.next(); // Skip the closing quote
+            // Check for comment start (only if not in string)
+            if self.state.instring == StringDelimiter::None && c == '!' {
+                self.state.incomment = true;
+                if self.filter_comments {
+                    continue; // Skip the ! itself
                 }
-            } else if self.state.infypp {
-                // Check for fypp close: `}` followed by the marker char matching
-                // the open delimiter (#{...}#, ${...}$, @{...}@)
-                let close_char = match self.state.instring {
-                    StringDelimiter::FyppHash => '#',
-                    StringDelimiter::FyppDollar => '$',
-                    StringDelimiter::FyppAt => '@',
-                    _ => '\0',
-                };
-                if c == '}' && self.peek_next_char() == Some(close_char) {
+            }
+
+            // If filtering and we're in a comment, skip
+            if self.filter_comments && self.state.incomment {
+                continue;
+            }
+
+            // Track string state (always, regardless of filter_strings)
+            // This is necessary for multiline string tracking
+            let mut just_closed_string = false;
+            if self.state.instring != StringDelimiter::None {
+                // Check for string close (single or double quote)
+                let is_closing_quote = !self.state.infypp
+                    && ((c == '\'' && self.state.instring == StringDelimiter::Single)
+                        || (c == '"' && self.state.instring == StringDelimiter::Double));
+
+                if is_closing_quote {
                     self.state.instring = StringDelimiter::None;
-                    self.state.infypp = false;
                     just_closed_string = true;
-                    self.chars.next(); // consume second char
                     if self.filter_strings {
-                        return self.next(); // Skip both closing chars
+                        continue; // Skip the closing quote
+                    }
+                } else if self.state.infypp {
+                    // Check for fypp close: `}` followed by the marker char matching
+                    // the open delimiter (#{...}#, ${...}$, @{...}@)
+                    let close_char = match self.state.instring {
+                        StringDelimiter::FyppHash => '#',
+                        StringDelimiter::FyppDollar => '$',
+                        StringDelimiter::FyppAt => '@',
+                        _ => '\0',
+                    };
+                    if c == '}' && self.peek_next_char() == Some(close_char) {
+                        self.state.instring = StringDelimiter::None;
+                        self.state.infypp = false;
+                        just_closed_string = true;
+                        self.chars.next(); // consume second char
+                        if self.filter_strings {
+                            continue; // Skip both closing chars
+                        }
+                    }
+                } else if self.filter_strings {
+                    // We're inside a string and filtering, skip this character
+                    continue;
+                }
+
+                // If we're still in a string (state wasn't closed) and filtering, skip
+                if self.filter_strings && self.state.instring != StringDelimiter::None {
+                    continue;
+                }
+            }
+
+            // Check for string open (only if not already in string and didn't just close one)
+            if self.state.instring == StringDelimiter::None && !just_closed_string {
+                if c == '\'' {
+                    self.state.instring = StringDelimiter::Single;
+                    if self.filter_strings {
+                        continue; // Skip the opening quote
+                    }
+                } else if c == '"' {
+                    self.state.instring = StringDelimiter::Double;
+                    if self.filter_strings {
+                        continue; // Skip the opening quote
+                    }
+                } else if self.filter_fypp && self.peek_next_char() == Some('{') {
+                    // Check for fypp inline block open: #{, ${, @{
+                    let delim = match c {
+                        '#' => Some(StringDelimiter::FyppHash),
+                        '$' => Some(StringDelimiter::FyppDollar),
+                        '@' => Some(StringDelimiter::FyppAt),
+                        _ => None,
+                    };
+                    if let Some(delim) = delim {
+                        self.state.instring = delim;
+                        self.state.infypp = true;
+                        self.chars.next(); // consume second char
+                        if self.filter_strings {
+                            continue; // Skip both opening chars
+                        }
                     }
                 }
-            } else if self.filter_strings {
-                // We're inside a string and filtering, skip this character
-                return self.next();
             }
 
-            // If we're still in a string (state wasn't closed) and filtering, skip
-            if self.filter_strings && self.state.instring != StringDelimiter::None {
-                return self.next();
-            }
+            return Some((pos, c));
         }
-
-        // Check for string open (only if not already in string and didn't just close one)
-        if self.state.instring == StringDelimiter::None && !just_closed_string {
-            if c == '\'' {
-                self.state.instring = StringDelimiter::Single;
-                if self.filter_strings {
-                    return self.next(); // Skip the opening quote
-                }
-            } else if c == '"' {
-                self.state.instring = StringDelimiter::Double;
-                if self.filter_strings {
-                    return self.next(); // Skip the opening quote
-                }
-            } else if self.filter_fypp && self.peek_next_char() == Some('{') {
-                // Check for fypp inline block open: #{, ${, @{
-                let delim = match c {
-                    '#' => Some(StringDelimiter::FyppHash),
-                    '$' => Some(StringDelimiter::FyppDollar),
-                    '@' => Some(StringDelimiter::FyppAt),
-                    _ => None,
-                };
-                if let Some(delim) = delim {
-                    self.state.instring = delim;
-                    self.state.infypp = true;
-                    self.chars.next(); // consume second char
-                    if self.filter_strings {
-                        return self.next(); // Skip both opening chars
-                    }
-                }
-            }
-        }
-
-        Some((pos, c))
     }
 }
 

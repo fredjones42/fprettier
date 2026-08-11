@@ -1966,3 +1966,156 @@ fn test_scope_opener_after_semicolon() {
         lines[4]
     );
 }
+
+// ============================================================================
+// Regression tests: content the formatter must not rewrite or drift
+// ============================================================================
+
+/// Default settings, with the indent the assertions below assume
+fn regression_config() -> Config {
+    Config {
+        indent: 4,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn multiline_string_body_is_not_case_converted() {
+    let mut config = regression_config();
+    config.case_dict.insert("keywords".into(), CaseMode::Lower);
+    let input = "program p\n  s = \"abc &\n       &END IF Call Foo\"\nend program p\n";
+
+    assert!(
+        run_format(input, &config).contains("&END IF Call Foo\""),
+        "string content must survive case conversion"
+    );
+}
+
+#[test]
+fn multiline_string_body_keeps_its_operators() {
+    let config = Config {
+        enable_replacements: true,
+        ..regression_config()
+    };
+    let input = "program p\n  s = \"a &\n      &b < c\"\nend program p\n";
+
+    assert!(
+        run_format(input, &config).contains("&b < c\""),
+        "string content must survive operator replacement"
+    );
+}
+
+#[test]
+fn fypp_directives_keep_their_case() {
+    let mut config = regression_config();
+    config.case_dict.insert("keywords".into(), CaseMode::Upper);
+    let input = "#:if DEBUG\nx = 1\n#:endif\n";
+
+    let result = run_format(input, &config);
+    assert!(result.contains("#:if DEBUG"), "got: {result}");
+    assert!(result.contains("#:endif"), "got: {result}");
+}
+
+#[test]
+fn preprocessor_lines_are_never_split() {
+    let config = Config {
+        line_length: 80,
+        ..regression_config()
+    };
+    let long = "#define M(a, b, c) call_one(a) + call_two(b) + call_three(c) + call_four(a, b, c)";
+    let input = format!("program p\n{long}\n  x = 1\nend program p\n");
+
+    assert!(
+        run_format(&input, &config).contains(long),
+        "a C preprocessor directive cannot be continued with Fortran's &"
+    );
+}
+
+#[test]
+fn blank_lines_do_not_shift_the_indentation_below_them() {
+    let config = Config {
+        indent: 3,
+        ..regression_config()
+    };
+    // Stacked IF/DO keep their alignment, which is the indentation blank lines
+    // used to disturb
+    let source = [
+        "program p",
+        "   if (a) then",
+        "   if (b) then",
+        "   x = 1",
+        "   end if",
+        "   end if",
+        "end program p",
+    ];
+
+    let reference = run_format(&format!("{}\n", source.join("\n")), &config);
+    for at in 1..source.len() {
+        for blanks in 1..4 {
+            let mut padded: Vec<&str> = source.to_vec();
+            padded.splice(at..at, std::iter::repeat_n("", blanks));
+            let result = run_format(&format!("{}\n", padded.join("\n")), &config);
+            assert_eq!(
+                code_lines(&result),
+                code_lines(&reference),
+                "{blanks} blank line(s) before {:?} changed the indentation below",
+                source[at]
+            );
+        }
+    }
+}
+
+/// The non-blank lines of a formatted file
+fn code_lines(text: &str) -> Vec<&str> {
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect()
+}
+
+#[test]
+fn comment_only_lines_do_not_drift_without_an_indent_pass() {
+    let config = Config {
+        impose_indent: false,
+        ..regression_config()
+    };
+    let input = "program p\n  x = 1\n  ! a comment\nend program p\n";
+
+    let once = run_format(input, &config);
+    assert_eq!(run_format(&once, &config), once, "formatting must settle");
+    assert!(once.contains("\n  ! a comment\n"), "got: {once:?}");
+}
+
+#[test]
+fn crlf_line_endings_are_preserved() {
+    let config = regression_config();
+
+    let result = run_format("program p\r\n  x = 1\r\nend program p\r\n", &config);
+    assert!(result.contains("\r\n"), "CRLF input must stay CRLF");
+    assert!(!result.contains("\n\n"), "no bare LF should remain");
+
+    let result = run_format("program p\n  x = 1\nend program p\n", &config);
+    assert!(!result.contains('\r'), "LF input must stay LF");
+}
+
+#[test]
+fn non_ascii_source_does_not_panic() {
+    let mut config = regression_config();
+    config.case_dict.insert("keywords".into(), CaseMode::Lower);
+
+    // Case conversion walks byte positions; the aligner slices around `::`
+    run_format("program p\n  café = 1\nend program p\n", &config);
+    run_format(
+        "program p\n  real :: alpha, &\n          beta — gamma\nend program p\n",
+        &config,
+    );
+}
+
+#[test]
+fn a_megabyte_long_string_literal_does_not_exhaust_the_stack() {
+    // CharFilter used to recurse once per skipped character
+    let input = format!(
+        "program p\n  x = \"{}\"\nend program p\n",
+        "a".repeat(1 << 20)
+    );
+    run_format(&input, &regression_config());
+}

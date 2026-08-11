@@ -89,14 +89,22 @@ fn main() -> Result<ExitCode> {
         }
     }
 
+    // An input path that does not exist is an error, not an empty run: it is
+    // almost always a typo, and silently exiting 0 hides it from CI.
+    let mut missing = 0;
+    for path in args.inputs.iter().filter(|path| !path.exists()) {
+        eprintln!("Error: no such file or directory: {}", path.display());
+        missing += 1;
+    }
+
     // Collect all files to process
     let files = collect_files(&args);
 
     if files.is_empty() {
-        if !args.silent {
+        if !args.silent && missing == 0 {
             eprintln!("No Fortran files found to format.");
         }
-        return Ok(ExitCode::SUCCESS);
+        return Ok(exit_code(missing > 0));
     }
 
     // Sequential processing keeps stdout/diff/check output deterministic
@@ -116,19 +124,29 @@ fn main() -> Result<ExitCode> {
         );
     }
 
-    // Process files
+    // Process files. The parallel path reports no change count: --check,
+    // --diff and --stdout, the only readers of it, all force sequential.
     let (changed, errors) = if use_sequential {
         process_files_sequential(&files, base_config.as_ref(), &args)
     } else {
-        // Parallel processing for in-place formatting
-        process_files_parallel(&files, base_config.as_ref(), &args);
-        (0, 0)
+        (
+            0,
+            process_files_parallel(&files, base_config.as_ref(), &args),
+        )
     };
 
-    if args.check && (changed > 0 || errors > 0) {
-        return Ok(ExitCode::FAILURE);
+    Ok(exit_code(
+        errors + missing > 0 || (args.check && changed > 0),
+    ))
+}
+
+/// `ExitCode::FAILURE` when something went wrong, `SUCCESS` otherwise
+fn exit_code(failed: bool) -> ExitCode {
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
-    Ok(ExitCode::SUCCESS)
 }
 
 /// Build configuration from CLI args and optional config file
@@ -166,7 +184,7 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
                 }
             }
         }
-        Config::from_discovered_files(&start)
+        Config::from_discovered_files(&start)?
     };
 
     // Override with CLI arguments
@@ -377,15 +395,19 @@ fn process_files_sequential(
             Ok(false) => {}
             Err(e) => {
                 errors += 1;
-                eprintln!("Error formatting {}: {}", path.display(), e);
+                eprintln!("Error formatting {}: {e:#}", path.display());
             }
         }
     }
     (changed, errors)
 }
 
-/// Process files in parallel using Rayon
-fn process_files_parallel(files: &[PathBuf], base_config: Option<&Config>, args: &CliArgs) {
+/// Process files in parallel using Rayon. Returns the number that errored.
+fn process_files_parallel(
+    files: &[PathBuf],
+    base_config: Option<&Config>,
+    args: &CliArgs,
+) -> usize {
     let success_count = AtomicUsize::new(0);
     let error_count = AtomicUsize::new(0);
 
@@ -429,7 +451,7 @@ fn process_files_parallel(files: &[PathBuf], base_config: Option<&Config>, args:
             }
             Err(e) => {
                 error_count.fetch_add(1, Ordering::Relaxed);
-                eprintln!("Error formatting {}: {}", path.display(), e);
+                eprintln!("Error formatting {}: {e:#}", path.display());
             }
         }
     });
@@ -444,6 +466,8 @@ fn process_files_parallel(files: &[PathBuf], base_config: Option<&Config>, args:
             eprintln!("Formatted {success} files, {errors} errors.");
         }
     }
+
+    errors
 }
 
 /// Apply directive overrides parsed from a file to a configuration
@@ -452,7 +476,7 @@ fn apply_directive_overrides(
     overrides: &DirectiveOverrides,
     debug: bool,
     source_name: &str,
-) {
+) -> Result<()> {
     if debug {
         eprintln!("[DEBUG] Found file directive in {source_name}");
     }
@@ -491,6 +515,13 @@ fn apply_directive_overrides(
             eprintln!("[DEBUG]   Directive override: case[{key}] = {value:?}");
         }
         config.case_dict.insert(key, value);
+    }
+
+    // The directive can set the same values the CLI can, so it needs the same
+    // check the CLI got in build_config
+    match config.validate() {
+        Some(error) => anyhow::bail!("invalid directive in {source_name}: {error}"),
+        None => Ok(()),
     }
 }
 
@@ -545,7 +576,7 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
     let effective_config =
         if let Some(overrides) = find_directive(&mut BufReader::new(Cursor::new(&file_contents))) {
             file_config = config.clone();
-            apply_directive_overrides(&mut file_config, &overrides, args.debug, source_name);
+            apply_directive_overrides(&mut file_config, &overrides, args.debug, source_name)?;
             &file_config
         } else {
             config
@@ -571,10 +602,41 @@ fn process_single_file(path: &PathBuf, config: &Config, args: &CliArgs) -> Resul
         write_stdout(&output)?;
     } else if changed {
         // Write back to file only if content changed
-        std::fs::write(path, &output)?;
+        write_in_place(path, &output)?;
     }
 
     Ok(changed)
+}
+
+/// Replace a file's contents atomically: write a sibling temporary file and
+/// rename it over the target, so an interrupted run cannot leave the source
+/// truncated. Symlinks are resolved first, so the link keeps pointing at the
+/// file we rewrite instead of being replaced by it.
+fn write_in_place(path: &Path, contents: &[u8]) -> Result<()> {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    let target = std::fs::canonicalize(path)?;
+    let name = target
+        .file_name()
+        .map_or_else(|| "file".into(), std::ffi::OsStr::to_os_string);
+    let temp = target.with_file_name(format!(
+        ".{}.fprettier{}-{}",
+        name.to_string_lossy(),
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    let write_and_rename = || -> std::io::Result<()> {
+        std::fs::write(&temp, contents)?;
+        // rename() does not carry the target's mode over, so copy it across
+        std::fs::set_permissions(&temp, std::fs::metadata(&target)?.permissions())?;
+        std::fs::rename(&temp, &target)
+    };
+    write_and_rename().inspect_err(|_| {
+        let _ = std::fs::remove_file(&temp);
+    })?;
+
+    Ok(())
 }
 
 /// Write to stdout, exiting quietly when the reader has closed the pipe.
@@ -625,7 +687,7 @@ fn process_stdin(config: &Config, args: &CliArgs) -> Result<ExitCode> {
     // Make a copy of config that can be overridden by directives
     let mut file_config = config.clone();
     if let Some(overrides) = find_directive(&mut BufReader::new(Cursor::new(&stdin_contents))) {
-        apply_directive_overrides(&mut file_config, &overrides, args.debug, "stdin");
+        apply_directive_overrides(&mut file_config, &overrides, args.debug, "stdin")?;
     }
 
     // Format the input

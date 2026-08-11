@@ -214,6 +214,14 @@ fn inspect_file<R: BufRead>(
         }
         skip_blank = is_blank;
 
+        // Blank lines are transparent: they get no entry (`format_pass` counts
+        // only lines with content) and they leave the trackers below alone.
+        // Otherwise a blank line would both displace every entry under it and
+        // report an indent of 0, costing the next IF/DO its stacking.
+        if is_blank {
+            continue;
+        }
+
         // Calculate offset (leading spaces) of first line
         let first_line = &fortran_line.lines[0];
         let offset = indent_of(first_line);
@@ -350,6 +358,7 @@ pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Conf
     let mut input_buffer = Vec::new();
     let mut reader = input;
     reader.read_to_end(&mut input_buffer)?;
+    let crlf_input = input_buffer.windows(2).any(|pair| pair == b"\r\n");
 
     // Reorder `use` statements before anything else, so the passes below see the
     // final line order and fix up whatever the reordering left over-length.
@@ -359,20 +368,6 @@ pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Conf
             input_buffer = sorted.into_bytes();
         }
     }
-
-    // Pre-inspect file to compute required_indents (for IF/DO indentation preservation)
-    // This is only needed when impose_indent is true and strict_indent is false
-    let inspect_result = if config.impose_indent && !config.strict_indent {
-        let cursor = Cursor::new(&input_buffer);
-        let inspect_reader = BufReader::new(cursor);
-        Some(inspect_file(
-            inspect_reader,
-            config.indent,
-            config.strict_indent,
-        )?)
-    } else {
-        None
-    };
 
     // Pass 1: Whitespace formatting
     let intermediate = if config.impose_whitespace {
@@ -393,13 +388,31 @@ pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Conf
         input_buffer
     };
 
+    // Inspect the buffer the indentation pass is about to read, not the
+    // original: pass 1 collapses runs of blank lines and detaches comments, so
+    // inspecting the original would pair every line below such a change with
+    // another line's requested indent.
+    // Pass 1 preserves leading whitespace, which is all the inspection reads.
+    let inspect_result = if config.impose_indent && !config.strict_indent {
+        let cursor = Cursor::new(&intermediate);
+        let inspect_reader = BufReader::new(cursor);
+        Some(inspect_file(
+            inspect_reader,
+            config.indent,
+            config.strict_indent,
+        )?)
+    } else {
+        None
+    };
+
     // Pass 2: Indentation
+    let mut formatted = Vec::with_capacity(intermediate.len());
     if config.impose_indent {
         let cursor = Cursor::new(intermediate);
         let reader = BufReader::new(cursor);
         format_pass(
             reader,
-            output,
+            &mut formatted,
             config,
             true,  // Do impose indent in pass 2
             false, // Don't impose whitespace in pass 2
@@ -413,13 +426,34 @@ pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Conf
         let cursor = Cursor::new(intermediate);
         let reader = BufReader::new(cursor);
         format_pass(
-            reader, output, config, false, // No indent
+            reader,
+            &mut formatted,
+            config,
+            false, // No indent
             false, // No whitespace (case conversion and line splitting will still run)
             None,
         )?;
     } else {
-        // No indentation pass, write intermediate output directly
-        output.write_all(&intermediate)?;
+        // No indentation pass, use the intermediate output directly
+        formatted = intermediate;
+    }
+
+    // The parser strips \r along with \n, so every line above ends with a bare
+    // \n. Put CRLF back when the input used it, otherwise formatting a file
+    // rewrites every one of its line endings. A file with mixed endings is
+    // normalized to the ending it uses anywhere.
+    if crlf_input {
+        for chunk in formatted.split_inclusive(|&b| b == b'\n') {
+            match chunk.split_last() {
+                Some((b'\n', body)) => {
+                    output.write_all(body)?;
+                    output.write_all(b"\r\n")?;
+                }
+                _ => output.write_all(chunk)?,
+            }
+        }
+    } else {
+        output.write_all(&formatted)?;
     }
 
     Ok(())
@@ -934,8 +968,11 @@ fn write_output_line<W: Write>(
         let trimmed = line.trim_end();
         // If the line is now empty (comment-only) but was originally indented,
         // preserve one space as a marker so that Pass 2 of two-pass formatting
-        // can detect the original indentation
+        // can detect the original indentation. Only when an indent pass is
+        // actually coming: with indentation off nothing consumes the marker
+        // and the comment gains a space on every run.
         if trimmed.is_empty()
+            && pass_ctx.config.impose_indent
             && origin < write_ctx.lines_were_indented.len()
             && write_ctx.lines_were_indented[origin]
         {
@@ -1150,17 +1187,22 @@ fn compute_comment_indices(line_origins: &[usize]) -> (HashSet<usize>, HashSet<u
 
 /// Apply line splitting if lines exceed the configured length
 ///
+/// Preprocessor lines are left alone: a C preprocessor directive continues
+/// with a trailing backslash and a fypp directive not at all, so breaking
+/// either one with Fortran's `&` would change what it means.
+///
 /// Returns a vector mapping each output line to its original line index.
 fn split_lines_if_needed(
     output_lines: &mut Vec<String>,
     effective_line_length: usize,
     indent_size: usize,
+    is_preprocessor: bool,
 ) -> Vec<usize> {
     // Track which original line each output line came from (for comment placement)
     // By default, output line i corresponds to original line i
     let mut line_origins: Vec<usize> = (0..output_lines.len()).collect();
 
-    if effective_line_length < LINE_SPLIT_THRESHOLD {
+    if effective_line_length < LINE_SPLIT_THRESHOLD && !is_preprocessor {
         // Get indents for splitting (use 0 if not computed)
         let line_indents: Vec<usize> = output_lines.iter().map(|line| indent_of(line)).collect();
 
@@ -1313,18 +1355,20 @@ fn format_pass<R: BufRead, W: Write>(
 
     // Process each logical Fortran line
     while let Some(fortran_line) = stream.next_fortran_line()? {
-        // Increment Fortran line counter at start of loop
-        // Note: This intentionally makes fortran_line_number 1-indexed when
-        // used for required_indents, which shifts all values by 1. The
-        // alignment preservation logic depends on using the NEXT line's
-        // required_indent for scope-opening statements (IF/DO).
-        fortran_line_number += 1;
-
         let is_blank = is_blank_line(&fortran_line);
 
         // Skip this line if it's blank and we just output a blank line
         if is_blank && skip_blank {
             continue;
+        }
+
+        // Count lines with content only, exactly as `inspect_file` records
+        // them. Note this leaves fortran_line_number 1-indexed against a
+        // 0-indexed vector, which shifts all values by 1: the alignment
+        // preservation logic depends on using the NEXT line's required_indent
+        // for scope-opening statements (IF/DO).
+        if !is_blank {
+            fortran_line_number += 1;
         }
         let mut output_lines = fortran_line.lines.clone();
 
@@ -1464,21 +1508,40 @@ fn format_pass<R: BufRead, W: Write>(
 
         // Apply relational operator replacement if enabled
         // This converts between Fortran-style (.lt., .eq., etc.) and C-style (<, ==, etc.)
+        // Lines inside a multiline string are content, not code: rewriting an
+        // operator or a keyword's case there changes the string's value.
+        let is_string_body = |i: usize| {
+            fortran_line
+                .lines_in_string
+                .get(i)
+                .copied()
+                .unwrap_or(false)
+        };
+
         if pass_ctx.config.enable_replacements
             && !flags.skip_format
             && !flags.is_fypp_line
             && !flags.is_cpp_line
         {
-            for line in &mut output_lines {
-                *line = replace_relational_operators(line, pass_ctx.config.c_relations);
+            for (i, line) in output_lines.iter_mut().enumerate() {
+                if !is_string_body(i) {
+                    *line = replace_relational_operators(line, pass_ctx.config.c_relations);
+                }
             }
         }
 
         // Apply case conversion if enabled and not deactivated
-        // Skip for CPP lines since they are not Fortran code
-        if case_settings.is_enabled() && !flags.skip_format && !flags.is_cpp_line {
-            for line in &mut output_lines {
-                *line = convert_case(line, &case_settings);
+        // Skip CPP and fypp lines: they are not Fortran code, and fypp only
+        // recognizes its directives (#:if, #:endif, ...) in lower case
+        if case_settings.is_enabled()
+            && !flags.skip_format
+            && !flags.is_cpp_line
+            && !flags.is_fypp_line
+        {
+            for (i, line) in output_lines.iter_mut().enumerate() {
+                if !is_string_body(i) {
+                    *line = convert_case(line, &case_settings);
+                }
             }
         }
 
@@ -1548,6 +1611,7 @@ fn format_pass<R: BufRead, W: Write>(
             &mut output_lines,
             effective_line_length,
             pass_ctx.config.indent,
+            flags.is_cpp_line || flags.is_fypp_line,
         );
 
         // Compute comment placement indices
