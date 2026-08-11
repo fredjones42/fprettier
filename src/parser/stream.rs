@@ -263,7 +263,7 @@ fn split_comment(line: &str) -> (&str, &str) {
 }
 
 /// Check if line contains a semicolon outside of strings
-fn has_semicolon_outside_strings(line: &str) -> bool {
+pub(crate) fn has_semicolon_outside_strings(line: &str) -> bool {
     for (_, c) in CharFilter::new(line, false, true, true) {
         if c == ';' {
             return true;

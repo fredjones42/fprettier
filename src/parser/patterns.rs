@@ -192,6 +192,11 @@ pub static VAR_DECL_RE: LazyLock<Regex> = LazyLock::new(|| {
 // USE statement
 pub static USE_RE: LazyLock<Regex> = LazyLock::new(|| build_re(&format!(r"{SOL_STR}USE(\s+|,)")));
 
+// USE statement with the module name captured, covering `use m`, `use :: m` and
+// `use, intrinsic :: m` (the standard requires `::` whenever a module-nature is present)
+pub static USE_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| build_re(&format!(r"{SOL_STR}USE\s*(?:,\s*\w+\s*)?(?:::)?\s*(\w+)")));
+
 // PUBLIC declaration
 pub static PUBLIC_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}PUBLIC\s*::")));

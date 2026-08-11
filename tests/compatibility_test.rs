@@ -2040,6 +2040,26 @@ fn test_fypp_file_compatibility() {
     test_compatibility(&input, &expected, &config);
 }
 
+/// Test `test_sort_use.f90` compatibility
+/// The only example that runs with `sort_use`/`sort_use_only` enabled
+#[test]
+fn test_sort_use_compatibility() {
+    let input = get_example_path("in", "test_sort_use.f90");
+    let expected = get_example_path("out", "test_sort_use.f90");
+
+    let config = Config {
+        impose_whitespace: true,
+        impose_indent: true,
+        indent: 3,
+        whitespace: 2,
+        sort_use: true,
+        sort_use_only: true,
+        ..Default::default()
+    };
+
+    test_compatibility(&input, &expected, &config);
+}
+
 /// Test `test_invalid.f90` compatibility
 /// This file contains intentionally invalid/incomplete Fortran code
 /// to test error recovery and handling of malformed input

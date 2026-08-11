@@ -72,6 +72,8 @@ comment_spacing = 1             # spaces before an inline comment
 normalize_comment_spacing = false   # apply comment_spacing everywhere
 enable_replacements = false     # convert between .lt. and < style operators
 c_relations = false             # with enable_replacements, prefer < over .lt.
+sort_use = false                # sort use statements alphabetically within a group
+sort_use_only = false           # sort the names in a use ... only: list
 ```
 
 ### Whitespace levels
@@ -132,6 +134,44 @@ because a fifth value would be read as a file name:
 fprettier --case 1 1 1 1 --case-types 2 -r src/
 ```
 
+### Sorting use statements
+
+Nothing is sorted by default. `sort_use` (`--sort-use`) sorts `use` statements
+alphabetically, `sort_use_only` (`--sort-use-only`) sorts the names in an
+`only:` list. Use either alone or both together:
+
+```fortran
+use foo
+use bar
+
+use gamma, only: delta, beta
+use beta, only: zulu, alfa => tango
+```
+
+becomes
+
+```fortran
+use bar
+use foo
+
+use beta, only: alfa => tango, zulu
+use gamma, only: beta, delta
+```
+
+A group is a run of `use` statements with nothing between them. A blank line, a
+comment, a preprocessor directive, or any other statement ends the group and
+starts a new one, so `use` statements in different `#:if` branches never mix.
+Statements marked with `!&` or inside a `!&<`…`!&>` block stay where they are.
+
+Comparison ignores case, and a rename sorts on its local name: `c => x` sorts
+under `c`. A statement moves as a whole, together with its continuation lines
+and its trailing comment.
+
+`sort_use_only` rewrites the `only:` list as one logical line, which the usual
+line-length splitter then re-breaks — so a hand-broken list is re-flowed. A
+statement carrying a comment on a line other than its last is left alone, since
+that comment would have nowhere to go.
+
 ### In-file directives
 
 A comment anywhere in a file overrides everything else for that file:
@@ -160,6 +200,7 @@ matrix = [1, 0, &   !&<
 ### Version 0.4.0
 
 **New Features:**
+- Added `--sort-use` and `--sort-use-only`, off by default: sort `use` statements alphabetically within a group, and sort the names in a `use ... only:` list
 - Added `--check`: list files that would be reformatted and exit 1 if any (for CI)
 - Added `--diff`/`-d`: print a unified diff of formatting changes instead of modifying files
 - Added `--case-types` and the matching `! fprettier: --case-types` directive, controlling the case of `kind=` values, literal kind suffixes (`2_int64`) and exponent letters (`1.0e3`). This category was previously reachable only through a `[case_dict]` table in `fprettier.toml`

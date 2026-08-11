@@ -206,6 +206,12 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
     if args.format_decl {
         config.format_decl = true;
     }
+    if args.sort_use {
+        config.sort_use = true;
+    }
+    if args.sort_use_only {
+        config.sort_use_only = true;
+    }
     if args.enable_replacements {
         config.enable_replacements = true;
     }

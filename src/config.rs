@@ -76,6 +76,12 @@ pub struct Config {
     /// If false, uses Fortran-style (.lt., .le., .gt., .ge., .eq., .ne.)
     /// If true, uses C-style (<, <=, >, >=, ==, /=)
     pub c_relations: bool,
+
+    /// Sort `use` statements alphabetically within a group (default: false)
+    pub sort_use: bool,
+
+    /// Sort the names in a `use ... only:` list alphabetically (default: false)
+    pub sort_use_only: bool,
 }
 
 /// Partial configuration for TOML parsing
@@ -101,6 +107,8 @@ struct PartialConfig {
     pub comment_spacing: Option<usize>,
     pub enable_replacements: Option<bool>,
     pub c_relations: Option<bool>,
+    pub sort_use: Option<bool>,
+    pub sort_use_only: Option<bool>,
 }
 
 impl Default for Config {
@@ -121,6 +129,8 @@ impl Default for Config {
             comment_spacing: 1,
             enable_replacements: false,
             c_relations: false,
+            sort_use: false,
+            sort_use_only: false,
         }
     }
 }
@@ -185,6 +195,12 @@ impl Config {
         }
         if let Some(v) = partial.c_relations {
             self.c_relations = v;
+        }
+        if let Some(v) = partial.sort_use {
+            self.sort_use = v;
+        }
+        if let Some(v) = partial.sort_use_only {
+            self.sort_use_only = v;
         }
         // Merge dictionaries (partial values override)
         for (k, v) in &partial.whitespace_dict {

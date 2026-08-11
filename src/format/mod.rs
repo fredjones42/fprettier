@@ -8,6 +8,7 @@
 //! - [`continuation`]: Processes line continuations and manual alignment markers
 //! - [`line_split`]: Splits long lines and detaches inline comments
 //! - [`replacements`]: Converts between Fortran (.lt.) and C-style (<) operators
+//! - [`sort_use`]: Reorders `use` statements and their `only:` lists alphabetically
 
 pub mod aligner;
 pub mod case_convert;
@@ -15,4 +16,5 @@ pub mod continuation;
 pub mod indenter;
 pub mod line_split;
 pub mod replacements;
+pub mod sort_use;
 pub mod whitespace;

@@ -32,6 +32,7 @@ use crate::format::continuation::{
 use crate::format::indenter::{F90Indenter, IndentParams};
 use crate::format::line_split::split_long_lines;
 use crate::format::replacements::replace_relational_operators;
+use crate::format::sort_use::sort_use_statements;
 use crate::format::whitespace::{format_line, format_line_with_level};
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
@@ -349,6 +350,15 @@ pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Conf
     let mut input_buffer = Vec::new();
     let mut reader = input;
     reader.read_to_end(&mut input_buffer)?;
+
+    // Reorder `use` statements before anything else, so the passes below see the
+    // final line order and fix up whatever the reordering left over-length.
+    if config.sort_use || config.sort_use_only {
+        if let Ok(src) = std::str::from_utf8(&input_buffer) {
+            let sorted = sort_use_statements(src, config.sort_use, config.sort_use_only);
+            input_buffer = sorted.into_bytes();
+        }
+    }
 
     // Pre-inspect file to compute required_indents (for IF/DO indentation preservation)
     // This is only needed when impose_indent is true and strict_indent is false

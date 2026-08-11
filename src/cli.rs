@@ -107,6 +107,12 @@ pub struct CliArgs {
     /// Format declaration statements
     pub format_decl: bool,
 
+    /// Sort `use` statements alphabetically within a group
+    pub sort_use: bool,
+
+    /// Sort the names in a `use ... only:` list alphabetically
+    pub sort_use_only: bool,
+
     /// Enable relational operator replacement (.lt. <-> <, etc.)
     pub enable_replacements: bool,
 
@@ -235,6 +241,18 @@ pub fn build_cli() -> Command {
             Arg::new("format-decl")
                 .long("format-decl")
                 .help("Format declaration statements")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("sort-use")
+                .long("sort-use")
+                .help("Sort use statements alphabetically within a group")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("sort-use-only")
+                .long("sort-use-only")
+                .help("Sort the names in a use ... only: list alphabetically")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -420,6 +438,8 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
         no_indent_mod: matches.get_flag("no-indent-mod"),
         normalize_comment_spacing: matches.get_flag("normalize-comment-spacing"),
         format_decl: matches.get_flag("format-decl"),
+        sort_use: matches.get_flag("sort-use"),
+        sort_use_only: matches.get_flag("sort-use-only"),
         enable_replacements: matches.get_flag("enable-replacements"),
         c_relations: matches.get_flag("c-relations"),
         comment_spacing: matches.get_one::<usize>("comment-spacing").copied(),
@@ -605,6 +625,25 @@ mod tests {
     fn test_comment_spacing_not_set() {
         let args = parse_args_from(vec!["fprettier", "file.f90"]);
         assert_eq!(args.comment_spacing, None);
+    }
+
+    #[test]
+    fn test_sort_use_flags() {
+        let args = parse_args_from(vec![
+            "fprettier",
+            "--sort-use",
+            "--sort-use-only",
+            "file.f90",
+        ]);
+        assert!(args.sort_use);
+        assert!(args.sort_use_only);
+    }
+
+    #[test]
+    fn test_sort_use_flags_not_set() {
+        let args = parse_args_from(vec!["fprettier", "file.f90"]);
+        assert!(!args.sort_use);
+        assert!(!args.sort_use_only);
     }
 
     #[test]
