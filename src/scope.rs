@@ -7,7 +7,7 @@
 //! preprocessor directives (`#:if`, `#:for`, `#:def`, ...).
 //!
 //! A scope is identified by its index into that table, which is what
-//! [`F90Indenter`](crate::format::F90Indenter) pushes on its stack.
+//! [`F90Indenter`](crate::format::indenter::F90Indenter) pushes on its stack.
 
 use std::sync::LazyLock;
 

@@ -22,7 +22,7 @@ const CONFIG_FILE_NAME: &str = "fprettier.toml";
 
 /// Main configuration struct for fprettier
 ///
-/// TOML parsing goes through [`PartialConfig`]; this struct is never
+/// TOML parsing goes through `PartialConfig`; this struct is never
 /// (de)serialized directly.
 #[derive(Debug, Clone)]
 pub struct Config {
