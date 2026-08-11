@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::format::case_convert::{CaseMode, CASE_KEYS};
+use crate::format::case_convert::{CaseMode, CASE_FLAG_VALUES, CASE_KEYS};
 
 /// Pattern to match fprettier directives
 static FPRETTIER_DIRECTIVE_RE: LazyLock<Regex> =
@@ -139,9 +139,9 @@ fn parse_directive_args(args_str: &str) -> Option<DirectiveOverrides> {
                 overrides.case_procedures = tokens.get(i + 2).and_then(parse_mode);
                 overrides.case_operators = tokens.get(i + 3).and_then(parse_mode);
                 overrides.case_constants = tokens.get(i + 4).and_then(parse_mode);
-                // Skip the values we consumed (up to 4)
+                // Skip the values we consumed
                 let mut skip = 0;
-                for j in 1..=4 {
+                for j in 1..=CASE_FLAG_VALUES {
                     if i + j < tokens.len() && !tokens[i + j].starts_with('-') {
                         skip = j;
                     } else {

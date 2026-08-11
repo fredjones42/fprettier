@@ -414,6 +414,11 @@ static NUMERIC_EXPONENT_RE: LazyLock<Regex> =
 static NUMERIC_EXP_KIND_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([\d.]*[dDeE])([+-]?\d+)_(\w+)$").unwrap());
 
+/// How many of [`CASE_KEYS`] the `--case` flag takes. The last category,
+/// `types`, has its own `--case-types` flag: a fifth value on `--case` would
+/// be read as a file name.
+pub(crate) const CASE_FLAG_VALUES: usize = CASE_KEYS.len() - 1;
+
 /// The case categories, in the order `--case` and `! fprettier: --case` take
 /// them. Also the accepted keys of the `[case_dict]` config table.
 pub const CASE_KEYS: [&str; 5] = ["keywords", "procedures", "operators", "constants", "types"];

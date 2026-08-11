@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command};
 
-use crate::format::case_convert::CaseMode;
+use crate::format::case_convert::{CaseMode, CASE_FLAG_VALUES};
 
 /// Fine-grained whitespace options: (CLI arg name, `whitespace_dict` key, help text)
 const WS_OPTS: [(&str, &str, &str); 11] = [
@@ -336,7 +336,7 @@ pub fn build_cli() -> Command {
                 .long("case")
                 .help("Enable case formatting: 4 values for keywords, procedures, operators, constants (0=none, 1=lower, 2=upper)")
                 .value_name("NUM")
-                .num_args(4)
+                .num_args(CASE_FLAG_VALUES)
                 .value_parser(clap::value_parser!(u8).range(0..=2)),
         )
         .arg(
