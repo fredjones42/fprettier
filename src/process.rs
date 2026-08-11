@@ -52,6 +52,11 @@ fn write_spaces<W: Write>(output: &mut W, count: usize) -> std::io::Result<()> {
     output.write_all(" ".repeat(count).as_bytes())
 }
 
+/// The column a line's content starts at, i.e. its leading-space count.
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
 /// Check whether a line ends with a continuation `&` that is real code,
 /// i.e. not inside a string or comment (a `&` inside a string is content).
 fn ends_with_continuation(line: &str) -> bool {
@@ -195,7 +200,7 @@ fn inspect_file<R: BufRead>(
 
         // Calculate offset (leading spaces) of first line
         let first_line = &fortran_line.lines[0];
-        let offset = first_line.len() - first_line.trim_start().len();
+        let offset = indent_of(first_line);
 
         // Determine first_indent from first non-empty Fortran line
         let joined_trimmed = fortran_line.joined_line.trim();
@@ -216,7 +221,10 @@ fn inspect_file<R: BufRead>(
         // Disallow stacking (delta=0) when the previous line was a scope-opener
         // (like ASSOCIATE, SELECT, etc.), so the body gets properly indented.
         if IF_RE.is_match(joined_trimmed) || DO_RE.is_match(joined_trimmed) {
-            let indent_misaligned = indent_size > 0 && offset % indent_size != 0;
+            // The `indent_size > 0` guard is load-bearing: is_multiple_of(0)
+            // is true only for 0, so dropping it would call an indent of 0
+            // misaligned for every line that is not at column 0
+            let indent_misaligned = indent_size > 0 && !offset.is_multiple_of(indent_size);
             if prev_offset != offset || strict_indent || indent_misaligned || prev_was_scope_opener
             {
                 required_indent = indent_size;
@@ -717,7 +725,7 @@ fn compute_and_apply_indentation(
     // should use normal scope-based indent, not label-shifted indent.
     if !labels.label.is_empty() && !computed_indents.is_empty() && !output_lines.is_empty() {
         // Get leading whitespace from first line (this includes label spacing)
-        let first_line_leading = output_lines[0].len() - output_lines[0].trim_start().len();
+        let first_line_leading = indent_of(&output_lines[0]);
         if first_line_leading > 0 {
             let has_pre_amp = !pre_ampersand.is_empty();
 
@@ -825,11 +833,8 @@ fn compute_and_apply_indentation(
                     // indent. Adding the absolute original indent instead
                     // re-adds base_indent on every run, so the block walks
                     // right a little further each time the file is formatted.
-                    let first_original = fortran_line
-                        .lines
-                        .first()
-                        .map_or(0, |l| l.len() - l.trim_start().len());
-                    let original_indent = line.len() - line.trim_start().len();
+                    let first_original = fortran_line.lines.first().map_or(0, |l| indent_of(l));
+                    let original_indent = indent_of(line);
                     let base_indent = computed_indents.first().copied().unwrap_or(0);
                     let new_indent = base_indent + original_indent.saturating_sub(first_original);
                     *line = format!("{}{}", " ".repeat(new_indent), line.trim_start());
@@ -999,7 +1004,7 @@ fn write_output_line<W: Write>(
         output.write_all(trimmed.as_bytes())?;
     } else if is_ford_comment_line {
         // FORD comment lines: write original indentation, not the processed line_to_write
-        let original_indent = original_line.len() - original_line.trim_start().len();
+        let original_indent = indent_of(original_line);
         write_spaces(output, original_indent)?;
     } else {
         // For comment-only lines that will be indented in the comment handling section,
@@ -1031,7 +1036,7 @@ fn write_output_line<W: Write>(
             } else if let Some(ind) = indenter {
                 ind.get_scope_indent()
             } else {
-                line_to_write.len() - line_to_write.trim_start().len()
+                indent_of(line_to_write)
             };
             write_spaces(output, comment_indent)?;
             output.write_all(comment_trimmed.as_bytes())?;
@@ -1139,10 +1144,7 @@ fn split_lines_if_needed(
 
     if effective_line_length < LINE_SPLIT_THRESHOLD {
         // Get indents for splitting (use 0 if not computed)
-        let line_indents: Vec<usize> = output_lines
-            .iter()
-            .map(|line| line.len() - line.trim_start().len())
-            .collect();
+        let line_indents: Vec<usize> = output_lines.iter().map(|line| indent_of(line)).collect();
 
         let (split_lines, split_indents, split_origins) = split_long_lines(
             output_lines,
@@ -1370,7 +1372,7 @@ fn format_pass<R: BufRead, W: Write>(
                     - original_first_line_no_label.trim_start().len();
                 let shift = original_leading.saturating_sub(target_spaces);
                 let normalize_line = |line: String| -> String {
-                    let leading = line.len() - line.trim_start().len();
+                    let leading = indent_of(&line);
                     if leading > target_spaces {
                         // Strip excess leading spaces
                         line[(leading - target_spaces)..].to_string()
