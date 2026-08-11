@@ -184,13 +184,15 @@ fn sort_only_list(unit: &mut Unit) {
 /// colon, and the item list. `only` is not a reserved word, so this walks the
 /// grammar rather than searching for the keyword.
 fn split_at_only(joined: &str) -> Option<(&str, &str)> {
+    const ONLY: &str = "only";
+
     let name = USE_NAME_RE.find(joined)?;
     let rest = joined[name.end()..].trim_start();
     let rest = rest.strip_prefix(',')?.trim_start();
-    if !rest.get(..4)?.eq_ignore_ascii_case("only") {
+    if !rest.get(..ONLY.len())?.eq_ignore_ascii_case(ONLY) {
         return None;
     }
-    let items = rest[4..].trim_start().strip_prefix(':')?;
+    let items = rest[ONLY.len()..].trim_start().strip_prefix(':')?;
     let prefix = &joined[..joined.len() - items.len()];
     Some((prefix.trim_end(), items))
 }
