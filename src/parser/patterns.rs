@@ -262,6 +262,15 @@ pub static REL_OP_RE: LazyLock<Regex> =
 // Logical operators
 pub static LOG_OP_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"\.(?:AND|OR|EQV|NEQV|NOT)\."));
 
+// Any dotted operator, including user-defined ones (R1004/R1024). Also
+// matches the intrinsic operators, which is harmless: spacing them is
+// idempotent.
+pub static DEFINED_OP_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"\.[A-Z]+\."));
+
+// Logical literal constants. These look like dotted operators but are
+// constants: `.TRUE._1` is one lexical token, so no blank may go inside it.
+pub static LOGICAL_LIT_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"\.(?:TRUE|FALSE)\."));
+
 // ===== C PREPROCESSOR =====
 
 /// C preprocessor line pattern - matches lines starting with # but NOT fypp patterns.

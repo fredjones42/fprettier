@@ -11,7 +11,8 @@ use regex::Regex;
 
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
-    END_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOG_OP_RE, REL_OP_RE, USE_RE,
+    DEFINED_OP_RE, END_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOGICAL_LIT_RE, LOG_OP_RE,
+    REL_OP_RE, USE_RE,
 };
 
 // Print/read statement formatting
@@ -998,9 +999,11 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
             *part = part.replace(PLACEHOLDER, " => ");
         }
 
-        // Logical operators (whitespace_flags[3])
+        // Logical operators (whitespace_flags[3]), then any user-defined
+        // operator, which reads as `a.cross.b` without this
         if whitespace_flags[3] {
             *part = add_spacing_around_operator(part, &LOG_OP_RE);
+            *part = add_spacing_around_defined_operators(part);
         }
 
         // Plus/minus (whitespace_flags[4])
@@ -1108,6 +1111,33 @@ fn add_spacing_around_plusminus(text: &str) -> String {
 /// Add spacing around operators matched by a regex
 ///
 /// Splits the string by the regex and joins with spaces
+/// Space user-defined operators (`.cross.`, R1004/R1024) like the intrinsic
+/// ones.
+///
+/// `.TRUE.` and `.FALSE.` have the same shape but are literal constants, and
+/// a constant may carry a kind parameter (`.TRUE._lk`), so a blank put inside
+/// one would split a lexical token. Spacing runs on the stretches between
+/// them, leaving each literal exactly as written.
+fn add_spacing_around_defined_operators(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut rest_start = 0;
+
+    for literal in LOGICAL_LIT_RE.find_iter(text) {
+        result.push_str(&add_spacing_around_operator(
+            &text[rest_start..literal.start()],
+            &DEFINED_OP_RE,
+        ));
+        result.push_str(literal.as_str());
+        rest_start = literal.end();
+    }
+    result.push_str(&add_spacing_around_operator(
+        &text[rest_start..],
+        &DEFINED_OP_RE,
+    ));
+
+    result
+}
+
 fn add_spacing_around_operator(text: &str, operator_re: &regex::Regex) -> String {
     // Split by the operator, preserving the delimiters
     let parts: Vec<&str> = operator_re.split(text).collect();
@@ -1159,6 +1189,20 @@ fn add_spacing_around_operator(text: &str, operator_re: &regex::Regex) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_defined_operator_spacing() {
+        let space = add_spacing_around_defined_operators;
+        assert_eq!(space("n = 1.plus.2"), "n = 1 .plus. 2");
+        assert_eq!(space("if (a.cross.b)"), "if (a .cross. b)");
+        // Logical literals are constants, not operators: leave them be
+        assert_eq!(space("a = .true."), "a = .true.");
+        assert_eq!(space("b = .false._1"), "b = .false._1");
+        assert_eq!(space("[.true., .false.]"), "[.true., .false.]");
+        assert_eq!(space("a = b.xor..true."), "a = b .xor. .true.");
+        // Idempotent over the intrinsic operators the earlier passes spaced
+        assert_eq!(space("x = a .and. b"), "x = a .and. b");
+    }
 
     #[test]
     fn test_rm_extra_whitespace() {
