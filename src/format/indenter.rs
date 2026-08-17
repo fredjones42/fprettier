@@ -317,8 +317,14 @@ impl F90Indenter {
                                     || (indent_fypp && popped_fypp_scope)
                                 {
                                     end.valid = true;
+                                } else {
+                                    // The END closes a construct we never opened
+                                    // (an opener pattern we don't recognize). Put
+                                    // the scope back: dropping it would desync
+                                    // scope_storage from indent_storage and dedent
+                                    // the rest of the file.
+                                    self.scope_storage.push(popped_scope);
                                 }
-                                // Note: we don't put it back
                             }
                         } else {
                             // Additional END statements after semicolon
@@ -576,6 +582,33 @@ mod tests {
 
         let indents = indenter.get_lines_indent();
         assert_eq!(indents[0], 0); // END IF back to base
+    }
+
+    #[test]
+    fn test_unmatched_end_keeps_scope() {
+        // An END for a construct we never opened (its opener pattern is not
+        // recognized) must not pop the enclosing scope, or every later line
+        // dedents.
+        let parser = build_scope_parser(false, true);
+        let mut indenter = F90Indenter::new(parser, 0);
+        let params = IndentParams::new(3);
+
+        indenter.process_logical_line("module m", &["module m".to_string()], &params);
+        assert_eq!(indenter.get_lines_indent()[0], 0);
+
+        // Not recognized as a TYPE opener (parameterized derived type)
+        let pdt = "type :: matrix(k, n)";
+        indenter.process_logical_line(pdt, &[pdt.to_string()], &params);
+        assert_eq!(indenter.get_lines_indent()[0], 3);
+
+        indenter.process_logical_line("end type matrix", &["end type matrix".to_string()], &params);
+
+        // Still inside the module
+        indenter.process_logical_line("integer :: i", &["integer :: i".to_string()], &params);
+        assert_eq!(indenter.get_lines_indent()[0], 3);
+        // CONTAINS still recognized as continuing the module scope
+        indenter.process_logical_line("contains", &["contains".to_string()], &params);
+        assert_eq!(indenter.get_lines_indent()[0], 0);
     }
 
     #[test]
