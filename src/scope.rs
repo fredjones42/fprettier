@@ -14,13 +14,14 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::parser::patterns::{
-    ASSOCIATE_RE, BLK_RE, CASE_RE, CONTAINS_RE, DO_RE, ELSEWHERE_RE, ELSE_RE, ENDANY_RE,
-    ENDASSOCIATE_RE, ENDBLK_RE, ENDDO_RE, ENDENUM_RE, ENDFCT_RE, ENDFORALL_RE, ENDIF_RE,
-    ENDINTERFACE_RE, ENDMOD_RE, ENDPROG_RE, ENDSEL_RE, ENDSMOD_RE, ENDSUBR_RE, ENDTYPE_RE,
-    ENDWHERE_RE, ENUM_RE, FCT_RE, FORALL_RE, FYPP_BLOCK_RE, FYPP_CALL_RE, FYPP_DEF_RE,
-    FYPP_ELIF_ELSE_RE, FYPP_ENDBLOCK_RE, FYPP_ENDCALL_RE, FYPP_ENDDEF_RE, FYPP_ENDFOR_RE,
-    FYPP_ENDIF_RE, FYPP_ENDMUTE_RE, FYPP_FOR_RE, FYPP_IF_RE, FYPP_MUTE_RE, IF_RE, INTERFACE_RE,
-    MOD_RE, PROG_RE, SELCASE_RE, SMOD_RE, SUBR_RE, TYPE_RE, WHERE_RE,
+    ASSOCIATE_RE, BLK_RE, CASE_RE, CHANGETEAM_RE, CONTAINS_RE, CRITICAL_RE, DO_RE, ELSEWHERE_RE,
+    ELSE_RE, ENDANY_RE, ENDASSOCIATE_RE, ENDBLK_RE, ENDCRITICAL_RE, ENDDO_RE, ENDENUMTYPE_RE,
+    ENDENUM_RE, ENDFCT_RE, ENDFORALL_RE, ENDIF_RE, ENDINTERFACE_RE, ENDMOD_RE, ENDPROG_RE,
+    ENDSEL_RE, ENDSMOD_RE, ENDSUBR_RE, ENDTEAM_RE, ENDTYPE_RE, ENDWHERE_RE, ENUMTYPE_RE, ENUM_RE,
+    FCT_RE, FORALL_RE, FYPP_BLOCK_RE, FYPP_CALL_RE, FYPP_DEF_RE, FYPP_ELIF_ELSE_RE,
+    FYPP_ENDBLOCK_RE, FYPP_ENDCALL_RE, FYPP_ENDDEF_RE, FYPP_ENDFOR_RE, FYPP_ENDIF_RE,
+    FYPP_ENDMUTE_RE, FYPP_FOR_RE, FYPP_IF_RE, FYPP_MUTE_RE, IF_RE, INTERFACE_RE, MOD_RE, PROG_RE,
+    SELCASE_RE, SMOD_RE, SUBR_RE, TYPE_RE, WHERE_RE,
 };
 
 /// A lazily compiled pattern, as stored in [`crate::parser::patterns`]
@@ -145,6 +146,10 @@ pub static SCOPES: &[Scope] = {
         Scope::new(Fypp, Some(&FYPP_BLOCK_RE), None, Some(&FYPP_ENDBLOCK_RE)),
         Scope::new(Fypp, Some(&FYPP_CALL_RE), None, Some(&FYPP_ENDCALL_RE)),
         Scope::new(Fypp, Some(&FYPP_MUTE_RE), None, Some(&FYPP_ENDMUTE_RE)),
+        // 22-24: CRITICAL / CHANGE TEAM / ENUMERATION TYPE
+        Scope::new(Core, Some(&CRITICAL_RE), None, Some(&ENDCRITICAL_RE)),
+        Scope::new(Core, Some(&CHANGETEAM_RE), None, Some(&ENDTEAM_RE)),
+        Scope::new(Core, Some(&ENUMTYPE_RE), None, Some(&ENDENUMTYPE_RE)),
     ]
 };
 
@@ -216,6 +221,29 @@ mod tests {
 
         assert!(build_scope_parser(false, true).get(13).is_some());
         assert!(build_scope_parser(true, false).get(17).is_some());
+    }
+
+    #[test]
+    fn test_critical_team_enumeration_type() {
+        let parser = build_scope_parser(false, false);
+        let matches = |idx: usize, open: &str, close: &str| {
+            let scope = parser.get(idx).unwrap();
+            assert!(scope.open.unwrap().is_match(open), "open: {open}");
+            assert!(scope.close.unwrap().is_match(close), "close: {close}");
+        };
+        // CRITICAL (R1117/R1118)
+        matches(22, "critical", "end critical");
+        matches(22, "crit: critical (stat=s)", "end critical crit");
+        // CHANGE TEAM (R1112/R1114)
+        matches(23, "change team (t)", "end team");
+        matches(23, "tm: change team (t, a[*] => b)", "end team (stat=s) tm");
+        // ENUMERATION TYPE (F2023 R767/R769)
+        matches(24, "enumeration type :: color", "end enumeration type");
+        matches(
+            24,
+            "enumeration type, public :: color",
+            "end enumeration type color",
+        );
     }
 
     #[test]

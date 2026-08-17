@@ -128,6 +128,39 @@ pub static ASSOCIATE_RE: LazyLock<Regex> = LazyLock::new(|| {
 pub static ENDASSOCIATE_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*ASSOCIATE(\s+\w+)?{EOL_STR}")));
 
+// CRITICAL (R1117/R1118)
+pub static CRITICAL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}(\w+\s*:\s*)?CRITICAL(\s*\(.*\))?{EOL_STR}"
+    ))
+});
+pub static ENDCRITICAL_RE: LazyLock<Regex> =
+    LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*CRITICAL(\s+\w+)?{EOL_STR}")));
+
+// CHANGE TEAM (R1112/R1114)
+pub static CHANGETEAM_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}(\w+\s*:\s*)?CHANGE\s+TEAM\s*\(.*\){EOL_STR}"
+    ))
+});
+pub static ENDTEAM_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}END\s*TEAM(\s*\(.*\))?(\s+\w+)?{EOL_STR}"
+    ))
+});
+
+// ENUMERATION TYPE (F2023 R767/R769)
+pub static ENUMTYPE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}ENUMERATION\s+TYPE(\s*,\s*(PUBLIC|PRIVATE))?(\s*::\s*|\s+)\w+{EOL_STR}"
+    ))
+});
+pub static ENDENUMTYPE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}END\s*ENUMERATION\s+TYPE(\s+\w+)?{EOL_STR}"
+    ))
+});
+
 // ENUM
 pub static ENUM_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(&format!(
