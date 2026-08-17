@@ -36,7 +36,7 @@ pub static IF_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 pub static ELSE_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(&format!(
-        r"{SOL_STR}ELSE(\s*IF\s*\(.*\)\s*THEN)?(\s*$|\s*;)"
+        r"{SOL_STR}ELSE(\s*IF\s*\(.*\)\s*THEN)?(\s+\w+)?(\s*$|\s*;)"
     ))
 });
 pub static ENDIF_RE: LazyLock<Regex> =
@@ -56,7 +56,7 @@ pub static SELCASE_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 pub static CASE_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(&format!(
-        r"{SOL_STR}((CASE|RANK|TYPE\s+IS|CLASS\s+IS)\s*(\(.*\)|DEFAULT)|CLASS\s+DEFAULT)(\s*$|\s*;)"
+        r"{SOL_STR}((CASE|RANK|TYPE\s+IS|CLASS\s+IS)\s*(\(.*\)|DEFAULT)|CLASS\s+DEFAULT)(\s+\w+)?(\s*$|\s*;)"
     ))
 });
 pub static ENDSEL_RE: LazyLock<Regex> =
@@ -117,15 +117,18 @@ pub static ENDINTERFACE_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*INTERFACE(\s+\w+)?{EOL_STR}")));
 
 // ASSOCIATE
-pub static ASSOCIATE_RE: LazyLock<Regex> =
-    LazyLock::new(|| build_re(&format!(r"{SOL_STR}ASSOCIATE\s*\(.*\){EOL_STR}")));
+pub static ASSOCIATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}(\w+\s*:\s*)?ASSOCIATE\s*\(.*\){EOL_STR}"
+    ))
+});
 pub static ENDASSOCIATE_RE: LazyLock<Regex> =
-    LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*ASSOCIATE{EOL_STR}")));
+    LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*ASSOCIATE(\s+\w+)?{EOL_STR}")));
 
 // ENUM
 pub static ENUM_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(&format!(
-        r"{SOL_STR}ENUM(\s*,\s*BIND\s*\(\s*C\s*\))?{EOL_STR}"
+        r"{SOL_STR}ENUM(\s*,\s*BIND\s*\(\s*C\s*\))?(\s*::\s*\w+)?{EOL_STR}"
     ))
 });
 pub static ENDENUM_RE: LazyLock<Regex> =
@@ -425,6 +428,32 @@ mod tests {
         // With name
         assert!(ENDSEL_RE.is_match("end select casetest"));
         assert!(ENDSEL_RE.is_match("END SELECT mycase"));
+    }
+
+    #[test]
+    fn test_construct_names() {
+        // A construct name may trail ELSE, CASE and the type guards, and may
+        // label an ASSOCIATE (F2023 R1106, R1134, R1144, R1155)
+        assert!(ELSE_RE.is_match("else myif"));
+        assert!(ELSE_RE.is_match("else if (x < 0) then myif"));
+        assert!(!ELSE_RE.is_match("elsewhere"));
+        assert!(CASE_RE.is_match("case (1) sel"));
+        assert!(CASE_RE.is_match("case default sel"));
+        assert!(CASE_RE.is_match("type is (integer) st"));
+        assert!(CASE_RE.is_match("class default st"));
+        assert!(CASE_RE.is_match("rank (2) sr"));
+        assert!(ASSOCIATE_RE.is_match("outer: associate (y => x)"));
+        assert!(ASSOCIATE_RE.is_match("associate (y => x)"));
+        assert!(ENDASSOCIATE_RE.is_match("end associate outer"));
+        assert!(ENDASSOCIATE_RE.is_match("end associate"));
+    }
+
+    #[test]
+    fn test_named_enum() {
+        // F2023 R760: ENUM, BIND(C) [ :: enum-type-name ]
+        assert!(ENUM_RE.is_match("enum, bind(c) :: status"));
+        assert!(ENUM_RE.is_match("enum, bind(c)"));
+        assert!(ENUM_RE.is_match("enum"));
     }
 
     #[test]
