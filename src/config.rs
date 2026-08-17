@@ -20,6 +20,10 @@ use crate::format::case_convert::CaseMode;
 /// Config file name to search for
 const CONFIG_FILE_NAME: &str = "fprettier.toml";
 
+/// Longest line free source form permits (F2023 6.3.2.1). Asking for more
+/// would have fprettier write lines no conforming processor need accept.
+pub const MAX_LINE_LENGTH: usize = 10_000;
+
 /// Main configuration struct for fprettier
 ///
 /// TOML parsing goes through `PartialConfig`; this struct is never
@@ -140,12 +144,19 @@ impl Default for Config {
 impl Config {
     /// Validate configuration values, returning an error message if invalid.
     ///
-    /// Only `indent` is checked. Out-of-range values elsewhere degrade
-    /// harmlessly: `whitespace > 4` falls through to the level-2 defaults,
-    /// and a `line_length` under 40 short-circuits in `auto_split_line`.
+    /// Only `indent` and `line_length` are checked. Out-of-range values
+    /// elsewhere degrade harmlessly: `whitespace > 4` falls through to the
+    /// level-2 defaults, and a `line_length` under 40 short-circuits in
+    /// `auto_split_line`.
     #[must_use]
     pub fn validate(&self) -> Option<String> {
-        (self.indent == 0).then(|| "indent must be at least 1".to_string())
+        if self.indent == 0 {
+            return Some("indent must be at least 1".to_string());
+        }
+        if self.line_length > MAX_LINE_LENGTH {
+            return Some(format!("line length must be at most {MAX_LINE_LENGTH}"));
+        }
+        None
     }
 
     /// Load configuration from a TOML file
@@ -497,5 +508,20 @@ mod tests {
         };
         assert!(config.validate().is_some());
         assert!(config.validate().unwrap().contains("indent"));
+    }
+
+    #[test]
+    fn test_validate_line_length() {
+        let at_limit = Config {
+            line_length: MAX_LINE_LENGTH,
+            ..Default::default()
+        };
+        assert!(at_limit.validate().is_none());
+
+        let over = Config {
+            line_length: MAX_LINE_LENGTH + 1,
+            ..Default::default()
+        };
+        assert!(over.validate().unwrap().contains("line length"));
     }
 }
