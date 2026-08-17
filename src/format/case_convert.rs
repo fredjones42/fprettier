@@ -127,7 +127,36 @@ static F90_KEYWORDS_RE: LazyLock<Regex> = LazyLock::new(|| {
             "concurrent",
             "codimension",
             "critical",
-            "image_index"
+            "image_index",
+            "error",
+            "sync",
+            "lock",
+            "unlock",
+            "impure",
+            "mold",
+            "source",
+            "newunit",
+            // F2018
+            "rank",
+            "team",
+            "change",
+            "form",
+            "event",
+            "post",
+            "local",
+            "local_init",
+            "shared",
+            "non_recursive",
+            "stat",
+            "errmsg",
+            // F2023
+            "simple",
+            "typeof",
+            "classof",
+            "enumeration",
+            "notify",
+            "reduce",
+            "leading_zero"
         ]
         .join("|")
     ))
@@ -307,7 +336,50 @@ static F90_PROCEDURES_RE: LazyLock<Regex> = LazyLock::new(|| {
             "this_image",
             "compiler_options",
             "compiler_version",
-            "c_sizeof"
+            "c_sizeof",
+            // F2018
+            "out_of_range",
+            "random_init",
+            "reduce",
+            "coshape",
+            "image_status",
+            "failed_images",
+            "stopped_images",
+            "get_team",
+            "team_number",
+            "co_sum",
+            "co_min",
+            "co_max",
+            "co_reduce",
+            "co_broadcast",
+            // F2023
+            "acosd",
+            "asind",
+            "atand",
+            "atan2d",
+            "cosd",
+            "sind",
+            "tand",
+            "acospi",
+            "asinpi",
+            "atanpi",
+            "atan2pi",
+            "cospi",
+            "sinpi",
+            "tanpi",
+            "selected_logical_kind",
+            "split",
+            "tokenize",
+            "c_f_strpointer",
+            "f_c_string",
+            "ieee_max",
+            "ieee_max_mag",
+            "ieee_max_num",
+            "ieee_max_num_mag",
+            "ieee_min",
+            "ieee_min_mag",
+            "ieee_min_num",
+            "ieee_min_num_mag"
         ]
         .join("|")
     ))
@@ -350,6 +422,22 @@ static F90_CONSTANTS_RE: LazyLock<Regex> = LazyLock::new(|| {
             "character_storage_size",
             "file_storage_size",
             "stat_stopped_image",
+            "int8",
+            "int16",
+            "int32",
+            "int64",
+            "real16",
+            "real32",
+            "real64",
+            "real128",
+            "logical8",
+            "logical16",
+            "logical32",
+            "logical64",
+            "event_type",
+            "lock_type",
+            "notify_type",
+            "team_type",
             // iso_c_binding constants
             "c_int",
             "c_short",
@@ -846,6 +934,46 @@ fn convert_token_with_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tables_reach_f2023() {
+        for keyword in [
+            "error",
+            "sync",
+            "impure",
+            "rank",
+            "team",
+            "stat",
+            "errmsg",
+            "simple",
+            "typeof",
+            "classof",
+            "enumeration",
+            "notify",
+            "leading_zero",
+        ] {
+            assert!(F90_KEYWORDS_RE.is_match(keyword), "keyword: {keyword}");
+        }
+        for procedure in [
+            "out_of_range",
+            "co_sum",
+            "failed_images",
+            "cosd",
+            "tanpi",
+            "selected_logical_kind",
+            "tokenize",
+            "f_c_string",
+            "ieee_min_num_mag",
+        ] {
+            assert!(
+                F90_PROCEDURES_RE.is_match(procedure),
+                "procedure: {procedure}"
+            );
+        }
+        for constant in ["int32", "real64", "logical8", "notify_type", "team_type"] {
+            assert!(F90_CONSTANTS_RE.is_match(constant), "constant: {constant}");
+        }
+    }
 
     #[test]
     fn test_case_mode_try_from() {
