@@ -79,8 +79,8 @@ impl<R: BufRead> InputStream<R> {
         }
         self.line_number += 1;
 
-        // Convert tabs to 8 spaces
-        raw_line = raw_line.replace('\t', "        ");
+        // Convert tabs to 8 spaces, outside character contexts
+        raw_line = expand_tabs(&raw_line, self.string_state);
         // Remove trailing newline
         if raw_line.ends_with('\n') {
             raw_line.pop();
@@ -263,6 +263,29 @@ impl<R: BufRead> InputStream<R> {
     }
 }
 
+/// Expand tabs to 8 spaces, leaving any tab in a character context alone.
+///
+/// A blank inside a character literal is part of the constant's value
+/// (F2023 6.3.2.2), so rewriting it would change what the program prints.
+/// `string_state` carries the string open at the end of the previous
+/// physical line, so a tab in a continued literal is preserved too.
+fn expand_tabs(line: &str, string_state: StringDelimiter) -> String {
+    if !line.contains('\t') {
+        return line.to_string();
+    }
+
+    let mut filter = CharFilter::with_string_state(line, false, false, true, string_state);
+    let mut expanded = String::with_capacity(line.len());
+    while let Some((_, c)) = filter.next() {
+        if c == '\t' && !filter.instring() {
+            expanded.push_str("        ");
+        } else {
+            expanded.push(c);
+        }
+    }
+    expanded
+}
+
 /// Split code and comment parts
 fn split_comment(line: &str) -> (&str, &str) {
     if let Some(pos) = comment_start(line) {
@@ -348,6 +371,20 @@ mod tests {
 
         // No second line - semicolons don't split in InputStream
         assert!(stream.next_fortran_line().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_expand_tabs_spares_character_context() {
+        // Tabs in code become spaces; a tab inside a literal is part of the
+        // constant's value and must survive untouched.
+        assert_eq!(
+            expand_tabs("\tx = \"a\tb\"\t! c\td", StringDelimiter::None),
+            "        x = \"a\tb\"        ! c        d"
+        );
+        // A line that opens inside a continued literal is all string content
+        assert_eq!(expand_tabs("&a\tb'", StringDelimiter::Single), "&a\tb'");
+        // Nothing to do
+        assert_eq!(expand_tabs("x = 1", StringDelimiter::None), "x = 1");
     }
 
     #[test]
