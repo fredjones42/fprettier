@@ -113,8 +113,11 @@ impl F90Indenter {
 
         // Check for scope opening (new) LAST - only if this is NOT an end
         // statement (to avoid SUBR_RE matching "end subroutine";
-        // scope_storage was already popped if it was an END)
-        let (new_scope, additional_scopes) = if end.is_any {
+        // scope_storage was already popped if it was an END) and not a
+        // continuation: no statement both continues a construct and opens
+        // one, and the shapes overlap (TYPE IS (t) reads as a derived type
+        // definition with a type-param-list).
+        let (new_scope, additional_scopes) = if end.is_any || is_continue {
             (None, Vec::new())
         } else {
             self.detect_new_scopes(&parts, &filtered_line)

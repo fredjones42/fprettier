@@ -101,7 +101,7 @@ pub static ENDPROG_RE: LazyLock<Regex> =
 // TYPE
 pub static TYPE_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(&format!(
-        r"{SOL_STR}TYPE(\s*,\s*(BIND\s*\(\s*C\s*\)|EXTENDS\s*\(.*\)|ABSTRACT|PUBLIC|PRIVATE))*(\s*,\s*)?(\s*::\s*|\s+)\w+{EOL_STR}"
+        r"{SOL_STR}TYPE(\s*,\s*(BIND\s*\(\s*C\s*\)|EXTENDS\s*\(.*\)|ABSTRACT|PUBLIC|PRIVATE))*(\s*,\s*)?(\s*::\s*|\s+)\w+(\s*\(.*\))?{EOL_STR}"
     ))
 });
 pub static ENDTYPE_RE: LazyLock<Regex> =
@@ -110,11 +110,14 @@ pub static ENDTYPE_RE: LazyLock<Regex> =
 // INTERFACE
 pub static INTERFACE_RE: LazyLock<Regex> = LazyLock::new(|| {
     build_re(&format!(
-        r"{SOL_STR}(ABSTRACT\s+)?INTERFACE(\s+\w+|\s+OPERATOR\s*\(.*\)|\s+ASSIGNMENT\s*\(.*\))?{EOL_STR}"
+        r"{SOL_STR}(ABSTRACT\s+)?INTERFACE(\s+\w+|\s+(OPERATOR|ASSIGNMENT|READ|WRITE)\s*\(.*\))?{EOL_STR}"
     ))
 });
-pub static ENDINTERFACE_RE: LazyLock<Regex> =
-    LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*INTERFACE(\s+\w+)?{EOL_STR}")));
+pub static ENDINTERFACE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}END\s*INTERFACE(\s+\w+(\s*\(.*\))?)?{EOL_STR}"
+    ))
+});
 
 // ASSOCIATE
 pub static ASSOCIATE_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -446,6 +449,31 @@ mod tests {
         assert!(ASSOCIATE_RE.is_match("associate (y => x)"));
         assert!(ENDASSOCIATE_RE.is_match("end associate outer"));
         assert!(ENDASSOCIATE_RE.is_match("end associate"));
+    }
+
+    #[test]
+    fn test_parameterized_derived_type() {
+        // F2023 R726: TYPE [[, attrs] ::] type-name [( type-param-name-list )]
+        assert!(TYPE_RE.is_match("type :: matrix(k, n)"));
+        assert!(TYPE_RE.is_match("type, public :: matrix(k, n)"));
+        assert!(TYPE_RE.is_match("type matrix(k, n)"));
+        assert!(TYPE_RE.is_match("type :: plain"));
+        // A declaration is not a type definition
+        assert!(!TYPE_RE.is_match("type(test_type) :: t"));
+        assert!(ENDTYPE_RE.is_match("end type matrix"));
+    }
+
+    #[test]
+    fn test_defined_io_interface() {
+        // F2023 R1510 defined-io-generic-spec
+        assert!(INTERFACE_RE.is_match("interface read(formatted)"));
+        assert!(INTERFACE_RE.is_match("interface write(unformatted)"));
+        assert!(INTERFACE_RE.is_match("interface operator(+)"));
+        assert!(INTERFACE_RE.is_match("interface assignment(=)"));
+        assert!(INTERFACE_RE.is_match("abstract interface"));
+        assert!(ENDINTERFACE_RE.is_match("end interface read(formatted)"));
+        assert!(ENDINTERFACE_RE.is_match("end interface operator(+)"));
+        assert!(ENDINTERFACE_RE.is_match("end interface"));
     }
 
     #[test]
