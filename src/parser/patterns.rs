@@ -45,6 +45,11 @@ pub static ENDIF_RE: LazyLock<Regex> =
 // DO/ENDDO
 pub static DO_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}(\w+\s*:)?\s*DO({EOL_STR}|\s+\w)")));
+/// A labeled DO: `do 100 i = 1, 10`. Captures the terminating statement
+/// label. The nonblock DO construct was deleted in F2018, but the labeled
+/// block DO (terminated by `100 END DO`) is merely obsolescent.
+pub static DO_LABEL_RE: LazyLock<Regex> =
+    LazyLock::new(|| build_re(&format!(r"{SOL_STR}(\w+\s*:)?\s*DO\s+(\d+)\b")));
 pub static ENDDO_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*DO(\s+\w+)?{EOL_STR}")));
 

@@ -766,6 +766,7 @@ fn compute_and_apply_indentation(
         indent_fypp: pass_ctx.config.indent_fypp,
         manual_lines_indent,
         semicolon_line_index: fortran_line.semicolon_line_index,
+        label: labels.label,
     };
 
     // Process the logical line for indentation (without label)

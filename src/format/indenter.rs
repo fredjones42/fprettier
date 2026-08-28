@@ -4,6 +4,7 @@
 /// calculates indentation levels based on scope depth.
 use crate::format::aligner::F90Aligner;
 use crate::parser::char_filter::CharFilter;
+use crate::parser::patterns::DO_LABEL_RE;
 use crate::scope::{ScopeParser, SCOPES};
 
 /// Parameters for indentation processing
@@ -18,6 +19,8 @@ pub struct IndentParams<'a> {
     pub manual_lines_indent: Option<&'a [usize]>,
     /// If Some(idx), force minimal indent only for lines AFTER idx
     pub semicolon_line_index: Option<usize>,
+    /// Statement label of this line, stripped before matching ("" if none)
+    pub label: &'a str,
 }
 
 impl IndentParams<'_> {
@@ -30,6 +33,7 @@ impl IndentParams<'_> {
             indent_fypp: false,
             manual_lines_indent: None,
             semicolon_line_index: None,
+            label: "",
         }
     }
 }
@@ -60,6 +64,9 @@ pub struct F90Indenter {
     aligner: F90Aligner,
     /// Whether this is the first line (used for initial indent)
     initial: bool,
+    /// Open labeled DO constructs, as (`scope_storage` depth after the push,
+    /// terminating statement label)
+    do_labels: Vec<(usize, String)>,
 }
 
 impl F90Indenter {
@@ -77,6 +84,7 @@ impl F90Indenter {
             parser,
             aligner: F90Aligner::new(),
             initial: true,
+            do_labels: Vec::new(),
         }
     }
 
@@ -268,7 +276,51 @@ impl F90Indenter {
             self.push_scope(scope, current_indent, params.continuation_indent);
         }
 
+        self.close_labeled_do(&filtered_line, params.label, new_scope.is_some());
+
         self.initial = false;
+    }
+
+    /// Track and close labeled DO constructs.
+    ///
+    /// `do 100 i = 1, 10` is closed by the statement carrying label 100, not
+    /// by `END DO`. Without this the scope would never be popped and every
+    /// following line would drift one level deeper. Several DOs may share a
+    /// terminating label, so close as many as match.
+    ///
+    /// The terminating statement belongs to the loop body, so this runs after
+    /// the line's own indent has been calculated.
+    fn close_labeled_do(&mut self, filtered_line: &str, label: &str, opened_scope: bool) {
+        // Drop entries whose scope an `END DO` already closed
+        self.do_labels
+            .retain(|(depth, _)| *depth <= self.scope_storage.len());
+
+        let label = label.trim();
+        if !label.is_empty() {
+            while let Some((depth, do_label)) = self.do_labels.last() {
+                if do_label != label {
+                    break;
+                }
+                let depth = *depth;
+                while self.scope_storage.len() >= depth {
+                    self.scope_storage.pop();
+                    if self.indent_storage.len() > 1 {
+                        self.indent_storage.pop();
+                    }
+                }
+                self.do_labels.pop();
+            }
+        }
+
+        if !opened_scope {
+            return;
+        }
+        if let Some(caps) = DO_LABEL_RE.captures(filtered_line) {
+            if let Some(do_label) = caps.get(2) {
+                self.do_labels
+                    .push((self.scope_storage.len(), do_label.as_str().to_string()));
+            }
+        }
     }
 
     /// Scan the line for END statements and pop the scope stack for a
@@ -585,6 +637,72 @@ mod tests {
 
         let indents = indenter.get_lines_indent();
         assert_eq!(indents[0], 0); // END IF back to base
+    }
+
+    #[test]
+    fn test_labeled_do_closes_on_its_label() {
+        // `do 100 ...` is closed by the statement labeled 100, not by END DO
+        let parser = build_scope_parser(false, true);
+        let mut indenter = F90Indenter::new(parser, 0);
+        let mut params = IndentParams::new(3);
+
+        let line = |s: &str| vec![s.to_string()];
+        indenter.process_logical_line("do 100 i = 1, 10", &line("do 100 i = 1, 10"), &params);
+        assert_eq!(indenter.get_lines_indent()[0], 0);
+
+        indenter.process_logical_line("x = 1", &line("x = 1"), &params);
+        assert_eq!(indenter.get_lines_indent()[0], 3);
+
+        // The terminating statement is part of the loop body
+        params.label = "100";
+        indenter.process_logical_line("continue", &line("continue"), &params);
+        assert_eq!(indenter.get_lines_indent()[0], 3);
+
+        // ... and the loop is closed after it
+        params.label = "";
+        indenter.process_logical_line("y = 2", &line("y = 2"), &params);
+        assert_eq!(indenter.get_lines_indent()[0], 0);
+    }
+
+    #[test]
+    fn test_labeled_do_shared_terminator() {
+        // Nested DOs may share one terminating label
+        let parser = build_scope_parser(false, true);
+        let mut indenter = F90Indenter::new(parser, 0);
+        let mut params = IndentParams::new(3);
+
+        let line = |s: &str| vec![s.to_string()];
+        indenter.process_logical_line("do 200 i = 1, 3", &line("do 200 i = 1, 3"), &params);
+        indenter.process_logical_line("do 200 j = 1, 3", &line("do 200 j = 1, 3"), &params);
+        indenter.process_logical_line("x = 1", &line("x = 1"), &params);
+        assert_eq!(indenter.get_lines_indent()[0], 6);
+
+        params.label = "200";
+        indenter.process_logical_line("continue", &line("continue"), &params);
+        params.label = "";
+        indenter.process_logical_line("y = 2", &line("y = 2"), &params);
+        assert_eq!(indenter.get_lines_indent()[0], 0);
+    }
+
+    #[test]
+    fn test_labeled_block_do_still_ends_with_end_do() {
+        // The obsolescent labeled block DO ends at `100 END DO`; the label
+        // bookkeeping must not pop a second time.
+        let parser = build_scope_parser(false, true);
+        let mut indenter = F90Indenter::new(parser, 0);
+        let mut params = IndentParams::new(3);
+
+        let line = |s: &str| vec![s.to_string()];
+        indenter.process_logical_line("module m", &line("module m"), &params);
+        indenter.process_logical_line("do 100 i = 1, 10", &line("do 100 i = 1, 10"), &params);
+        indenter.process_logical_line("x = 1", &line("x = 1"), &params);
+        assert_eq!(indenter.get_lines_indent()[0], 6);
+
+        params.label = "100";
+        indenter.process_logical_line("end do", &line("end do"), &params);
+        params.label = "";
+        indenter.process_logical_line("y = 2", &line("y = 2"), &params);
+        assert_eq!(indenter.get_lines_indent()[0], 3);
     }
 
     #[test]
