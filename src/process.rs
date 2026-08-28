@@ -1037,6 +1037,21 @@ fn compute_and_apply_indentation(
     }
 }
 
+/// The column a comment on its own line starts at: what the indenter computed
+/// for that line, else the current scope indent, else `fallback`.
+fn comment_indent(
+    write_ctx: &LineWriteContext<'_>,
+    indenter: Option<&F90Indenter>,
+    index: usize,
+    fallback: usize,
+) -> usize {
+    write_ctx
+        .computed_indents
+        .get(index)
+        .copied()
+        .unwrap_or_else(|| indenter.map_or(fallback, F90Indenter::get_scope_indent))
+}
+
 /// Write a single output line with labels, comments, and proper indentation
 ///
 /// Handles all the complexity of writing a line including:
@@ -1060,7 +1075,6 @@ fn write_output_line<W: Write>(
         && !fortran_line.comments[origin].is_empty()
         && write_ctx.comment_line_indices.contains(&line_index);
 
-    // Determine what to write for the line portion
     // If there's a comment, trim trailing spaces from the line since the
     // comment provides the separation
     let line_to_write = if has_comment {
@@ -1083,61 +1097,40 @@ fn write_output_line<W: Write>(
         line
     };
 
-    // Check if the original line was indented (started with space)
-    // Used for comment-only lines to decide indentation behavior
-    // Use pre-computed lines_were_indented to handle two-pass formatting correctly
-    // (in Pass 2, fortran_line.lines comes from Pass 1 output which may have lost whitespace)
-    let original_line = if origin < fortran_line.lines.len() {
-        &fortran_line.lines[origin]
-    } else {
-        ""
-    };
-    let was_indented = if origin < write_ctx.lines_were_indented.len() {
-        write_ctx.lines_were_indented[origin]
-    } else {
-        original_line.starts_with(' ') || original_line.starts_with('\t')
-    };
+    let comment_trimmed = fortran_line.comments.get(origin).map_or("", |c| c.trim());
+    let is_comment_only = line_to_write.trim().is_empty();
 
-    // Check if we need to detach inline comment to its own line due to line length
-    // Also detach if the original line was split (comment goes after all split lines)
-    let should_detach_comment = if has_comment
+    // `lines_were_indented` is pre-computed because in pass 2 `fortran_line.lines`
+    // comes from pass 1's output, which may already have lost the whitespace
+    let original_line = fortran_line.lines.get(origin).map_or("", String::as_str);
+    let was_indented = write_ctx
+        .lines_were_indented
+        .get(origin)
+        .copied()
+        .unwrap_or_else(|| original_line.starts_with(' ') || original_line.starts_with('\t'));
+    // The gap the input had between the code and its comment: `fortran_line.lines`
+    // keeps the trailing spaces that stood there ("then " vs "then")
+    let original_gap = original_line.len() - original_line.trim_end().len();
+
+    // The comment moves to a line of its own once it no longer fits beside the
+    // code — or whenever the code was split, since it belongs after every
+    // fragment rather than in the middle of one.
+    let inline_gap = if pass_ctx.config.normalize_comment_spacing {
+        pass_ctx.config.comment_spacing
+    } else {
+        original_gap.max(1)
+    };
+    let should_detach_comment = has_comment
+        && !is_comment_only
+        && !comment_trimmed.is_empty()
         && write_ctx.effective_line_length < LINE_SPLIT_THRESHOLD
-    {
-        let comment = &fortran_line.comments[origin];
-        let comment_trimmed = comment.trim();
-        let is_comment_only = line_to_write.trim().is_empty();
+        && (write_ctx.split_origins.contains(&origin)
+            || line_to_write.trim_end().len() + inline_gap + comment_trimmed.len()
+                > write_ctx.effective_line_length);
 
-        if !is_comment_only && !comment_trimmed.is_empty() {
-            // Always detach if the line was split
-            if write_ctx.split_origins.contains(&origin) {
-                true
-            } else {
-                // Calculate total line length with code + spacing + comment
-                let spacing = if pass_ctx.config.normalize_comment_spacing {
-                    pass_ctx.config.comment_spacing
-                } else {
-                    let trailing_spaces = original_line.len() - original_line.trim_end().len();
-                    trailing_spaces.max(1) // At least 1 space before comment
-                };
-                let total_length = line_to_write.trim_end().len() + spacing + comment_trimmed.len();
-                total_length > write_ctx.effective_line_length
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    // Check if this is a FORD documentation comment line (!! at start of comment)
-    // FORD comments should preserve their original indentation
-    let is_ford_comment_line = if has_comment {
-        let comment = &fortran_line.comments[origin];
-        let comment_trimmed = comment.trim();
-        line_to_write.trim().is_empty() && comment_trimmed.starts_with("!!")
-    } else {
-        false
-    };
+    // FORD documentation comments (`!!`) keep the indentation they came with
+    let is_ford_comment = comment_trimmed.starts_with("!!");
+    let is_ford_comment_line = has_comment && is_comment_only && is_ford_comment;
 
     // Prepend label to first line
     if line_index == 0 && !labels.label.is_empty() {
@@ -1173,85 +1166,48 @@ fn write_output_line<W: Write>(
         }
     }
 
-    // Add comment if present
     if has_comment {
-        let comment = &fortran_line.comments[origin];
-        let comment_trimmed = comment.trim();
-        let is_comment_only = line_to_write.trim().is_empty();
+        let in_continuation = line_index > 0;
 
         if should_detach_comment {
-            // Detach comment to its own line
-            // Write newline after code, then comment on new line with same indent
             output.write_all(b"\n")?;
-
-            // Get indent for the detached comment line (same as the code line)
-            let comment_indent = if origin < write_ctx.computed_indents.len() {
-                write_ctx.computed_indents[origin]
-            } else if let Some(ind) = indenter {
-                ind.get_scope_indent()
-            } else {
-                indent_of(line_to_write)
-            };
-            write_spaces(output, comment_indent)?;
-            output.write_all(comment_trimmed.as_bytes())?;
+            let indent = comment_indent(write_ctx, indenter, origin, indent_of(line_to_write));
+            write_spaces(output, indent)?;
+        } else if is_comment_only
+            && pass_ctx.impose_indent
+            && (was_indented || in_continuation)
+            // An OMP directive belongs at column 0, and a FORD comment was
+            // already written at its original indent above
+            && !OMP_DIR_RE.is_match(comment_trimmed)
+            && !is_ford_comment
+        {
+            let indent = comment_indent(write_ctx, indenter, line_index, 0);
+            write_spaces(output, indent)?;
         } else {
-            // For comment-only lines with impose_indent, apply the appropriate indent
-            // if EITHER: the original line was indented OR we're in a continuation (i > 0)
-            // BUT within continuations, even non-indented comments get continuation indent
-            // OMP directives (!$OMP) should stay at column 0, not indented
-            // FORD documentation comments (!!) are handled earlier (preserve original position)
-            let is_omp_directive = OMP_DIR_RE.is_match(comment_trimmed);
-            let is_ford_comment = comment_trimmed.starts_with("!!");
-            let in_continuation = line_index > 0;
-            if is_comment_only
-                && pass_ctx.impose_indent
-                && (was_indented || in_continuation)
-                && !is_omp_directive
-                && !is_ford_comment
-            {
-                // Use computed continuation indent if available, otherwise use scope indent
-                let indent = if line_index < write_ctx.computed_indents.len() {
-                    write_ctx.computed_indents[line_index]
-                } else if let Some(ind) = indenter {
-                    ind.get_scope_indent()
-                } else {
-                    0
-                };
-                write_spaces(output, indent)?;
-            }
-            // Note: FORD comments (!!) are handled earlier - their original indent is preserved
-
-            // Determine spacing before comment
+            // The gap between the code and the comment that follows it
             let spacing = if pass_ctx.config.normalize_comment_spacing {
-                // When normalizing, use consistent spacing
-                // If comment is on its own line (line is empty), no extra spacing
                 if is_comment_only {
                     0
                 } else {
                     pass_ctx.config.comment_spacing
                 }
-            } else if is_comment_only && is_ford_comment {
-                // FORD comment-only lines: no extra spacing (indentation handled earlier)
-                0
-            } else if is_comment_only && pass_ctx.impose_indent && (was_indented || in_continuation)
+            } else if !is_comment_only {
+                original_gap
+            } else if !is_ford_comment
+                && !pass_ctx.impose_indent
+                && (was_indented || in_continuation)
             {
-                // Comment-only line with indentation - no extra spacing
-                0
-            } else if is_comment_only && !was_indented && !in_continuation {
-                // Comment-only line at column 1 (not in continuation) - no spacing
-                0
+                // Nothing above placed this comment-only line: with the indent
+                // pass off it has to reproduce its own leading whitespace, or
+                // pass 2 would see it at column 0 and re-indent it there.
+                original_gap
             } else {
-                // Preserve original spacing between code and comment
-                // fortran_line.lines[i] contains the code part from InputStream, which preserves
-                // trailing spaces before the comment (e.g., "then " vs "then")
-                let trailing_spaces = original_line.len() - original_line.trim_end().len();
-                trailing_spaces
+                0
             };
-
-            // Write spacing and trimmed comment
             write_spaces(output, spacing)?;
-            output.write_all(comment_trimmed.as_bytes())?;
         }
+
+        output.write_all(comment_trimmed.as_bytes())?;
     }
 
     output.write_all(b"\n")?;
