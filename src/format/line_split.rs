@@ -281,6 +281,24 @@ fn split_with_alignment(
         .map_or(Some((probe, guess)), |split| Some((split, follow)))
 }
 
+/// Push the fragments of one split statement onto `out`. The first fragment
+/// keeps the statement's own indent; the rest go in the continuation column.
+fn push_fragments(
+    out: &mut Vec<(String, usize, usize)>,
+    fragments: Vec<String>,
+    indent: usize,
+    follow_indent: usize,
+    origin: usize,
+) {
+    for (n, fragment) in fragments.into_iter().enumerate() {
+        out.push((
+            fragment,
+            if n == 0 { indent } else { follow_indent },
+            origin,
+        ));
+    }
+}
+
 /// Apply line splitting to an array of lines, replacing long lines with split versions.
 ///
 /// Returns a tuple of:
@@ -294,12 +312,14 @@ pub fn split_long_lines(
     max_line_length: usize,
     indent_size: usize,
 ) -> (Vec<String>, Vec<usize>, Vec<usize>) {
-    let mut result_lines = Vec::new();
-    let mut result_indents = Vec::new();
-    let mut result_origins = Vec::new(); // Track which original line each result came from
+    // (line, indent, index of the original line it came from)
+    let mut out: Vec<(String, usize, usize)> = Vec::with_capacity(lines.len());
+
+    // Strings count toward a line's visual width, so measure the raw text
+    let too_long = |s: &str| s.trim_end_matches('\n').len() > max_line_length;
 
     for (i, line) in lines.iter().enumerate() {
-        let indent = if i < indents.len() { indents[i] } else { 0 };
+        let indent = indents.get(i).copied().unwrap_or(0);
 
         // Where the fragments after the break go. A statement that already
         // has continuation lines has had them aligned (on the open bracket,
@@ -316,82 +336,44 @@ pub fn split_long_lines(
         } else {
             None
         };
+        let split = |text: &str| {
+            split_with_alignment(text, indent, max_line_length, follow_indent, indent_size)
+        };
 
-        // Calculate actual visual line length (including strings)
-        // Don't filter strings - they contribute to visual line length
-        let line_length = line.trim_end_matches('\n').len();
-
-        // Check if line needs splitting
-        if line_length > max_line_length {
-            // First, try to detach inline comment if present
-            // This may make the code short enough, or allow it to be split
-            if let Some((code_line, comment_line)) = split_inline_comment(line) {
-                let code_length = code_line.trim_end_matches('\n').len();
-
-                // Check if code part still needs splitting
-                if code_length > max_line_length {
-                    if let Some((split_lines, follow_indent)) = split_with_alignment(
-                        &code_line,
-                        indent,
-                        max_line_length,
-                        follow_indent,
-                        indent_size,
-                    ) {
-                        // Add first line with original indent
-                        result_lines.push(split_lines[0].clone());
-                        result_indents.push(indent);
-                        result_origins.push(i);
-
-                        // Add continuation lines with follow indent
-                        for split_line in split_lines.iter().skip(1) {
-                            result_lines.push(split_line.clone());
-                            result_indents.push(follow_indent);
-                            result_origins.push(i);
-                        }
-
-                        // Add detached comment with original indent
-                        result_lines.push(comment_line);
-                        result_indents.push(indent);
-                        result_origins.push(i);
-                        continue;
-                    }
-                }
-
-                // Code fits without splitting, just detach the comment
-                result_lines.push(code_line);
-                result_indents.push(indent);
-                result_origins.push(i);
-                result_lines.push(comment_line);
-                result_indents.push(indent);
-                result_origins.push(i);
-                continue;
-            }
-
-            // No comment to detach, try regular splitting
-            if let Some((split_lines, follow_indent)) =
-                split_with_alignment(line, indent, max_line_length, follow_indent, indent_size)
-            {
-                // Add first line with original indent
-                result_lines.push(split_lines[0].clone());
-                result_indents.push(indent);
-                result_origins.push(i);
-
-                // Add continuation lines with follow indent
-                for split_line in split_lines.iter().skip(1) {
-                    result_lines.push(split_line.clone());
-                    result_indents.push(follow_indent);
-                    result_origins.push(i);
-                }
-                continue;
-            }
+        if !too_long(line) {
+            out.push((line.clone(), indent, i));
+            continue;
         }
 
-        // Line doesn't need splitting or couldn't be split
-        result_lines.push(line.clone());
-        result_indents.push(indent);
-        result_origins.push(i);
+        // Detaching an inline comment comes first: it may bring the code
+        // within the limit on its own, and otherwise hands the splitter a
+        // shorter line to work with.
+        if let Some((code_line, comment_line)) = split_inline_comment(line) {
+            match too_long(&code_line).then(|| split(&code_line)).flatten() {
+                Some((fragments, follow)) => {
+                    push_fragments(&mut out, fragments, indent, follow, i);
+                }
+                None => out.push((code_line, indent, i)),
+            }
+            out.push((comment_line, indent, i));
+            continue;
+        }
+
+        // No comment to detach; over-length and unsplittable lines stand
+        match split(line) {
+            Some((fragments, follow)) => push_fragments(&mut out, fragments, indent, follow, i),
+            None => out.push((line.clone(), indent, i)),
+        }
     }
 
+    let mut result_lines = Vec::with_capacity(out.len());
+    let mut result_indents = Vec::with_capacity(out.len());
+    let mut result_origins = Vec::with_capacity(out.len());
+    for (line, indent, origin) in out {
+        result_lines.push(line);
+        result_indents.push(indent);
+        result_origins.push(origin);
+    }
     (result_lines, result_indents, result_origins)
 }
 
