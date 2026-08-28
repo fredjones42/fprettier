@@ -121,16 +121,7 @@ fn main() -> Result<ExitCode> {
         );
     }
 
-    // Process files. The parallel path reports no change count: --check,
-    // --diff and --stdout, the only readers of it, all force sequential.
-    let (changed, errors) = if use_sequential {
-        process_files_sequential(&files, base_config.as_ref(), &args)
-    } else {
-        (
-            0,
-            process_files_parallel(&files, base_config.as_ref(), &args),
-        )
-    };
+    let (changed, errors) = process_files(&files, base_config.as_ref(), &args, use_sequential);
 
     Ok(exit_code(
         errors + missing > 0 || (args.check && changed > 0),
@@ -347,96 +338,69 @@ fn is_fortran_file(path: &Path, custom_extensions: &[String]) -> bool {
         })
 }
 
-/// Process files sequentially (for stdout/diff/check output).
-/// Returns (files that changed or would change, files that errored).
-fn process_files_sequential(
+/// Process every file, returning (files that changed or would change, files
+/// that errored).
+///
+/// `sequential` keeps stdout deterministic, which `--stdout`, `--diff` and
+/// `--check` all need; otherwise the files are spread across the rayon pool.
+fn process_files(
     files: &[PathBuf],
     base_config: Option<&Config>,
     args: &CliArgs,
+    sequential: bool,
 ) -> (usize, usize) {
-    let mut changed = 0;
-    let mut errors = 0;
-    for path in files {
-        // Use base config if provided, otherwise discover per-file config
-        let file_result = if let Some(config) = base_config {
-            process_single_file(path, config, args)
-        } else {
-            match build_config(args, Some(path)) {
-                Ok(config) => process_single_file(path, &config, args),
-                Err(e) => Err(e),
-            }
-        };
-
-        match file_result {
-            Ok(true) => changed += 1,
-            Ok(false) => {}
-            Err(e) => {
-                errors += 1;
-                eprintln!("Error formatting {}: {e:#}", path.display());
-            }
-        }
-    }
-    (changed, errors)
-}
-
-/// Process files in parallel using Rayon. Returns the number that errored.
-fn process_files_parallel(
-    files: &[PathBuf],
-    base_config: Option<&Config>,
-    args: &CliArgs,
-) -> usize {
-    let success_count = AtomicUsize::new(0);
-    let error_count = AtomicUsize::new(0);
-
-    // Pre-compute per-directory configs to avoid redundant filesystem walks
-    // during parallel processing. Config discovery walks all ancestor directories
-    // checking for fprettier.toml; caching by parent dir eliminates ~10 stat()
-    // calls per file and removes filesystem contention between threads.
+    // Pre-compute per-directory configs to avoid redundant filesystem walks.
+    // Config discovery walks all ancestor directories checking for
+    // fprettier.toml; caching by parent dir eliminates ~10 stat() calls per
+    // file and removes filesystem contention between threads.
     let dir_configs: HashMap<PathBuf, Config> = if base_config.is_none() {
-        let mut unique_dirs: Vec<PathBuf> = files
+        let mut dirs: Vec<PathBuf> = files
             .iter()
             .filter_map(|f| f.parent().map(Path::to_path_buf))
             .collect();
-        unique_dirs.sort();
-        unique_dirs.dedup();
-
-        unique_dirs
-            .into_iter()
+        dirs.sort();
+        dirs.dedup();
+        dirs.into_iter()
             .filter_map(|dir| build_config(args, Some(&dir)).ok().map(|c| (dir, c)))
             .collect()
     } else {
         HashMap::new()
     };
 
-    files.par_iter().for_each(|path| {
-        let file_result = if let Some(config) = base_config {
-            process_single_file(path, config, args)
-        } else {
-            let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-            match dir_configs.get(&dir) {
-                Some(config) => process_single_file(path, config, args),
-                None => match build_config(args, Some(path)) {
-                    Ok(config) => process_single_file(path, &config, args),
-                    Err(e) => Err(e),
-                },
-            }
+    let changed = AtomicUsize::new(0);
+    let errors = AtomicUsize::new(0);
+    let run = |path: &PathBuf| {
+        let dir = path.parent().unwrap_or(Path::new("."));
+        let result = match base_config.or_else(|| dir_configs.get(dir)) {
+            Some(config) => process_single_file(path, config, args),
+            // Nothing cached for this directory means building its config
+            // failed above; building it again reports why, against the file
+            None => build_config(args, Some(path))
+                .and_then(|config| process_single_file(path, &config, args)),
         };
-
-        match file_result {
-            Ok(_) => {
-                success_count.fetch_add(1, Ordering::Relaxed);
+        match result {
+            Ok(true) => {
+                changed.fetch_add(1, Ordering::Relaxed);
             }
+            Ok(false) => {}
             Err(e) => {
-                error_count.fetch_add(1, Ordering::Relaxed);
+                errors.fetch_add(1, Ordering::Relaxed);
                 eprintln!("Error formatting {}: {e:#}", path.display());
             }
         }
-    });
+    };
 
-    let success = success_count.load(Ordering::Relaxed);
-    let errors = error_count.load(Ordering::Relaxed);
+    if sequential {
+        files.iter().for_each(run);
+    } else {
+        files.par_iter().for_each(run);
+    }
 
-    if !args.silent {
+    let errors = errors.load(Ordering::Relaxed);
+    // The sequential path is driven by --stdout/--diff/--check, whose own
+    // output is the report; a summary line on top of it is just noise.
+    if !sequential && !args.silent {
+        let success = files.len() - errors;
         if errors == 0 {
             eprintln!("Formatted {success} files successfully.");
         } else {
@@ -444,7 +408,7 @@ fn process_files_parallel(
         }
     }
 
-    errors
+    (changed.load(Ordering::Relaxed), errors)
 }
 
 /// Apply directive overrides parsed from a file to a configuration
