@@ -7,7 +7,7 @@
 //! list is re-broken later by the normal line-splitting pass.
 
 use crate::parser::char_filter::comment_start;
-use crate::parser::patterns::{CPP_LINE_RE, USE_NAME_RE, USE_RE};
+use crate::parser::patterns::{is_fypp_directive, CPP_LINE_RE, USE_NAME_RE, USE_RE};
 use crate::parser::stream::has_semicolon_outside_strings;
 
 /// One logical statement: its physical lines plus what we need to sort it.
@@ -263,12 +263,7 @@ fn sort_key_of(item: &str) -> String {
 }
 
 fn is_preprocessor(line: &str) -> bool {
-    let trimmed = line.trim_start();
-    trimmed.starts_with("#:")
-        || trimmed.starts_with("$:")
-        || trimmed.starts_with("@:")
-        || trimmed.starts_with("#!")
-        || CPP_LINE_RE.is_match(line)
+    is_fypp_directive(line) || CPP_LINE_RE.is_match(line)
 }
 
 /// The line without its terminator.

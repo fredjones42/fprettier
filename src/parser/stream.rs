@@ -10,7 +10,7 @@ use std::io::{BufRead, BufReader};
 use anyhow::{bail, Result};
 
 use super::char_filter::{comment_start, CharFilter, StringDelimiter};
-use super::patterns::OMP_COND_RE;
+use super::patterns::{is_fypp_directive, OMP_COND_RE};
 use crate::config::MAX_STATEMENT_LENGTH;
 
 /// Maximum length of a single logical line, in characters, as a guard
@@ -207,13 +207,7 @@ impl<R: BufRead> InputStream<R> {
             // 1. Be preserved in output (already added to `lines`)
             // 2. NOT break the Fortran continuation (continue reading)
             // 3. NOT contribute to the joined Fortran logical line
-            let trimmed_line = line.trim_start();
-            let is_fypp_directive = trimmed_line.starts_with("#:")
-                || trimmed_line.starts_with("$:")
-                || trimmed_line.starts_with("@:")
-                || trimmed_line.starts_with("#!");
-
-            if is_fypp_directive && in_continuation {
+            if is_fypp_directive(&line) && in_continuation {
                 // Fypp directive in the middle of a Fortran continuation
                 // Don't add to line_parts (not Fortran code), but continue reading
                 // The line is already in `lines` for output preservation

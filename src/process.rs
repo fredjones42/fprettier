@@ -19,10 +19,8 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Cursor, Write};
-use std::sync::LazyLock;
 
 use anyhow::Result;
-use regex::Regex;
 
 use crate::config::{Config, MAX_LINE_LENGTH, MAX_STATEMENT_LENGTH};
 use crate::format::case_convert::{convert_case, CaseSettings};
@@ -36,9 +34,9 @@ use crate::format::sort_use::sort_use_statements;
 use crate::format::whitespace::{format_line, format_line_with_level};
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
-    ASSOCIATE_RE, BLK_RE, CHANGETEAM_RE, CPP_LINE_RE, CRITICAL_RE, DO_RE, ENUMTYPE_RE, ENUM_RE,
-    FORALL_RE, IF_RE, INTERFACE_RE, MOD_RE, OMP_DIR_RE, PROG_RE, SELCASE_RE, STATEMENT_LABEL_RE,
-    TYPE_RE, WHERE_RE,
+    is_fypp_directive, ASSOCIATE_RE, BLK_RE, CHANGETEAM_RE, CPP_LINE_RE, CRITICAL_RE, DO_RE,
+    ENUMTYPE_RE, ENUM_RE, FORALL_RE, IF_RE, INTERFACE_RE, MOD_RE, OMP_DIR_RE, PROG_RE, SELCASE_RE,
+    STATEMENT_LABEL_RE, TYPE_RE, WHERE_RE,
 };
 use crate::parser::stream::{FortranLine, InputStream};
 use crate::scope::build_scope_parser;
@@ -325,9 +323,6 @@ fn opens_indented_scope(statement: &str) -> bool {
     .any(|re| re.is_match(trimmed))
 }
 
-/// Fypp line directive pattern - matches lines starting with #!, #:, $:, or @:
-static FYPP_LINE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(#!|#:|\$:|@:)").unwrap());
-
 /// Extract statement label from a line and return (label, `line_without_label`)
 ///
 /// Statement labels are numeric prefixes like "100 " at the start of a line.
@@ -590,7 +585,7 @@ fn extract_and_format_pre_ampersands(
             // If first line is fypp, all continuation lines are special
             let is_fypp_continuation = flags.is_fypp_line && i > 0;
             // Or if this specific line is a fypp directive
-            let is_fypp = i > 0 && FYPP_LINE_RE.is_match(line.trim_start());
+            let is_fypp = i > 0 && is_fypp_directive(line);
             is_fypp_continuation || is_fypp || fortran_line.starts_in_string(i)
         })
         .collect();
@@ -706,7 +701,7 @@ fn apply_whitespace_to_lines(
 
                 // Check if this specific physical line is a fypp directive
                 // If so, skip formatting and preserve original content
-                let is_line_fypp = FYPP_LINE_RE.is_match(line.trim_start());
+                let is_line_fypp = is_fypp_directive(line);
                 if is_line_fypp {
                     // Preserve fypp directive lines as-is (no whitespace formatting)
                     // Note: OMP prefix is handled during indentation, not here
@@ -972,7 +967,7 @@ fn compute_and_apply_indentation(
         //    - Continuation lines (i>0) of fypp directive: preserve original indent
         // 2. When indent_fypp=False:
         //    - All fypp directive lines preserve original indent
-        let is_line_fypp = FYPP_LINE_RE.is_match(line.trim_start());
+        let is_line_fypp = is_fypp_directive(line);
 
         let preserve_original_indent =
             // Continuation lines of multiline fypp directives preserve original
@@ -1327,7 +1322,7 @@ fn apply_pre_ampersand_indentation(
             // Skip fypp continuation lines - they preserve original indentation
             // If first line is fypp, all continuation lines are special
             // Also skip if this specific line is a fypp directive
-            let is_line_fypp = FYPP_LINE_RE.is_match(line.trim_start());
+            let is_line_fypp = is_fypp_directive(line);
             if is_fypp_line || is_line_fypp {
                 continue;
             }
@@ -1479,7 +1474,7 @@ fn format_pass<R: BufRead, W: Write>(
         );
 
         let flags = FormattingFlags {
-            is_fypp_line: FYPP_LINE_RE.is_match(&fortran_line.joined_line),
+            is_fypp_line: is_fypp_directive(&fortran_line.joined_line),
             is_cpp_line: CPP_LINE_RE.is_match(&fortran_line.joined_line),
             skip_format: detect_skip_format(&fortran_line.comments, &mut in_deactivation_block),
             auto_align: should_auto_align(&output_lines),

@@ -11,7 +11,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::parser::char_filter::CharFilter;
-use crate::parser::patterns::{PRIVATE_RE, PUBLIC_RE, REL_OP_RE, USE_RE, VAR_DECL_RE};
+use crate::parser::patterns::{
+    is_fypp_directive, PRIVATE_RE, PUBLIC_RE, REL_OP_RE, USE_RE, VAR_DECL_RE,
+};
 
 // Regex for :: directly before line break (declaration alignment)
 static DECL_BEFORE_BREAK_RE: LazyLock<Regex> =
@@ -102,14 +104,9 @@ impl F90Aligner {
         is_use: bool,
         indent_size: usize,
     ) {
-        // Skip fypp directive lines - they don't affect bracket alignment
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("#:")
-            || trimmed.starts_with("$:")
-            || trimmed.starts_with("@:")
-            || trimmed.starts_with("#!")
-        {
-            // Don't process this line, but alignment state is preserved for next line
+        // Skip fypp directive lines - they don't affect bracket alignment.
+        // Alignment state is preserved for the next line.
+        if is_fypp_directive(line) {
             return;
         }
 

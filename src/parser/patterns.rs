@@ -370,6 +370,17 @@ pub static PRE_AMPERSAND_RE: LazyLock<Regex> = LazyLock::new(|| build_re(r"^\s*(
 pub static TRAILING_AMPERSAND_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(r"(\s*)&\s*(?:!.*)?$"));
 
+/// The four fypp directive markers, as they appear at the start of a line
+const FYPP_PREFIXES: [&str; 4] = ["#!", "#:", "$:", "@:"];
+
+/// Whether `line` is a fypp directive: a `#!` comment, or a `#:`/`$:`/`@:`
+/// control line. Leading whitespace is ignored.
+#[must_use]
+pub fn is_fypp_directive(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    FYPP_PREFIXES.iter().any(|p| trimmed.starts_with(p))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -590,5 +601,15 @@ mod tests {
         assert!(!CPP_LINE_RE.is_match("x = 1"));
         assert!(!CPP_LINE_RE.is_match("! comment"));
         assert!(!CPP_LINE_RE.is_match("program main"));
+    }
+
+    #[test]
+    fn test_is_fypp_directive() {
+        for line in ["#!comment", "#:if DEBUG", "$:x", "@:call", "   #:endif"] {
+            assert!(is_fypp_directive(line), "{line}");
+        }
+        for line in ["#define FOO", "#{", "x = 1", "! comment", ""] {
+            assert!(!is_fypp_directive(line), "{line}");
+        }
     }
 }
