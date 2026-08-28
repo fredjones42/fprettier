@@ -22,7 +22,7 @@ use std::io::{BufRead, BufReader, Cursor, Write};
 use std::sync::LazyLock;
 
 use anyhow::Result;
-use regex::{Regex, RegexSet};
+use regex::Regex;
 
 use crate::config::{Config, MAX_LINE_LENGTH, MAX_STATEMENT_LENGTH};
 use crate::format::case_convert::{convert_case, CaseSettings};
@@ -36,7 +36,9 @@ use crate::format::sort_use::sort_use_statements;
 use crate::format::whitespace::{format_line, format_line_with_level};
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
-    CPP_LINE_RE, DO_RE, IF_RE, MOD_RE, OMP_DIR_RE, PROG_RE, STATEMENT_LABEL_RE,
+    ASSOCIATE_RE, BLK_RE, CHANGETEAM_RE, CPP_LINE_RE, CRITICAL_RE, DO_RE, ENUMTYPE_RE, ENUM_RE,
+    FORALL_RE, IF_RE, INTERFACE_RE, MOD_RE, OMP_DIR_RE, PROG_RE, SELCASE_RE, STATEMENT_LABEL_RE,
+    TYPE_RE, WHERE_RE,
 };
 use crate::parser::stream::{FortranLine, InputStream};
 use crate::scope::build_scope_parser;
@@ -262,7 +264,7 @@ fn inspect_file<R: BufRead>(
         // Track whether this line is a block scope opener (not IF/DO, not
         // module-level constructs like PROGRAM/MODULE/SUBROUTINE/FUNCTION).
         // Only includes constructs whose body is always indented.
-        prev_was_scope_opener = BLOCK_SCOPE_OPENER_RE.is_match(joined_trimmed);
+        prev_was_scope_opener = opens_indented_scope(joined_trimmed);
 
         required_indents.push(required_indent);
         prev_offset = offset;
@@ -274,46 +276,43 @@ fn inspect_file<R: BufRead>(
     })
 }
 
-/// Block scope openers whose body is always indented (excludes IF/DO for stacking,
-/// and module-level constructs like PROGRAM/MODULE/SUBROUTINE/FUNCTION).
-/// Used in `inspect_file` to prevent IF/DO stacking after these constructs.
-static BLOCK_SCOPE_OPENER_RE: LazyLock<RegexSet> = LazyLock::new(|| {
-    let eol = r"\s*;?\s*$";
-    let sol = r"^\s*";
-    let associate = format!(r"(?xi) {sol} ASSOCIATE \s* \( .* \) {eol}");
-    let case_rank_type =
-        format!(r"(?xi) {sol} (\w+\s*:)? \s* SELECT \s* (CASE|RANK|TYPE) \s* \( .* \) {eol}");
-    let type_definition = format!(
-        r"(?xi) {sol}
-        TYPE
-        (\s* , \s*
-            ( BIND \s* \( \s* C \s* \)
-            | EXTENDS \s* \( .* \)
-            | ABSTRACT
-            | PUBLIC
-            | PRIVATE
-            )
-        )*
-        (\s* , \s*)?
-        (\s* :: \s* | \s+)
-        \w+                 # The actual type name
-        {eol}"
-    );
-    let enum_decl = format!(r"(?xi) {sol} ENUM ( \s* , \s* BIND \s* \( \s* C \s* \) )? {eol}");
-    let block = format!(r"(?xi) {sol} (\w+ \s* :)? \s* BLOCK {eol}");
-    let where_block = format!(r"(?xi) {sol} (\w+ \s* : \s*)? WHERE \s* \( .* \) {eol}");
-    let forall = format!(r"(?xi) {sol} (\w+ \s* : \s*)? FORALL \s* \( .* \) {eol}");
-    RegexSet::new([
-        associate,
-        case_rank_type,
-        type_definition,
-        enum_decl,
-        block,
-        where_block,
-        forall,
-    ])
-    .expect("invalid regex in BLOCK_SCOPE_OPENER_RE")
-});
+/// Whether a statement opens a scope whose body is indented.
+///
+/// `inspect_file` uses this to stop an IF or DO on the next line from being
+/// read as stacked against it: written in the same column as the statement
+/// that opened its scope, an IF is a new level, not a continuation of one.
+///
+/// The scope openers are the ones from [`crate::scope::SCOPES`], less IF and
+/// DO — those two are what stacking is about — and less the program units
+/// (PROGRAM, MODULE, SUBMODULE, SUBROUTINE, FUNCTION), where an IF written
+/// flush with the header is deliberately left there; see
+/// `test_end_to_end_formatting`. An END never opens anything, and some of
+/// the patterns match one, so END is ruled out first.
+fn opens_indented_scope(statement: &str) -> bool {
+    let trimmed = statement.trim_start();
+    if trimmed
+        .get(..3)
+        .is_some_and(|start| start.eq_ignore_ascii_case("end"))
+    {
+        return false;
+    }
+
+    [
+        &*INTERFACE_RE,
+        &*TYPE_RE,
+        &*ENUM_RE,
+        &*ENUMTYPE_RE,
+        &*ASSOCIATE_RE,
+        &*SELCASE_RE,
+        &*BLK_RE,
+        &*CRITICAL_RE,
+        &*CHANGETEAM_RE,
+        &*WHERE_RE,
+        &*FORALL_RE,
+    ]
+    .iter()
+    .any(|re| re.is_match(trimmed))
+}
 
 /// Fypp line directive pattern - matches lines starting with #!, #:, $:, or @:
 static FYPP_LINE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(#!|#:|\$:|@:)").unwrap());
@@ -1697,6 +1696,31 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    #[test]
+    fn test_opens_indented_scope() {
+        // The constructs the old hand-written copy of these patterns missed:
+        // an IF written flush with one of these used to be read as stacked
+        // against it, leaving the body unindented
+        assert!(opens_indented_scope("critical"));
+        assert!(opens_indented_scope("change team (t)"));
+        assert!(opens_indented_scope("enumeration type :: e"));
+        assert!(opens_indented_scope("outer: associate (y => x)"));
+        assert!(opens_indented_scope("type :: matrix(k, n)"));
+        assert!(opens_indented_scope("interface read(formatted)"));
+
+        // An END closes a scope, and several opener patterns match one
+        assert!(!opens_indented_scope("end critical"));
+        assert!(!opens_indented_scope("end associate outer"));
+        assert!(!opens_indented_scope("end type matrix"));
+
+        // IF and DO are what stacking is about, and a program unit's body is
+        // left alone on purpose
+        assert!(!opens_indented_scope("if (x) then"));
+        assert!(!opens_indented_scope("do i = 1, 10"));
+        assert!(!opens_indented_scope("program p"));
+        assert!(!opens_indented_scope("subroutine s(a)"));
+    }
 
     #[test]
     fn test_over_limit_warnings() {
