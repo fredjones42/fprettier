@@ -29,8 +29,8 @@ pub const MAX_LINE_LENGTH: usize = 10_000;
 /// line but not the `&`s (F2023 6.3.2.6).
 pub const MAX_STATEMENT_LENGTH: usize = 1_000_000;
 
-/// Indices into the array [`Config::get_whitespace_flags`] returns. The names
-/// double as the `whitespace_dict` keys, via [`WS_KEYS`].
+/// Indices into the array [`Config::get_whitespace_flags`] returns.
+/// [`WS_FLAGS`] pairs each with the name it goes by elsewhere.
 /// Spacing around comma/semicolon
 pub const WS_COMMA: usize = 0;
 /// Spacing around assignments (=, =>)
@@ -54,19 +54,79 @@ pub const WS_DECL: usize = 9;
 /// Spacing around string concatenation (//)
 pub const WS_CONCAT: usize = 10;
 
-/// Each flag index paired with the `whitespace_dict` key that sets it
-pub const WS_KEYS: [(&str, usize); 11] = [
-    ("comma", WS_COMMA),
-    ("assignments", WS_ASSIGNMENT),
-    ("relational", WS_RELATIONAL),
-    ("logical", WS_LOGICAL),
-    ("plusminus", WS_PLUSMINUS),
-    ("multdiv", WS_MULTDIV),
-    ("print", WS_PRINT),
-    ("type", WS_TYPE),
-    ("intrinsics", WS_INTRINSICS),
-    ("decl", WS_DECL),
-    ("concat", WS_CONCAT),
+/// Every fine-grained whitespace option, in the order `--help` lists them:
+/// its `--whitespace-*` flag, its `whitespace_dict` key, the flag-array index
+/// it sets, and what it controls.
+///
+/// One row per option, so a flag, its config-file key and the behavior it
+/// reaches cannot drift apart.
+pub const WS_FLAGS: [(&str, &str, usize, &str); 11] = [
+    (
+        "whitespace-comma",
+        "comma",
+        WS_COMMA,
+        "Enable/disable spacing after commas and semicolons",
+    ),
+    (
+        "whitespace-assignment",
+        "assignments",
+        WS_ASSIGNMENT,
+        "Enable/disable spacing around assignment operators (=, =>)",
+    ),
+    (
+        "whitespace-decl",
+        "decl",
+        WS_DECL,
+        "Enable/disable spacing around declaration operator (::)",
+    ),
+    (
+        "whitespace-relational",
+        "relational",
+        WS_RELATIONAL,
+        "Enable/disable spacing around relational operators (<, >, ==, /=, .eq., etc.)",
+    ),
+    (
+        "whitespace-logical",
+        "logical",
+        WS_LOGICAL,
+        "Enable/disable spacing around logical operators (.and., .or., etc.)",
+    ),
+    (
+        "whitespace-plusminus",
+        "plusminus",
+        WS_PLUSMINUS,
+        "Enable/disable spacing around plus/minus operators",
+    ),
+    (
+        "whitespace-multdiv",
+        "multdiv",
+        WS_MULTDIV,
+        "Enable/disable spacing around multiply/divide operators",
+    ),
+    (
+        "whitespace-print",
+        "print",
+        WS_PRINT,
+        "Enable/disable spacing in print/read statements",
+    ),
+    (
+        "whitespace-type",
+        "type",
+        WS_TYPE,
+        "Enable/disable spacing around type selector (%)",
+    ),
+    (
+        "whitespace-intrinsics",
+        "intrinsics",
+        WS_INTRINSICS,
+        "Enable/disable spacing before intrinsic function parentheses",
+    ),
+    (
+        "whitespace-concat",
+        "concat",
+        WS_CONCAT,
+        "Enable/disable spacing around string concatenation operator (//)",
+    ),
 ];
 
 /// Main configuration struct for fprettier
@@ -253,7 +313,7 @@ impl Config {
 
     /// Get the whitespace array based on whitespace level and dictionary overrides
     ///
-    /// Index it with the `WS_*` constants; [`WS_KEYS`] names each position.
+    /// Index it with the `WS_*` constants; [`WS_FLAGS`] names each position.
     #[must_use]
     pub fn get_whitespace_flags(&self) -> [bool; 11] {
         // Base array for each whitespace level
@@ -273,7 +333,7 @@ impl Config {
         };
 
         // Override with whitespace_dict settings
-        for (key, idx) in WS_KEYS {
+        for (_, key, idx, _) in WS_FLAGS {
             if let Some(&value) = self.whitespace_dict.get(key) {
                 whitespace_flags[idx] = value;
             }

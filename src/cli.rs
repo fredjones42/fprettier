@@ -6,66 +6,8 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command};
 
+use crate::config::WS_FLAGS;
 use crate::format::case_convert::{CaseMode, CASE_FLAG_VALUES};
-
-/// Fine-grained whitespace options: (CLI arg name, `whitespace_dict` key, help text)
-const WS_OPTS: [(&str, &str, &str); 11] = [
-    (
-        "whitespace-comma",
-        "comma",
-        "Enable/disable spacing after commas and semicolons",
-    ),
-    (
-        "whitespace-assignment",
-        "assignments",
-        "Enable/disable spacing around assignment operators (=, =>)",
-    ),
-    (
-        "whitespace-decl",
-        "decl",
-        "Enable/disable spacing around declaration operator (::)",
-    ),
-    (
-        "whitespace-relational",
-        "relational",
-        "Enable/disable spacing around relational operators (<, >, ==, /=, .eq., etc.)",
-    ),
-    (
-        "whitespace-logical",
-        "logical",
-        "Enable/disable spacing around logical operators (.and., .or., etc.)",
-    ),
-    (
-        "whitespace-plusminus",
-        "plusminus",
-        "Enable/disable spacing around plus/minus operators",
-    ),
-    (
-        "whitespace-multdiv",
-        "multdiv",
-        "Enable/disable spacing around multiply/divide operators",
-    ),
-    (
-        "whitespace-print",
-        "print",
-        "Enable/disable spacing in print/read statements",
-    ),
-    (
-        "whitespace-type",
-        "type",
-        "Enable/disable spacing around type selector (%)",
-    ),
-    (
-        "whitespace-intrinsics",
-        "intrinsics",
-        "Enable/disable spacing before intrinsic function parentheses",
-    ),
-    (
-        "whitespace-concat",
-        "concat",
-        "Enable/disable spacing around string concatenation operator (//)",
-    ),
-];
 
 /// CLI arguments parsed from command line
 #[derive(Debug, Clone)]
@@ -375,7 +317,7 @@ pub fn build_cli() -> Command {
                 .value_parser(clap::value_parser!(usize)),
         );
 
-    for (name, _, help) in WS_OPTS {
+    for (name, _, _, help) in WS_FLAGS {
         cmd = cmd.arg(
             Arg::new(name)
                 .long(name)
@@ -423,9 +365,9 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
         indent: matches.get_one::<usize>("indent").copied(),
         line_length: matches.get_one::<usize>("line-length").copied(),
         whitespace: matches.get_one::<u8>("whitespace").copied(),
-        whitespace_overrides: WS_OPTS
+        whitespace_overrides: WS_FLAGS
             .iter()
-            .filter_map(|(name, key, _)| {
+            .filter_map(|(name, key, _, _)| {
                 matches
                     .get_one::<bool>(name)
                     .map(|&val| ((*key).to_string(), val))
@@ -468,18 +410,6 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_ws_opts_cover_every_flag_key() {
-        // Each --whitespace-* flag has to name a key get_whitespace_flags
-        // reads, or setting it would do nothing
-        let mut from_cli: Vec<&str> = WS_OPTS.iter().map(|(_, key, _)| *key).collect();
-        let mut from_config: Vec<&str> =
-            crate::config::WS_KEYS.iter().map(|(key, _)| *key).collect();
-        from_cli.sort_unstable();
-        from_config.sort_unstable();
-        assert_eq!(from_cli, from_config);
-    }
 
     #[test]
     fn test_cli_builds() {
