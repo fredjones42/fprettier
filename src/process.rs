@@ -146,15 +146,15 @@ struct FormattingFlags {
 }
 
 /// Label-related strings extracted from a Fortran line
-struct LineLabels<'a> {
+struct LineLabels {
     /// The joined logical line with label removed
-    joined_no_label: &'a str,
+    joined_no_label: String,
     /// The first physical line with label removed
-    first_no_label: &'a str,
+    first_no_label: String,
     /// The label extracted from first physical line
-    first_label: &'a str,
+    first_label: String,
     /// The label extracted from joined line
-    label: &'a str,
+    label: String,
     /// Indentation shift due to label normalization
     label_shift: usize,
 }
@@ -668,7 +668,7 @@ fn apply_whitespace_to_lines(
     output_lines: &mut Vec<String>,
     fortran_line: &FortranLine,
     pass_ctx: &PassContext<'_>,
-    labels: &LineLabels<'_>,
+    labels: &LineLabels,
     flags: FormattingFlags,
     ampersand_sep: &[usize],
 ) {
@@ -680,7 +680,7 @@ fn apply_whitespace_to_lines(
         if output_lines.len() > 1 {
             // Strip label from first line before formatting (preserves column positions)
             if !labels.first_label.is_empty() && !output_lines.is_empty() {
-                output_lines[0].clone_from(&labels.first_no_label.to_string());
+                output_lines[0].clone_from(&labels.first_no_label);
             }
 
             let mut bracket_level: usize = 0;
@@ -770,7 +770,7 @@ fn apply_whitespace_to_lines(
         } else {
             // Single line - format the whole joined line
             let formatted = format_line(
-                labels.joined_no_label,
+                &labels.joined_no_label,
                 &pass_ctx.whitespace_flags,
                 pass_ctx.config.format_decl,
             );
@@ -781,7 +781,7 @@ fn apply_whitespace_to_lines(
         }
     } else if !labels.first_label.is_empty() && !output_lines.is_empty() {
         // Even without whitespace formatting, strip label for consistent handling
-        output_lines[0] = labels.first_no_label.to_string();
+        output_lines[0].clone_from(&labels.first_no_label);
     }
 }
 
@@ -825,6 +825,56 @@ fn shift_indents_for_label(
     }
 }
 
+/// Split the statement label off a logical line.
+///
+/// `normalize` collapses the run of spaces after the label so the statement
+/// starts exactly `label.len()` columns in, and records how far that moved it
+/// as `label_shift` — a shift the continuation indents have to follow. It is
+/// only ever done on the indent pass: pass 1's output is pass 2's input, so
+/// normalizing earlier would erase the original spacing the shift is measured
+/// from. The first line of the file keeps its spacing either way.
+fn split_off_label(
+    fortran_line: &FortranLine,
+    output_lines: &[String],
+    normalize: bool,
+) -> LineLabels {
+    let (label, joined_no_label) = extract_label(&fortran_line.joined_line);
+    let (first_label, first_no_label) = output_lines.first().map_or_else(
+        || (String::new(), String::new()),
+        |line| extract_label(line),
+    );
+
+    if !normalize || label.is_empty() {
+        return LineLabels {
+            joined_no_label,
+            first_no_label,
+            first_label,
+            label,
+            label_shift: 0,
+        };
+    }
+
+    // Measured against the ORIGINAL first line, not `output_lines`, which
+    // pass 1 may already have reflowed.
+    let original_leading = fortran_line
+        .lines
+        .first()
+        .map_or(0, |line| indent_of(&extract_label(line).1));
+    let target_spaces = label.len();
+    let strip_excess = |line: String| match indent_of(&line) {
+        leading if leading > target_spaces => line[(leading - target_spaces)..].to_string(),
+        _ => line,
+    };
+
+    LineLabels {
+        joined_no_label: strip_excess(joined_no_label),
+        first_no_label: strip_excess(first_no_label),
+        first_label,
+        label_shift: original_leading.saturating_sub(target_spaces),
+        label,
+    }
+}
+
 /// Compute and apply indentation to output lines
 ///
 /// Processes the logical line through the indenter, computes indentation levels,
@@ -837,7 +887,7 @@ fn compute_and_apply_indentation(
     indenter: &mut F90Indenter,
     fortran_line: &FortranLine,
     pass_ctx: &PassContext<'_>,
-    labels: &LineLabels<'_>,
+    labels: &LineLabels,
     fortran_line_number: usize,
     pre_ampersand: &[String],
     manual_lines_indent: Option<&[usize]>,
@@ -857,12 +907,12 @@ fn compute_and_apply_indentation(
         indent_fypp: pass_ctx.config.indent_fypp,
         manual_lines_indent,
         semicolon_line_index: fortran_line.semicolon_line_index,
-        label: labels.label,
+        label: &labels.label,
     };
 
     // Process the logical line for indentation (without label)
     // Use output_lines (which may have been formatted) for alignment computation
-    indenter.process_logical_line(labels.joined_no_label, output_lines, &indent_params);
+    indenter.process_logical_line(&labels.joined_no_label, output_lines, &indent_params);
 
     // Get computed indents and save for comment handling
     let indents = indenter.get_lines_indent();
@@ -871,7 +921,7 @@ fn compute_and_apply_indentation(
     shift_indents_for_label(
         computed_indents,
         output_lines,
-        labels.label,
+        &labels.label,
         !pre_ampersand.is_empty(),
     );
 
@@ -992,7 +1042,7 @@ fn write_output_line<W: Write>(
     origin: usize,
     fortran_line: &FortranLine,
     pass_ctx: &PassContext<'_>,
-    labels: &LineLabels<'_>,
+    labels: &LineLabels,
     write_ctx: &LineWriteContext<'_>,
     indenter: Option<&F90Indenter>,
 ) -> std::io::Result<()> {
@@ -1432,70 +1482,11 @@ fn format_pass<R: BufRead, W: Write>(
             }
         }
 
-        // Extract statement label from joined_line
-        let (label, joined_line_no_label) = extract_label(&fortran_line.joined_line);
-
-        // Also extract label from first physical line for output
-        let (first_line_label, first_line_no_label) = if output_lines.is_empty() {
-            (String::new(), String::new())
-        } else {
-            extract_label(&output_lines[0])
-        };
-
-        // For label_shift computation, use the ORIGINAL line from fortran_line.lines[0]
-        // not output_lines[0], because output_lines may have been modified in Pass 1.
-        // This ensures we compute the correct shift even in Pass 2.
-        let (_, original_first_line_no_label) = if fortran_line.lines.is_empty() {
-            (String::new(), String::new())
-        } else {
-            extract_label(&fortran_line.lines[0])
-        };
-
-        // Normalize label spacing for non-first lines of the file
-        //
-        // Also track the label_shift: how much the first line content position changed
-        // due to normalization. This shift is applied to continuation line indents.
-        //
-        // IMPORTANT: Only do normalization in Pass 2 (impose_indent=true), not Pass 1.
-        // In two-pass mode, Pass 1 output becomes Pass 2 input, so normalizing in Pass 1
-        // would lose the original spacing information needed to compute label_shift in Pass 2.
-        let (label, joined_line_no_label, first_line_label, first_line_no_label, label_shift) =
-            if fortran_line_number > 1 && !label.is_empty() && pass_ctx.impose_indent {
-                // The regex captures digits + one space, leaving extra spaces in rest
-                // Normalize by stripping extra leading spaces from line_no_label
-                // so that leading_spaces = label.len()
-                let target_spaces = label.len();
-
-                // Compute label_shift from ORIGINAL first line (not modified output)
-                let original_leading = original_first_line_no_label.len()
-                    - original_first_line_no_label.trim_start().len();
-                let shift = original_leading.saturating_sub(target_spaces);
-                let normalize_line = |line: String| -> String {
-                    let leading = indent_of(&line);
-                    if leading > target_spaces {
-                        // Strip excess leading spaces
-                        line[(leading - target_spaces)..].to_string()
-                    } else {
-                        line
-                    }
-                };
-
-                (
-                    label,
-                    normalize_line(joined_line_no_label),
-                    first_line_label,
-                    normalize_line(first_line_no_label),
-                    shift,
-                )
-            } else {
-                (
-                    label,
-                    joined_line_no_label,
-                    first_line_label,
-                    first_line_no_label,
-                    0,
-                )
-            };
+        let labels = split_off_label(
+            &fortran_line,
+            &output_lines,
+            fortran_line_number > 1 && pass_ctx.impose_indent,
+        );
 
         // Detect formatting deactivation markers
         let skip_format = detect_skip_format(&fortran_line.comments, &mut in_deactivation_block);
@@ -1518,15 +1509,6 @@ fn format_pass<R: BufRead, W: Write>(
             is_cpp_line,
             skip_format,
             auto_align,
-        };
-
-        // Create line labels struct
-        let labels = LineLabels {
-            joined_no_label: &joined_line_no_label,
-            first_no_label: &first_line_no_label,
-            first_label: &first_line_label,
-            label: &label,
-            label_shift,
         };
 
         // Extract pre-ampersands and apply whitespace formatting to continuation lines
