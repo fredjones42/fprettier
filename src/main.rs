@@ -1,8 +1,5 @@
 //! fprettier - Auto-formatter for modern Fortran source code
 
-#![warn(clippy::all)]
-#![warn(clippy::pedantic)]
-
 use mimalloc::MiMalloc;
 
 /// Benchmarked 2026-08-10 on a 3000-file / 18 MB tree (8 cores), against an

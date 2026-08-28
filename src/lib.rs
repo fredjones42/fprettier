@@ -2,13 +2,6 @@
 //!
 //! A Fortran code formatter with high-performance parallelization.
 
-#![warn(clippy::all)]
-#![warn(clippy::pedantic)]
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::missing_panics_doc)]
-#![allow(clippy::struct_excessive_bools)]
-
 pub mod cli;
 pub mod config;
 pub mod directive;

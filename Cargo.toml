@@ -11,10 +11,17 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/fredjones42/fprettier"
 readme = "README.md"
 keywords = ["fortran", "formatter", "cli", "code-formatting", "pretty-print"]
-categories = [
-  "command-line-utilities",
-  "development-tools"
-]
+categories = ["command-line-utilities", "development-tools"]
+
+# Stated here rather than as `#![warn(...)]` in each target, so lib.rs and
+# main.rs cannot drift apart on which lints they are held to.
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+too_many_lines = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+struct_excessive_bools = "allow"
 
 [dependencies]
 anyhow = "1.0"
