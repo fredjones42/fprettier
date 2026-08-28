@@ -135,14 +135,25 @@ struct PassContext<'a> {
 /// Line-level flags controlling formatting behavior
 #[derive(Debug, Clone, Copy)]
 struct FormattingFlags {
-    /// Line is a fypp preprocessor directive
+    /// Line is a fypp directive (`#!`, `#:`, `$:`, `@:`); takes no whitespace
+    /// formatting
     is_fypp_line: bool,
-    /// Line is a C preprocessor directive
+    /// Line is a C preprocessor directive (`#`, but not fypp); takes neither
+    /// whitespace formatting nor case conversion. Individual physical lines
+    /// are re-checked when pinning them to column 0.
     is_cpp_line: bool,
     /// Formatting is disabled for this line (via !& marker)
     skip_format: bool,
     /// Use automatic alignment (no leading & on continuation lines)
     auto_align: bool,
+}
+
+impl FormattingFlags {
+    /// Whether the line is plain Fortran source we may rewrite: formatting is
+    /// still active, and it is not a preprocessor directive of either flavor.
+    fn is_rewritable_code(self) -> bool {
+        !self.skip_format && !self.is_cpp_line && !self.is_fypp_line
+    }
 }
 
 /// Label-related strings extracted from a Fortran line
@@ -672,8 +683,7 @@ fn apply_whitespace_to_lines(
     flags: FormattingFlags,
     ampersand_sep: &[usize],
 ) {
-    if pass_ctx.impose_whitespace && !flags.skip_format && !flags.is_fypp_line && !flags.is_cpp_line
-    {
+    if pass_ctx.impose_whitespace && flags.is_rewritable_code() {
         // If there are multiple physical lines (continuations), format each line separately
         // to preserve the continuation structure
         // Track bracket level across continuation lines for proper keyword argument spacing
@@ -1400,51 +1410,29 @@ fn format_pass<R: BufRead, W: Write>(
     impose_whitespace: bool,
     inspect_result: Option<&InspectResult>,
 ) -> Result<()> {
-    // Build scope parser
     let scope_parser = build_scope_parser(config.indent_fypp && impose_indent, config.indent_mod);
+    let mut indenter = impose_indent
+        .then(|| F90Indenter::new(scope_parser, inspect_result.map_or(0, |r| r.first_indent)));
+    let case_settings = CaseSettings::from_dict(&config.case_dict);
 
-    // Get first_indent from inspection result, or default to 0
-    let first_indent = inspect_result.map_or(0, |r| r.first_indent);
-
-    // Create indenter if needed
-    let mut indenter = if impose_indent {
-        Some(F90Indenter::new(scope_parser, first_indent))
-    } else {
-        None
-    };
-
-    // Fortran line counter (for indexing into required_indents)
-    let mut fortran_line_number: usize = 0;
-
-    // Get whitespace_flags array for whitespace formatting
-    let whitespace_flags = config.get_whitespace_flags();
-
-    // Create pass context to group pass-level settings
     let pass_ctx = PassContext {
         config,
-        whitespace_flags,
+        whitespace_flags: config.get_whitespace_flags(),
         impose_indent,
         impose_whitespace,
         inspect_result,
     };
 
-    // Get case settings
-    let case_settings = CaseSettings::from_dict(&config.case_dict);
-
-    // Create input stream
-    let mut stream = InputStream::new(input);
-
-    // Track blank line state for suppressing consecutive blank lines
+    // Index into `required_indents`; see the note where it is bumped
+    let mut fortran_line_number: usize = 0;
+    // Whether the previous line was blank, so a run of them collapses to one
     let mut skip_blank = false;
-
-    // Track block deactivation state for !&< ... !&> directives
+    // Whether we are inside a `!&<` ... `!&>` deactivation block
     let mut in_deactivation_block = false;
 
-    // Process each logical Fortran line
+    let mut stream = InputStream::new(input);
     while let Some(fortran_line) = stream.next_fortran_line()? {
         let is_blank = is_blank_line(&fortran_line);
-
-        // Skip this line if it's blank and we just output a blank line
         if is_blank && skip_blank {
             continue;
         }
@@ -1459,20 +1447,18 @@ fn format_pass<R: BufRead, W: Write>(
         }
         let mut output_lines = fortran_line.lines.clone();
 
-        // Track whether each original line was indented (started with whitespace)
-        // This must be captured early BEFORE any trimming or formatting
-        // Used later to decide whether comment-only lines should be indented
+        // Captured before any trimming or formatting, and used much later to
+        // decide whether comment-only lines should be indented
         let lines_were_indented: Vec<bool> = fortran_line
             .lines
             .iter()
             .map(|line| line.starts_with(' ') || line.starts_with('\t'))
             .collect();
 
-        // Strip OMP prefix from output lines if present
         if !fortran_line.omp_prefix.is_empty() {
             for line in &mut output_lines {
                 if line.starts_with(&fortran_line.omp_prefix) {
-                    // Replace OMP prefix with spaces to preserve alignment
+                    // Blanks, not deletion, so the rest of the line keeps its column
                     *line = format!(
                         "{}{}",
                         " ".repeat(fortran_line.omp_prefix.len()),
@@ -1488,30 +1474,13 @@ fn format_pass<R: BufRead, W: Write>(
             fortran_line_number > 1 && pass_ctx.impose_indent,
         );
 
-        // Detect formatting deactivation markers
-        let skip_format = detect_skip_format(&fortran_line.comments, &mut in_deactivation_block);
-
-        // Check if this is a fypp line directive (starts with #!, #:, $:, or @:)
-        // These lines should not have whitespace formatting applied
-        let is_fypp_line = FYPP_LINE_RE.is_match(&fortran_line.joined_line);
-
-        // Check if this logical line contains any C preprocessor lines
-        // (starts with # but not fypp). Used to skip whitespace formatting and case conversion.
-        // Note: Individual physical lines will be checked separately for column 0 pinning.
-        let is_cpp_line = CPP_LINE_RE.is_match(&fortran_line.joined_line);
-
-        // Check if lines have leading & (which disables auto-alignment)
-        let auto_align = should_auto_align(&output_lines);
-
-        // Create formatting flags struct
         let flags = FormattingFlags {
-            is_fypp_line,
-            is_cpp_line,
-            skip_format,
-            auto_align,
+            is_fypp_line: FYPP_LINE_RE.is_match(&fortran_line.joined_line),
+            is_cpp_line: CPP_LINE_RE.is_match(&fortran_line.joined_line),
+            skip_format: detect_skip_format(&fortran_line.comments, &mut in_deactivation_block),
+            auto_align: should_auto_align(&output_lines),
         };
 
-        // Extract pre-ampersands and apply whitespace formatting to continuation lines
         let (pre_ampersand, ampersand_sep, manual_lines_indent) =
             extract_and_format_pre_ampersands(&mut output_lines, &fortran_line, &pass_ctx, flags);
 
@@ -1527,11 +1496,7 @@ fn format_pass<R: BufRead, W: Write>(
 
         // Apply relational operator replacement if enabled
         // This converts between Fortran-style (.lt., .eq., etc.) and C-style (<, ==, etc.)
-        if pass_ctx.config.enable_replacements
-            && !flags.skip_format
-            && !flags.is_fypp_line
-            && !flags.is_cpp_line
-        {
+        if pass_ctx.config.enable_replacements && flags.is_rewritable_code() {
             for (i, line) in output_lines.iter_mut().enumerate() {
                 if !fortran_line.starts_in_string(i) {
                     *line = replace_relational_operators(line, pass_ctx.config.c_relations);
@@ -1542,11 +1507,7 @@ fn format_pass<R: BufRead, W: Write>(
         // Apply case conversion if enabled and not deactivated
         // Skip CPP and fypp lines: they are not Fortran code, and fypp only
         // recognizes its directives (#:if, #:endif, ...) in lower case
-        if case_settings.is_enabled()
-            && !flags.skip_format
-            && !flags.is_cpp_line
-            && !flags.is_fypp_line
-        {
+        if case_settings.is_enabled() && flags.is_rewritable_code() {
             for (i, line) in output_lines.iter_mut().enumerate() {
                 if !fortran_line.starts_in_string(i) {
                     *line = convert_case(line, &case_settings);
