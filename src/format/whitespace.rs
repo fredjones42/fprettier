@@ -913,6 +913,50 @@ impl Charwise<'_> {
 /// - Print statements (`whitespace_flags[6]`): print, read
 ///
 /// This preserves strings and comments by splitting the line into parts.
+/// Space the `?` and `:` of a conditional expression (R1002) or conditional
+/// argument (R1526), both new in Fortran 2023.
+///
+/// `paren_has_cond` carries one flag per open parenthesis: whether a `?` has
+/// been seen at that level. A `:` belongs to a conditional only when its
+/// level has one, which leaves array sections, substrings, `case (1:2)` and
+/// `::` alone. The caller keeps the stack across the string and comment
+/// parts it skips, so `(a ? "y" : "z")` is spaced like any other.
+fn add_spacing_around_conditional(text: &str, paren_has_cond: &mut Vec<bool>) -> String {
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '(' => {
+                paren_has_cond.push(false);
+                out.push(ch);
+            }
+            ')' => {
+                if paren_has_cond.len() > 1 {
+                    paren_has_cond.pop();
+                }
+                out.push(ch);
+            }
+            '?' | ':' if ch == '?' || paren_has_cond.last() == Some(&true) => {
+                if ch == '?' {
+                    if let Some(level) = paren_has_cond.last_mut() {
+                        *level = true;
+                    }
+                }
+                pop_trailing_spaces(&mut out);
+                out.push(' ');
+                out.push(ch);
+                out.push(' ');
+                while chars.peek() == Some(&' ') {
+                    chars.next();
+                }
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
     // Placeholder to protect pointer assignment (=>) from relational processing
     const PLACEHOLDER: &str = "\x00POINTER_ASSIGN\x00";
@@ -969,6 +1013,10 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
     // Operators array maps to whitespace_flags indices:
     // [2]=relational, [3]=logical, [4]=plusminus, [5]=multdiv, [6]=print
 
+    // Parenthesis stack for conditional expressions, kept across the string
+    // and comment parts skipped below
+    let mut paren_has_cond = vec![false];
+
     for part in &mut line_parts {
         // Skip strings, comments, and fypp expressions
         // They start with quotes, !, or fypp markers #{, ${, @{
@@ -989,9 +1037,12 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
             *part = part.replace(" => ", PLACEHOLDER);
         }
 
-        // Relational operators (whitespace_flags[2])
+        // Relational operators (whitespace_flags[2]), then the `?` and `:`
+        // of an F2023 conditional expression, which separate a
+        // scalar-logical-expr the same way
         if whitespace_flags[2] {
             *part = add_spacing_around_operator(part, &REL_OP_RE);
+            *part = add_spacing_around_conditional(part, &mut paren_has_cond);
         }
 
         // Restore pointer assignment operators
@@ -1189,6 +1240,27 @@ fn add_spacing_around_operator(text: &str, operator_re: &regex::Regex) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_conditional_expression_spacing() {
+        let space = |s: &str| add_spacing_around_conditional(s, &mut vec![false]);
+        // F2023 conditional expression (R1002) and conditional argument (R1526)
+        assert_eq!(space("i = (j > 0?1:2)"), "i = (j > 0 ? 1 : 2)");
+        assert_eq!(
+            space("call sub(n > 0?n: .nil.)"),
+            "call sub(n > 0 ? n : .nil.)"
+        );
+        // The `: expr ?` chain of an else-if conditional
+        assert_eq!(space("t = (a?1:b?2:3)"), "t = (a ? 1 : b ? 2 : 3)");
+        assert_eq!(space("u = (a?(c?1:2):3)"), "u = (a ? (c ? 1 : 2) : 3)");
+        // A `:` with no `?` at its level is a section, bound or declaration
+        assert_eq!(space("x = a(1:2)"), "x = a(1:2)");
+        assert_eq!(space("case (1:2)"), "case (1:2)");
+        assert_eq!(space("integer :: m"), "integer :: m");
+        assert_eq!(space("v = (b(1:2)?x:y)"), "v = (b(1:2) ? x : y)");
+        // Idempotent
+        assert_eq!(space("i = (j > 0 ? 1 : 2)"), "i = (j > 0 ? 1 : 2)");
+    }
 
     #[test]
     fn test_defined_operator_spacing() {
