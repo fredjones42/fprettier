@@ -9,6 +9,10 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::config::{
+    WS_ASSIGNMENT, WS_COMMA, WS_CONCAT, WS_DECL, WS_INTRINSICS, WS_LOGICAL, WS_MULTDIV,
+    WS_PLUSMINUS, WS_PRINT, WS_RELATIONAL, WS_TYPE,
+};
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
     DEFINED_OP_RE, END_RE, GENERIC_SPEC_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOGICAL_LIT_RE,
@@ -400,7 +404,7 @@ impl Charwise<'_> {
     /// text to its left. Call after `self.level` has been incremented for the
     /// delimiter: the assignment rule below reads it.
     fn needs_space_before_delimiter(&self, delim: &str, lhs: &str) -> bool {
-        if self.whitespace_flags[8] {
+        if self.whitespace_flags[WS_INTRINSICS] {
             // A statement keyword — ALLOCATE, WRITE, IF, DO WHILE, CASE — takes
             // a space before its `(`. But `obj%open(` is component access, and
             // a defined-I/O `generic :: read(` spec is not a statement either.
@@ -443,7 +447,7 @@ impl Charwise<'_> {
             // delimiter (`/` being the second half of `(/`), or an operator
             // the delimiter binds to.
             '(' | '[' | '/' | '_' | '*' | '=' | '+' | '-' | ':' => false,
-            _ => self.whitespace_flags[8] && !prev.is_alphanumeric(),
+            _ => self.whitespace_flags[WS_INTRINSICS] && !prev.is_alphanumeric(),
         }
     }
 
@@ -567,10 +571,10 @@ impl Charwise<'_> {
         true
     }
 
-    /// Handle `,` and `;`: no space before, one space after (`whitespace_flags[0]`)
+    /// Handle `,` and `;`: no space before, one space after (`whitespace_flags[WS_COMMA]`)
     fn try_comma_semicolon(&mut self) -> bool {
         let ch = self.chars[self.i];
-        if (ch != ',' && ch != ';') || !self.whitespace_flags[0] {
+        if (ch != ',' && ch != ';') || !self.whitespace_flags[WS_COMMA] {
             return false;
         }
         // Remove trailing space before
@@ -584,7 +588,7 @@ impl Charwise<'_> {
         true
     }
 
-    /// Handle the type component selector `%` (`whitespace_flags[7]`
+    /// Handle the type component selector `%` (`whitespace_flags[WS_TYPE]`
     /// controls whether it gets surrounding spaces)
     fn try_type_component(&mut self) -> bool {
         if self.chars[self.i] != '%' {
@@ -593,11 +597,11 @@ impl Charwise<'_> {
         // Remove trailing space before
         pop_trailing_spaces(&mut self.out);
 
-        if self.whitespace_flags[7] {
+        if self.whitespace_flags[WS_TYPE] {
             self.out.push(' ');
         }
         self.out.push('%');
-        if self.whitespace_flags[7] {
+        if self.whitespace_flags[WS_TYPE] {
             self.out.push(' ');
         }
         self.i += 1;
@@ -607,13 +611,13 @@ impl Charwise<'_> {
         true
     }
 
-    /// Handle assignment operators `=` and `=>` (`whitespace_flags[1]`).
+    /// Handle assignment operators `=` and `=>` (`whitespace_flags[WS_ASSIGNMENT]`).
     /// Spacing applies only at top level (level == 0), except pointer
     /// assignment which is always spaced. Falls through for relational
     /// operators and bracketed `=` (named arguments).
     fn try_assignment(&mut self) -> bool {
         let ch = self.chars[self.i];
-        if ch != '=' || !self.whitespace_flags[1] {
+        if ch != '=' || !self.whitespace_flags[WS_ASSIGNMENT] {
             return false;
         }
         // Check if it's => (pointer assignment) first
@@ -658,14 +662,14 @@ impl Charwise<'_> {
         true
     }
 
-    /// Handle the declaration operator `::` (`whitespace_flags[9]`).
+    /// Handle the declaration operator `::` (`whitespace_flags[WS_DECL]`).
     /// Only reformats when `format_decl` is enabled; otherwise existing
     /// spacing is preserved by falling through.
     fn try_declaration(&mut self) -> bool {
         if self.chars[self.i] != ':'
             || self.peek(1) != Some(':')
             || !self.format_decl
-            || !self.whitespace_flags[9]
+            || !self.whitespace_flags[WS_DECL]
         {
             return false;
         }
@@ -687,18 +691,19 @@ impl Charwise<'_> {
     }
 
     /// Handle the string concatenation operator `//`: spaced when
-    /// `whitespace_flags[10]` is set, otherwise normalized to no spaces.
+    /// `whitespace_flags[WS_CONCAT]` is set, otherwise normalized to no spaces.
     /// Must be checked before mult/div so `/` is not misread.
     fn try_concat(&mut self) -> bool {
         if self.chars[self.i] != '/' || self.peek(1) != Some('/') {
             return false;
         }
-        // When whitespace_flags[10] is false, normalize by removing surrounding spaces
-        if !self.whitespace_flags[10] {
+        // When whitespace_flags[WS_CONCAT] is false, normalize by removing surrounding spaces
+        if !self.whitespace_flags[WS_CONCAT] {
             // Check if the previous non-space character is a comma
-            // If so, preserve the space after comma (controlled by whitespace_flags[0])
+            // If so, preserve the space after comma (controlled by whitespace_flags[WS_COMMA])
             let prev_non_space = self.prev_non_space();
-            let preserve_comma_space = prev_non_space == Some(',') && self.whitespace_flags[0];
+            let preserve_comma_space =
+                prev_non_space == Some(',') && self.whitespace_flags[WS_COMMA];
 
             // Remove trailing spaces before // (unless preserving comma space)
             if !preserve_comma_space {
@@ -715,7 +720,7 @@ impl Charwise<'_> {
             return true;
         }
 
-        // whitespace_flags[10] is true - add spacing around //
+        // whitespace_flags[WS_CONCAT] is true - add spacing around //
         let prev_char = self.out.chars().last();
         let prev_non_space = self.prev_non_space();
         let skip_space_before = prev_non_space == Some('(') || prev_non_space == Some('[');
@@ -746,11 +751,11 @@ impl Charwise<'_> {
         true
     }
 
-    /// Handle binary `+`/`-` (`whitespace_flags[4]`). Falls through for
+    /// Handle binary `+`/`-` (`whitespace_flags[WS_PLUSMINUS]`). Falls through for
     /// unary signs and scientific-notation exponents (1.0d-3, 1.0e+5).
     fn try_plus_minus(&mut self) -> bool {
         let ch = self.chars[self.i];
-        if (ch != '+' && ch != '-') || !self.whitespace_flags[4] {
+        if (ch != '+' && ch != '-') || !self.whitespace_flags[WS_PLUSMINUS] {
             return false;
         }
         // Look at the last non-space character (we may have added a space after delimiter)
@@ -808,12 +813,12 @@ impl Charwise<'_> {
         true
     }
 
-    /// Handle binary `*`/`/` (`whitespace_flags[5]`), copying through `**`
-    /// (exponentiation), `//` (concatenation with `whitespace_flags[10]`
+    /// Handle binary `*`/`/` (`whitespace_flags[WS_MULTDIV]`), copying through `**`
+    /// (exponentiation), `//` (concatenation with `whitespace_flags[WS_CONCAT]`
     /// off), and `(/` `/)` array constructor delimiters unchanged.
     fn try_mult_div(&mut self) -> bool {
         let ch = self.chars[self.i];
-        if (ch != '*' && ch != '/') || !self.whitespace_flags[5] {
+        if (ch != '*' && ch != '/') || !self.whitespace_flags[WS_MULTDIV] {
             return false;
         }
         // Check for ** (exponentiation) - copy through
@@ -870,10 +875,10 @@ impl Charwise<'_> {
 /// Add whitespace in a context-aware manner
 ///
 /// Uses regex-based splitting for operators that need context:
-/// - Relational operators (`whitespace_flags[2]`): ==, /=, <, >, <=, >=, .eq., .ne., etc.
-/// - Logical operators (`whitespace_flags[3]`): .and., .or., .not., .eqv., .neqv.
-/// - Multiply/divide (`whitespace_flags[5]`): *, / (but not ** or //)
-/// - Print statements (`whitespace_flags[6]`): print, read
+/// - Relational operators (`whitespace_flags[WS_RELATIONAL]`): ==, /=, <, >, <=, >=, .eq., .ne., etc.
+/// - Logical operators (`whitespace_flags[WS_LOGICAL]`): .and., .or., .not., .eqv., .neqv.
+/// - Multiply/divide (`whitespace_flags[WS_MULTDIV]`): *, / (but not ** or //)
+/// - Print statements (`whitespace_flags[WS_PRINT]`): print, read
 ///
 /// This preserves strings and comments by splitting the line into parts.
 /// Space the `?` and `:` of a conditional expression (R1002) or conditional
@@ -993,10 +998,10 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
             *part = part.replace(" => ", PLACEHOLDER);
         }
 
-        // Relational operators (whitespace_flags[2]), then the `?` and `:`
+        // Relational operators (whitespace_flags[WS_RELATIONAL]), then the `?` and `:`
         // of an F2023 conditional expression, which separate a
         // scalar-logical-expr the same way
-        if whitespace_flags[2] {
+        if whitespace_flags[WS_RELATIONAL] {
             *part = add_spacing_around_operator(part, &REL_OP_RE);
             *part = add_spacing_around_conditional(part, &mut paren_has_cond);
         }
@@ -1006,25 +1011,25 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
             *part = part.replace(PLACEHOLDER, " => ");
         }
 
-        // Logical operators (whitespace_flags[3]), then any user-defined
+        // Logical operators (whitespace_flags[WS_LOGICAL]), then any user-defined
         // operator, which reads as `a.cross.b` without this
-        if whitespace_flags[3] {
+        if whitespace_flags[WS_LOGICAL] {
             *part = add_spacing_around_operator(part, &LOG_OP_RE);
             *part = add_spacing_around_defined_operators(part);
         }
 
-        // Plus/minus (whitespace_flags[4])
+        // Plus/minus (whitespace_flags[WS_PLUSMINUS])
         // Pattern must match binary +/- only (preceded by word char, ), or ])
         // and exclude scientific notation (e.g., 1.0e+10)
-        if whitespace_flags[4] {
+        if whitespace_flags[WS_PLUSMINUS] {
             *part = add_spacing_around_plusminus(part);
         }
 
         // Note: Multiply/divide ([5]) handled in add_whitespace_charwise_with_level
 
-        // Print statements (whitespace_flags[6]): add space between print/read and *
+        // Print statements (whitespace_flags[WS_PRINT]): add space between print/read and *
         // Pattern: print* -> print * and print*, -> print *,
-        if whitespace_flags[6] {
+        if whitespace_flags[WS_PRINT] {
             *part = PRINT_READ_RE.replace_all(part, "$1 $2 ").to_string();
         }
     }
@@ -1042,24 +1047,27 @@ fn space_out_keywords(mut result: String, whitespace_flags: &[bool; 11]) -> Stri
     }
 
     // ENDIF -> END IF, but not in `endif = 3`, where it is a variable name
-    if whitespace_flags[8] && END_RE.is_match(&result) && !END_WITH_EQ_RE.is_match(&result) {
+    if whitespace_flags[WS_INTRINSICS]
+        && END_RE.is_match(&result)
+        && !END_WITH_EQ_RE.is_match(&result)
+    {
         result = END_RE.replace_all(&result, "$1 $2").to_string();
     }
 
     // The same, after a semicolon: `end do; enddo` -> `end do; end do`
-    if whitespace_flags[8] {
+    if whitespace_flags[WS_INTRINSICS] {
         result = END_AFTER_SEMI_RE
             .replace_all(&result, "$1$2 $3")
             .to_string();
     }
 
     // `use module, only:` -> `use module, only: `
-    if whitespace_flags[0] && USE_RE.is_match(&result) {
+    if whitespace_flags[WS_COMMA] && USE_RE.is_match(&result) {
         result = ONLY_RE.replace_all(&result, "$1: ").to_string();
     }
 
     // A construct name: `loop:do` -> `loop: do`
-    if whitespace_flags[8] {
+    if whitespace_flags[WS_INTRINSICS] {
         result = LABEL_STMT_RE.replace_all(&result, "$1: $3").to_string();
     }
 
@@ -1548,7 +1556,7 @@ mod tests {
 
     #[test]
     fn test_concat_operator_disabled() {
-        // Test that concat spacing is disabled when whitespace_flags[10] is false
+        // Test that concat spacing is disabled when whitespace_flags[WS_CONCAT] is false
         let whitespace_flags = [
             false, false, false, false, false, false, false, false, false, false, false,
         ];

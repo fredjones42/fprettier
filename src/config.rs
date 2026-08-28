@@ -29,6 +29,46 @@ pub const MAX_LINE_LENGTH: usize = 10_000;
 /// line but not the `&`s (F2023 6.3.2.6).
 pub const MAX_STATEMENT_LENGTH: usize = 1_000_000;
 
+/// Indices into the array [`Config::get_whitespace_flags`] returns. The names
+/// double as the `whitespace_dict` keys, via [`WS_KEYS`].
+/// Spacing around comma/semicolon
+pub const WS_COMMA: usize = 0;
+/// Spacing around assignments (=, =>)
+pub const WS_ASSIGNMENT: usize = 1;
+/// Spacing around relational operators (<, >, ==, /=, etc.)
+pub const WS_RELATIONAL: usize = 2;
+/// Spacing around logical operators (.and., .or., etc.)
+pub const WS_LOGICAL: usize = 3;
+/// Spacing around plus/minus
+pub const WS_PLUSMINUS: usize = 4;
+/// Spacing around multiply/divide
+pub const WS_MULTDIV: usize = 5;
+/// Spacing around print/read statements
+pub const WS_PRINT: usize = 6;
+/// Spacing around select type components
+pub const WS_TYPE: usize = 7;
+/// Spacing around intrinsics
+pub const WS_INTRINSICS: usize = 8;
+/// Spacing around declarations (::)
+pub const WS_DECL: usize = 9;
+/// Spacing around string concatenation (//)
+pub const WS_CONCAT: usize = 10;
+
+/// Each flag index paired with the `whitespace_dict` key that sets it
+pub const WS_KEYS: [(&str, usize); 11] = [
+    ("comma", WS_COMMA),
+    ("assignments", WS_ASSIGNMENT),
+    ("relational", WS_RELATIONAL),
+    ("logical", WS_LOGICAL),
+    ("plusminus", WS_PLUSMINUS),
+    ("multdiv", WS_MULTDIV),
+    ("print", WS_PRINT),
+    ("type", WS_TYPE),
+    ("intrinsics", WS_INTRINSICS),
+    ("decl", WS_DECL),
+    ("concat", WS_CONCAT),
+];
+
 /// Main configuration struct for fprettier
 ///
 /// Deserialized straight from a config file's TOML table. Every field falls
@@ -213,18 +253,7 @@ impl Config {
 
     /// Get the whitespace array based on whitespace level and dictionary overrides
     ///
-    /// Returns an 11-element array controlling spacing around:
-    /// 0: comma/semicolon
-    /// 1: assignments (=, =>)
-    /// 2: relational operators (<, >, ==, /=, etc.)
-    /// 3: logical operators (.and., .or., etc.)
-    /// 4: plus/minus
-    /// 5: multiply/divide
-    /// 6: print/read statements
-    /// 7: select type components
-    /// 8: intrinsics
-    /// 9: declarations (::)
-    /// 10: string concatenation (//)
+    /// Index it with the `WS_*` constants; [`WS_KEYS`] names each position.
     #[must_use]
     pub fn get_whitespace_flags(&self) -> [bool; 11] {
         // Base array for each whitespace level
@@ -243,25 +272,10 @@ impl Config {
             ],
         };
 
-        // Mapping from dictionary keys to array indices
-        let mapping = [
-            ("comma", 0),
-            ("assignments", 1),
-            ("relational", 2),
-            ("logical", 3),
-            ("plusminus", 4),
-            ("multdiv", 5),
-            ("print", 6),
-            ("type", 7),
-            ("intrinsics", 8),
-            ("decl", 9),
-            ("concat", 10),
-        ];
-
         // Override with whitespace_dict settings
-        for (key, idx) in &mapping {
-            if let Some(&value) = self.whitespace_dict.get(*key) {
-                whitespace_flags[*idx] = value;
+        for (key, idx) in WS_KEYS {
+            if let Some(&value) = self.whitespace_dict.get(key) {
+                whitespace_flags[idx] = value;
             }
         }
 

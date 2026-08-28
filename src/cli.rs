@@ -470,6 +470,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_ws_opts_cover_every_flag_key() {
+        // Each --whitespace-* flag has to name a key get_whitespace_flags
+        // reads, or setting it would do nothing
+        let mut from_cli: Vec<&str> = WS_OPTS.iter().map(|(_, key, _)| *key).collect();
+        let mut from_config: Vec<&str> =
+            crate::config::WS_KEYS.iter().map(|(key, _)| *key).collect();
+        from_cli.sort_unstable();
+        from_config.sort_unstable();
+        assert_eq!(from_cli, from_config);
+    }
+
+    #[test]
     fn test_cli_builds() {
         let cmd = build_cli();
         // Just verify it builds without panic

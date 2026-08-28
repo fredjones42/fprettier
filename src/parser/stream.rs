@@ -171,7 +171,7 @@ impl<R: BufRead> InputStream<R> {
             self.string_state = state_tracker.get_string_state();
 
             // Note: We do NOT split semicolons here because:
-            // 1. Whitespace formatting already handles semicolon spacing (whitespace_flags[0])
+            // 1. Whitespace formatting already handles semicolon spacing (the WS_COMMA flag)
             // 2. Splitting would produce multiple lines instead of one formatted line
 
             lines.push(what_omp.clone() + &line);
