@@ -32,9 +32,11 @@ jobs:
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
+      # Two toolchains are installed and the later one is rustup's default, so
+      # every command names the toolchain it needs rather than relying on that
       - run: cargo +nightly fmt --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo doc --no-deps --all-features
+      - run: cargo +stable clippy --all-targets --all-features -- -D warnings
+      - run: cargo +stable doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
 
