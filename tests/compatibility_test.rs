@@ -23,72 +23,33 @@ fn run_format(input: &str, config: &Config) -> String {
 }
 
 /// Run fprettier on input and compare with expected output
+///
+/// The examples run to a few hundred lines, so a plain `assert_eq!` would
+/// dump two whole files. Report the first differing line instead.
 fn test_compatibility(input_path: &str, expected_path: &str, config: &Config) {
-    // Read input file
     let input = fs::read_to_string(input_path)
         .unwrap_or_else(|e| panic!("Failed to read input file {input_path}: {e}"));
-
-    // Read expected output
     let expected = fs::read_to_string(expected_path)
         .unwrap_or_else(|e| panic!("Failed to read expected file {expected_path}: {e}"));
 
-    // Run fprettier
-    let cursor = Cursor::new(input.as_bytes());
-    let reader = BufReader::new(cursor);
-    let mut output = Vec::new();
-
-    format_file(reader, &mut output, config)
-        .unwrap_or_else(|e| panic!("fprettier failed on {input_path}: {e}"));
-
-    let result = String::from_utf8(output)
-        .unwrap_or_else(|e| panic!("Invalid UTF-8 in output for {input_path}: {e}"));
-
-    // Compare line by line for better error messages
-    let result_lines: Vec<&str> = result.lines().collect();
-    let expected_lines: Vec<&str> = expected.lines().collect();
-
-    // Check line count
-    if result_lines.len() != expected_lines.len() {
-        eprintln!("=== Line count mismatch for {input_path} ===");
-        eprintln!(
-            "Expected {} lines, got {} lines",
-            expected_lines.len(),
-            result_lines.len()
-        );
-        eprintln!("\n=== First difference ===");
-        for (i, (r, e)) in result_lines.iter().zip(expected_lines.iter()).enumerate() {
-            if r != e {
-                eprintln!("Line {}: expected: {:?}", i + 1, e);
-                eprintln!("Line {}: got:      {:?}", i + 1, r);
-                break;
-            }
-        }
-        panic!("Line count mismatch");
+    let result = run_format(&input, config);
+    if result == expected {
+        return;
     }
 
-    // Compare each line
-    let mut differences = Vec::new();
-    for (i, (result_line, expected_line)) in
-        result_lines.iter().zip(expected_lines.iter()).enumerate()
-    {
-        if result_line != expected_line {
-            differences.push((i + 1, *expected_line, *result_line));
-        }
+    // zip stops at the shorter side, so a pure length difference falls through
+    // to the line count below rather than reporting a bogus first difference
+    for (i, (got, want)) in result.lines().zip(expected.lines()).enumerate() {
+        assert_eq!(want, got, "{input_path}, line {}", i + 1);
     }
-
-    if !differences.is_empty() {
-        eprintln!("\n=== Differences in {input_path} ===");
-        eprintln!("Found {} differences:", differences.len());
-        for (line_num, expected, got) in differences.iter().take(10) {
-            eprintln!("\nLine {line_num}:");
-            eprintln!("  expected: {expected:?}");
-            eprintln!("  got:      {got:?}");
-        }
-        if differences.len() > 10 {
-            eprintln!("\n... and {} more differences", differences.len() - 10);
-        }
-        panic!("{} differences found", differences.len());
-    }
+    assert_eq!(
+        expected.lines().count(),
+        result.lines().count(),
+        "{input_path}: line count"
+    );
+    // Every line matched and there are as many of them, so what differs is
+    // outside what lines() reports: a trailing newline
+    panic!("{input_path}: differs only in the trailing newline");
 }
 
 /// Get paths relative to the project root
