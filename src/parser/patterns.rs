@@ -170,11 +170,18 @@ pub static ENUM_RE: LazyLock<Regex> = LazyLock::new(|| {
 pub static ENDENUM_RE: LazyLock<Regex> =
     LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*ENUM{EOL_STR}")));
 
-// BLOCK
-pub static BLK_RE: LazyLock<Regex> =
-    LazyLock::new(|| build_re(&format!(r"{SOL_STR}(\w+\s*:)?\s*BLOCK{EOL_STR}")));
-pub static ENDBLK_RE: LazyLock<Regex> =
-    LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*BLOCK(\s+\w+)?{EOL_STR}")));
+// BLOCK, and the BLOCK DATA program unit (R1420). The blank in the keyword
+// pair is optional (Table 6.2), hence `BLOCK\s*DATA`.
+pub static BLK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}(\w+\s*:)?\s*BLOCK(\s*DATA(\s+\w+)?)?{EOL_STR}"
+    ))
+});
+pub static ENDBLK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(
+        r"{SOL_STR}END\s*BLOCK(\s*DATA)?(\s+\w+)?{EOL_STR}"
+    ))
+});
 
 // WHERE
 pub static WHERE_RE: LazyLock<Regex> =
@@ -516,6 +523,17 @@ mod tests {
         assert!(ENDINTERFACE_RE.is_match("end interface read(formatted)"));
         assert!(ENDINTERFACE_RE.is_match("end interface operator(+)"));
         assert!(ENDINTERFACE_RE.is_match("end interface"));
+    }
+
+    #[test]
+    fn test_block_data() {
+        // BLOCK DATA is a program unit (R1420); the blank is optional
+        assert!(BLK_RE.is_match("block data mydata"));
+        assert!(BLK_RE.is_match("blockdata"));
+        assert!(BLK_RE.is_match("block"));
+        assert!(ENDBLK_RE.is_match("end block data mydata"));
+        assert!(ENDBLK_RE.is_match("end blockdata"));
+        assert!(ENDBLK_RE.is_match("end block"));
     }
 
     #[test]
