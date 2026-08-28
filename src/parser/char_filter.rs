@@ -53,6 +53,47 @@ impl Default for FilterState {
     }
 }
 
+/// Split `line` into alternating runs of code and masked regions.
+///
+/// `filter` decides what is masked: string literals always, comments and fypp
+/// expressions depending on how it was built. Even indices hold the code the
+/// filter yielded, odd indices the masked text verbatim, so concatenating the
+/// result reproduces `line`. A code run may be empty, when two masked regions
+/// sit next to each other.
+///
+/// Returns `None` when the filter yields nothing at all - the whole line is
+/// one masked region, and there is no code in it to rewrite.
+#[must_use]
+pub fn split_masked_regions(line: &str, filter: CharFilter<'_>) -> Option<Vec<String>> {
+    let mut parts = vec![String::new()];
+    // The byte just past the last code character, which is where a masked
+    // region begins. Tracked as (position, char) so multi-byte characters
+    // advance it by their real width.
+    let mut prev: Option<(usize, char)> = None;
+
+    for (pos, ch) in filter {
+        let resume = prev.map_or(0, |(prev_pos, prev_char): (usize, char)| {
+            prev_pos + prev_char.len_utf8()
+        });
+        if pos > resume {
+            parts.push(line[resume..pos].to_string());
+            parts.push(String::new());
+        }
+        // `parts` always has at least one element
+        if let Some(last) = parts.last_mut() {
+            last.push(ch);
+        }
+        prev = Some((pos, ch));
+    }
+
+    let (last_pos, last_char) = prev?;
+    let resume = last_pos + last_char.len_utf8();
+    if resume < line.len() {
+        parts.push(line[resume..].to_string());
+    }
+    Some(parts)
+}
+
 impl<'a> CharFilter<'a> {
     /// Create a new `CharFilter`
     ///

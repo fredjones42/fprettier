@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::parser::char_filter::CharFilter;
+use crate::parser::char_filter::{split_masked_regions, CharFilter};
 
 /// Fortran keywords
 static F90_KEYWORDS_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -665,49 +665,12 @@ pub fn convert_case(line: &str, settings: &CaseSettings) -> String {
         return line.to_string();
     }
 
-    // Collect parts of the line, separating strings from code
-    let mut parts: Vec<String> = Vec::new();
-    let mut current_part = String::new();
-    // Byte position just past the last character CharFilter yielded. Computed
-    // from the character's own width, so multi-byte characters do not make the
-    // skipped-content slices land inside a character.
-    let mut next_byte: Option<usize> = None;
-
-    // Use CharFilter to iterate through non-string, non-comment positions
-    for (pos, c) in CharFilter::code_and_comments(line) {
-        // If we skipped positions, there was a string
-        if let Some(prev_end) = next_byte {
-            if pos > prev_end {
-                // Save current part
-                if !current_part.is_empty() {
-                    parts.push(current_part);
-                    current_part = String::new();
-                }
-                // Add the skipped string part unchanged
-                parts.push(line[prev_end..pos].to_string());
-            }
-        } else if pos > 0 {
-            // String at the beginning
-            parts.push(line[..pos].to_string());
-        }
-
-        current_part.push(c);
-        next_byte = Some(pos + c.len_utf8());
-    }
-
-    // Handle remaining content
-    if !current_part.is_empty() {
-        parts.push(current_part);
-    }
-    if let Some(prev_end) = next_byte {
-        if prev_end < line.len() {
-            // Remaining string/comment at the end
-            parts.push(line[prev_end..].to_string());
-        }
-    } else if !line.is_empty() {
-        // Entire line was skipped (string or comment)
+    // Comments are walked too: convert_token_with_context leaves their text
+    // alone, but a `!` inside a string must not start one.
+    let Some(parts) = split_masked_regions(line, CharFilter::code_and_comments(line)) else {
+        // The whole line is one string or comment; nothing to convert
         return line.to_string();
-    }
+    };
 
     // Process each part
     let result: String = parts

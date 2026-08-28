@@ -13,7 +13,7 @@ use crate::config::{
     WS_ASSIGNMENT, WS_COMMA, WS_CONCAT, WS_DECL, WS_INTRINSICS, WS_LOGICAL, WS_MULTDIV,
     WS_PLUSMINUS, WS_PRINT, WS_RELATIONAL, WS_TYPE,
 };
-use crate::parser::char_filter::CharFilter;
+use crate::parser::char_filter::{split_masked_regions, CharFilter};
 use crate::parser::patterns::{
     DEFINED_OP_RE, END_RE, GENERIC_SPEC_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOGICAL_LIT_RE,
     LOG_OP_RE, REL_OP_RE, USE_RE,
@@ -925,48 +925,11 @@ fn add_spacing_around_conditional(text: &str, paren_has_cond: &mut Vec<bool>) ->
     out
 }
 
-/// Split a line into alternating code and non-code parts.
-///
-/// Everything [`CharFilter`] skips over — a string literal, a comment, a fypp
-/// expression — becomes a part of its own, so the operator passes can walk the
-/// parts and leave those alone. Returns `None` when the filter yields nothing,
-/// i.e. the whole line is one of those regions and there is no code to format.
-fn split_code_parts(line: &str) -> Option<Vec<String>> {
-    let mut line_parts: Vec<String> = vec![String::new()];
-    // The byte just past the last code character, which is where any skipped
-    // region begins. Tracked as (position, char) so multi-byte chars advance
-    // it correctly.
-    let mut prev_info: Option<(usize, char)> = None;
-
-    for (pos, ch) in CharFilter::code(line) {
-        let resume = prev_info.map_or(0, |(prev_pos, prev_char): (usize, char)| {
-            prev_pos + prev_char.len_utf8()
-        });
-        if pos > resume && !line[resume..pos].trim().is_empty() {
-            line_parts.push(line[resume..pos].to_string());
-            line_parts.push(String::new());
-        }
-
-        // `line_parts` always has at least one element
-        if let Some(last_part) = line_parts.last_mut() {
-            last_part.push(ch);
-        }
-        prev_info = Some((pos, ch));
-    }
-
-    let (last_pos, last_char) = prev_info?;
-    let resume = last_pos + last_char.len_utf8();
-    if resume < line.len() {
-        line_parts.push(line[resume..].to_string());
-    }
-    Some(line_parts)
-}
-
 fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
     // Placeholder to protect pointer assignment (=>) from relational processing
     const PLACEHOLDER: &str = "\x00POINTER_ASSIGN\x00";
 
-    let Some(mut line_parts) = split_code_parts(line) else {
+    let Some(mut line_parts) = split_masked_regions(line, CharFilter::code(line)) else {
         return line.to_string();
     };
 
