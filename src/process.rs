@@ -1355,6 +1355,57 @@ fn apply_pre_ampersand_indentation(
     }
 }
 
+/// Rewrite every physical line of a logical line, skipping any that begins
+/// inside a string literal: its leading text is data, not code.
+fn map_code_lines(
+    lines: &mut [String],
+    fortran_line: &FortranLine,
+    rewrite: impl Fn(&str) -> String,
+) {
+    for (i, line) in lines.iter_mut().enumerate() {
+        if !fortran_line.starts_in_string(i) {
+            *line = rewrite(line);
+        }
+    }
+}
+
+/// Pin the preprocessor directives of a logical line to column 0, leaving any
+/// Fortran code sharing the line at the indent it already has.
+fn pin_directives_to_column_zero(lines: &mut [String]) {
+    for line in lines {
+        let trimmed = line.trim_start();
+        if CPP_LINE_RE.is_match(trimmed) {
+            *line = trimmed.to_string();
+        }
+    }
+}
+
+/// Replace the OMP conditional prefix with spaces, so the formatting passes
+/// see plain Fortran without any column shifting under them. The indent pass
+/// writes the prefix back; [`restore_omp_prefix`] covers the case where it is
+/// switched off.
+fn blank_out_omp_prefix(lines: &mut [String], prefix: &str) {
+    if prefix.is_empty() {
+        return;
+    }
+    for line in lines {
+        if let Some(rest) = line.strip_prefix(prefix) {
+            *line = format!("{}{rest}", " ".repeat(prefix.len()));
+        }
+    }
+}
+
+/// Put the OMP conditional prefix back on every line, not just the first.
+///
+/// Only needed when the indent pass is off, which would otherwise do it.
+/// Without this a continuation loses its `!$` and pass 2's alignment drifts by
+/// the width of the prefix on every run.
+fn restore_omp_prefix(lines: &mut [String], prefix: &str) {
+    for line in lines {
+        *line = format!("{prefix}{}", line.trim_start());
+    }
+}
+
 /// Single formatting pass
 ///
 /// Either whitespace formatting or indentation, controlled by flags
@@ -1386,6 +1437,14 @@ fn format_pass<R: BufRead, W: Write>(
     // Whether we are inside a `!&<` ... `!&>` deactivation block
     let mut in_deactivation_block = false;
 
+    // Zero means "no limit configured", which still caps splitting at the
+    // threshold beyond which a line is taken to be deliberately long
+    let effective_line_length = if config.line_length == 0 {
+        LINE_SPLIT_THRESHOLD
+    } else {
+        config.line_length
+    };
+
     let mut stream = InputStream::new(input);
     while let Some(fortran_line) = stream.next_fortran_line()? {
         let is_blank = is_blank_line(&fortran_line);
@@ -1411,18 +1470,7 @@ fn format_pass<R: BufRead, W: Write>(
             .map(|line| line.starts_with(' ') || line.starts_with('\t'))
             .collect();
 
-        if !fortran_line.omp_prefix.is_empty() {
-            for line in &mut output_lines {
-                if line.starts_with(&fortran_line.omp_prefix) {
-                    // Blanks, not deletion, so the rest of the line keeps its column
-                    *line = format!(
-                        "{}{}",
-                        " ".repeat(fortran_line.omp_prefix.len()),
-                        &line[fortran_line.omp_prefix.len()..]
-                    );
-                }
-            }
-        }
+        blank_out_omp_prefix(&mut output_lines, &fortran_line.omp_prefix);
 
         let labels = split_off_label(
             &fortran_line,
@@ -1440,7 +1488,6 @@ fn format_pass<R: BufRead, W: Write>(
         let (pre_ampersand, ampersand_sep, manual_lines_indent) =
             extract_and_format_pre_ampersands(&mut output_lines, &fortran_line, &pass_ctx, flags);
 
-        // Apply whitespace formatting
         apply_whitespace_to_lines(
             &mut output_lines,
             &fortran_line,
@@ -1450,45 +1497,29 @@ fn format_pass<R: BufRead, W: Write>(
             &ampersand_sep,
         );
 
-        // Apply relational operator replacement if enabled
-        // This converts between Fortran-style (.lt., .eq., etc.) and C-style (<, ==, etc.)
+        // `.lt.`/`.eq.` <-> `<`/`==`
         if pass_ctx.config.enable_replacements && flags.is_rewritable_code() {
-            for (i, line) in output_lines.iter_mut().enumerate() {
-                if !fortran_line.starts_in_string(i) {
-                    *line = replace_relational_operators(line, pass_ctx.config.c_relations);
-                }
-            }
+            map_code_lines(&mut output_lines, &fortran_line, |line| {
+                replace_relational_operators(line, pass_ctx.config.c_relations)
+            });
         }
 
-        // Apply case conversion if enabled and not deactivated
-        // Skip CPP and fypp lines: they are not Fortran code, and fypp only
-        // recognizes its directives (#:if, #:endif, ...) in lower case
+        // Neither preprocessor is Fortran, and fypp only recognizes its own
+        // directives (#:if, #:endif, ...) in lower case
         if case_settings.is_enabled() && flags.is_rewritable_code() {
-            for (i, line) in output_lines.iter_mut().enumerate() {
-                if !fortran_line.starts_in_string(i) {
-                    *line = convert_case(line, &case_settings);
-                }
-            }
+            map_code_lines(&mut output_lines, &fortran_line, |line| {
+                convert_case(line, &case_settings)
+            });
         }
 
-        // Store computed indents for use in comment handling
+        // Kept for the comment handling at write time
         let mut computed_indents: Vec<usize> = Vec::new();
 
-        // Apply indentation if requested and not deactivated
         if pass_ctx.impose_indent && !flags.skip_format {
             if flags.is_cpp_line {
-                // C preprocessor lines are pinned to column 0
-                // Only strip indentation from lines that actually ARE preprocessor directives
-                // This preserves indentation for Fortran code in the same logical line
-                for line in &mut output_lines {
-                    let line_trimmed = line.trim_start();
-                    // Only pin actual CPP directive lines to column 0
-                    if CPP_LINE_RE.is_match(line_trimmed) {
-                        *line = line_trimmed.to_string();
-                    }
-                    // Other lines (Fortran code) keep their indentation
-                }
-                // Don't update indenter scope - CPP lines don't affect Fortran scope
+                // A directive does not affect Fortran scope, so the indenter
+                // is deliberately left untouched here
+                pin_directives_to_column_zero(&mut output_lines);
             } else if let Some(ref mut ind) = indenter {
                 compute_and_apply_indentation(
                     &mut output_lines,
@@ -1503,19 +1534,10 @@ fn format_pass<R: BufRead, W: Write>(
                     flags.is_fypp_line,
                 );
             }
-        } else if !fortran_line.omp_prefix.is_empty() && !output_lines.is_empty() {
-            // When indentation is disabled, we still need to add OMP prefix back
-            // to ALL lines (not just line 0) so that Pass 2 sees consistent prefixes.
-            // Without this, continuation lines lose their !$ prefix and Pass 2's
-            // alignment computation drifts by the prefix length on each run.
-            let prefix = &fortran_line.omp_prefix;
-            for line in &mut output_lines {
-                let trimmed = line.trim_start();
-                *line = format!("{prefix}{trimmed}");
-            }
+        } else if !fortran_line.omp_prefix.is_empty() {
+            restore_omp_prefix(&mut output_lines, &fortran_line.omp_prefix);
         }
 
-        // Prepend ampersands back to continuation lines if we extracted them earlier
         if !pre_ampersand.is_empty() && pass_ctx.impose_indent {
             apply_pre_ampersand_indentation(
                 &mut output_lines,
@@ -1527,12 +1549,6 @@ fn format_pass<R: BufRead, W: Write>(
             );
         }
 
-        // Apply line splitting if line_length is configured
-        let effective_line_length = if pass_ctx.config.line_length == 0 {
-            LINE_SPLIT_THRESHOLD
-        } else {
-            pass_ctx.config.line_length
-        };
         let line_origins = split_lines_if_needed(
             &mut output_lines,
             effective_line_length,
@@ -1540,10 +1556,8 @@ fn format_pass<R: BufRead, W: Write>(
             flags.is_cpp_line || flags.is_fypp_line,
         );
 
-        // Compute comment placement indices
         let (comment_line_indices, split_origins) = compute_comment_indices(&line_origins);
 
-        // Create write context
         let write_ctx = LineWriteContext {
             computed_indents: &computed_indents,
             lines_were_indented: &lines_were_indented,
@@ -1552,7 +1566,6 @@ fn format_pass<R: BufRead, W: Write>(
             effective_line_length,
         };
 
-        // Write output lines
         for (i, line) in output_lines.iter().enumerate() {
             let origin = line_origins.get(i).copied().unwrap_or(i);
             write_output_line(
@@ -1568,8 +1581,6 @@ fn format_pass<R: BufRead, W: Write>(
             )?;
         }
 
-        // Set skip_blank for next iteration
-        // Skip subsequent blank lines if this line was blank and had no special content
         skip_blank = is_blank && labels.label.is_empty();
     }
 
