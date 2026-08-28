@@ -901,91 +901,93 @@ fn compute_and_apply_indentation(
     let has_pre_ampersand = !pre_ampersand.is_empty();
 
     for (i, line) in output_lines.iter_mut().enumerate() {
-        if i < computed_indents.len() {
-            // Skip continuation lines when we have pre_ampersand
-            // (first line still gets indent, continuation lines are handled later)
-            // For fypp lines with continuations, use per-line check since fypp
-            // continuation lines are marked as special and have empty pre_ampersand
-            let should_skip = if is_fypp_line {
-                // For fypp: only skip if THIS line has pre_ampersand
-                let line_has_pre_amp = pre_ampersand.get(i).is_some_and(|s| !s.is_empty());
-                line_has_pre_amp && i > 0
+        if i >= computed_indents.len() {
+            continue;
+        }
+
+        // Skip continuation lines when we have pre_ampersand
+        // (first line still gets indent, continuation lines are handled later)
+        // For fypp lines with continuations, use per-line check since fypp
+        // continuation lines are marked as special and have empty pre_ampersand
+        let should_skip = if is_fypp_line {
+            // For fypp: only skip if THIS line has pre_ampersand
+            let line_has_pre_amp = pre_ampersand.get(i).is_some_and(|s| !s.is_empty());
+            line_has_pre_amp && i > 0
+        } else {
+            // For non-fypp: skip ALL continuation lines if any has leading &
+            has_pre_ampersand && i > 0
+        };
+        if should_skip {
+            continue;
+        }
+
+        // Determine if this line should preserve original indent
+        // Rules for fypp lines:
+        // 1. When indent_fypp=True (default):
+        //    - First line (i=0) of fypp directive: use scope-based indent
+        //    - Continuation lines (i>0) of fypp directive: preserve original indent
+        // 2. When indent_fypp=False:
+        //    - All fypp directive lines preserve original indent
+        let is_line_fypp = FYPP_LINE_RE.is_match(line.trim_start());
+
+        let preserve_original_indent =
+            // Continuation lines of multiline fypp directives preserve original
+            (is_multiline_fypp_directive && i > 0)
+            // Any fypp line preserves original when indent_fypp=False
+            // Continuation fypp lines (i>0) also preserve original
+            || (is_line_fypp && (!pass_ctx.config.indent_fypp || i > 0));
+
+        if preserve_original_indent {
+            // For fypp continuation lines when indent_fypp=True:
+            // Add scope-based indent to original relative indent
+            // Example: input "    & content" (4 spaces) + scope indent (6)
+            //          -> output "          & content" (10 spaces)
+            if pass_ctx.config.indent_fypp && is_multiline_fypp_directive && i > 0 {
+                let first_line = fortran_line.lines.first().map_or("", String::as_str);
+                let base_indent = computed_indents.first().copied().unwrap_or(0);
+                *line = rebase_fypp_continuation(line, first_line, base_indent);
+            }
+            // Otherwise preserve original indentation as-is
+            continue;
+        }
+
+        // For labeled lines (i == 0 with label), preserve leading whitespace
+        // The label handling code at write time uses these spaces for padding
+        if i == 0 && !labels.label.is_empty() {
+            // Don't strip/re-apply indent for labeled first line
+            // The leading spaces encode the column position after label
+            continue;
+        }
+
+        let mut indent = computed_indents[i];
+        // Remove existing leading whitespace
+        let trimmed = line.trim_start();
+
+        // For continuation lines starting with &, adjust indent by -1
+        // The & is a continuation marker, so content should align after bracket
+        if i > 0 && trimmed.starts_with('&') && indent > 0 {
+            indent -= 1;
+        }
+
+        // Apply new indent - but don't add spaces to empty lines
+        if trimmed.is_empty() {
+            *line = String::new();
+        } else {
+            // Handle OMP conditional prefix specially
+            // OMP conditional (!$ ) is written at column 0, with padding
+            // to align the code with the expected indent
+            // Note: ALL lines in an OMP conditional block have the !$ prefix
+            if fortran_line.omp_prefix.is_empty() {
+                *line = format!("{}{}", " ".repeat(indent), trimmed);
             } else {
-                // For non-fypp: skip ALL continuation lines if any has leading &
-                has_pre_ampersand && i > 0
-            };
-            if should_skip {
-                continue;
-            }
-
-            // Determine if this line should preserve original indent
-            // Rules for fypp lines:
-            // 1. When indent_fypp=True (default):
-            //    - First line (i=0) of fypp directive: use scope-based indent
-            //    - Continuation lines (i>0) of fypp directive: preserve original indent
-            // 2. When indent_fypp=False:
-            //    - All fypp directive lines preserve original indent
-            let is_line_fypp = FYPP_LINE_RE.is_match(line.trim_start());
-
-            let preserve_original_indent =
-                // Continuation lines of multiline fypp directives preserve original
-                (is_multiline_fypp_directive && i > 0)
-                // Any fypp line preserves original when indent_fypp=False
-                // Continuation fypp lines (i>0) also preserve original
-                || (is_line_fypp && (!pass_ctx.config.indent_fypp || i > 0));
-
-            if preserve_original_indent {
-                // For fypp continuation lines when indent_fypp=True:
-                // Add scope-based indent to original relative indent
-                // Example: input "    & content" (4 spaces) + scope indent (6)
-                //          -> output "          & content" (10 spaces)
-                if pass_ctx.config.indent_fypp && is_multiline_fypp_directive && i > 0 {
-                    let first_line = fortran_line.lines.first().map_or("", String::as_str);
-                    let base_indent = computed_indents.first().copied().unwrap_or(0);
-                    *line = rebase_fypp_continuation(line, first_line, base_indent);
-                }
-                // Otherwise preserve original indentation as-is
-                continue;
-            }
-
-            // For labeled lines (i == 0 with label), preserve leading whitespace
-            // The label handling code at write time uses these spaces for padding
-            if i == 0 && !labels.label.is_empty() {
-                // Don't strip/re-apply indent for labeled first line
-                // The leading spaces encode the column position after label
-                continue;
-            }
-
-            let mut indent = computed_indents[i];
-            // Remove existing leading whitespace
-            let trimmed = line.trim_start();
-
-            // For continuation lines starting with &, adjust indent by -1
-            // The & is a continuation marker, so content should align after bracket
-            if i > 0 && trimmed.starts_with('&') && indent > 0 {
-                indent -= 1;
-            }
-
-            // Apply new indent - but don't add spaces to empty lines
-            if trimmed.is_empty() {
-                *line = String::new();
-            } else {
-                // Handle OMP conditional prefix specially
-                // OMP conditional (!$ ) is written at column 0, with padding
-                // to align the code with the expected indent
-                // Note: ALL lines in an OMP conditional block have the !$ prefix
-                if fortran_line.omp_prefix.is_empty() {
-                    *line = format!("{}{}", " ".repeat(indent), trimmed);
-                } else {
-                    let omp_len = fortran_line.omp_prefix.len();
-                    let padding = indent.saturating_sub(omp_len);
-                    *line = format!(
-                        "{}{}{}",
-                        fortran_line.omp_prefix,
-                        " ".repeat(padding),
-                        trimmed
-                    );
-                }
+                let omp_len = fortran_line.omp_prefix.len();
+                let padding = indent.saturating_sub(omp_len);
+                *line = format!(
+                    "{}{}{}",
+                    fortran_line.omp_prefix,
+                    " ".repeat(padding),
+                    trimmed
+                );
             }
         }
     }
