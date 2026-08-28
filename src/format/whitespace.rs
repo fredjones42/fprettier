@@ -383,6 +383,57 @@ impl Charwise<'_> {
 
     /// Handle opening delimiters `(`, `(/`, `[`: decide whether a space
     /// belongs before them, then attach what follows.
+    /// Whether a space belongs before an opening delimiter, given `lhs`, the
+    /// text to its left. Call after `self.level` has been incremented for the
+    /// delimiter: the assignment rule below reads it.
+    fn needs_space_before_delimiter(&self, delim: &str, lhs: &str) -> bool {
+        if self.whitespace_flags[8] {
+            // A statement keyword — ALLOCATE, WRITE, IF, DO WHILE, CASE — takes
+            // a space before its `(`. But `obj%open(` is component access, and
+            // a defined-I/O `generic :: read(` spec is not a statement either.
+            let ends_with_percent_word = lhs.rfind('%').is_some_and(|percent_pos| {
+                lhs[percent_pos + 1..]
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_')
+            });
+            if !ends_with_percent_word
+                && !GENERIC_SPEC_RE.is_match(lhs)
+                && (INTR_STMTS_PAR_RE.is_match(lhs) || KEYWORD_PAREN_RE.is_match(lhs))
+            {
+                return true;
+            }
+            // The same keyword after a semicolon: `do i=1,10; if(x)`
+            if let Some(semi_pos) = lhs.rfind(';') {
+                if KEYWORD_PAREN_RE.is_match(&lhs[semi_pos + 1..]) {
+                    return true;
+                }
+            }
+        }
+
+        // With nothing but spaces to the left there is nothing to separate from
+        let Some(prev) = lhs.chars().rev().find(|&c| c != ' ') else {
+            return false;
+        };
+
+        match prev {
+            // A closing delimiter or a comma:
+            // `write (*, *)(merge` -> `write (*, *) (merge`, `[1,(/3` -> `[1, (/3`
+            ')' | ']' | ',' => true,
+            // An assignment: `big_arr =[1` -> `big_arr = [1`. Only at the top
+            // level, so a keyword argument inside a call keeps its `=`.
+            '=' | '>' if self.level == 1 => true,
+            // An array constructor after `+`/`-` takes a space; a `(` after an
+            // operator does not, being a function call: `3*(x)`, `-(x)`
+            '+' | '-' if delim == "[" => true,
+            // Otherwise a space goes before the delimiter unless what precedes
+            // it is part of the same token: a name, a number, another opening
+            // delimiter (`/` being the second half of `(/`), or an operator
+            // the delimiter binds to.
+            '(' | '[' | '/' | '_' | '*' | '=' | '+' | '-' | ':' => false,
+            _ => self.whitespace_flags[8] && !prev.is_alphanumeric(),
+        }
+    }
+
     fn try_open_delimiter(&mut self) -> bool {
         let ch = self.chars[self.i];
         if ch != '(' && ch != '[' {
@@ -398,94 +449,8 @@ impl Charwise<'_> {
         };
         self.level += 1;
 
-        // Check if we need space before opening delimiter
         let lhs: String = self.chars[..self.i].iter().collect();
-        let mut sep1 = false;
-
-        // Check for keywords that need space before (
-        if self.whitespace_flags[8] {
-            // Check if lhs ends with %word pattern (e.g., obj%method, hdf5%open)
-            // This prevents adding space in type component member access
-            let ends_with_percent_word = if let Some(percent_pos) = lhs.rfind('%') {
-                // Check if everything after % is alphanumeric/underscore (no spaces)
-                lhs[percent_pos + 1..]
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_')
-            } else {
-                false
-            };
-
-            // Check for intrinsic statements (ALLOCATE, WRITE, etc.)
-            // or IF, DO WHILE, CASE, etc.
-            // But NOT if preceded by % (e.g., obj%open should not add space)
-            if !ends_with_percent_word
-                && !GENERIC_SPEC_RE.is_match(&lhs)
-                && (INTR_STMTS_PAR_RE.is_match(&lhs) || KEYWORD_PAREN_RE.is_match(&lhs))
-            {
-                sep1 = true;
-            }
-            // Also check after semicolon (e.g., "do i=1,10; if(x)")
-            // Take portion after last semicolon and check
-            else if let Some(semi_pos) = lhs.rfind(';') {
-                let after_semi = &lhs[semi_pos + 1..];
-                if KEYWORD_PAREN_RE.is_match(after_semi) {
-                    sep1 = true;
-                }
-            }
-        }
-
-        // Also need space after closing delimiter before opening
-        // e.g., "write (*, *)(merge" -> "write (*, *) (merge"
-        let prev_non_space = lhs.chars().rev().find(|&c| c != ' ');
-        if prev_non_space == Some(')') || prev_non_space == Some(']') {
-            sep1 = true;
-        }
-
-        // Also need space after assignment before opening bracket
-        // e.g., "big_arr =[1" -> "big_arr = [1"
-        // But NOT for named parameters in function calls (level > 1)
-        // Note: level was already incremented, so level==1 means top-level assignment
-        if self.level == 1 && (prev_non_space == Some('=') || prev_non_space == Some('>')) {
-            sep1 = true;
-        }
-
-        // Also need space after comma before opening bracket
-        // e.g., "[1,(/3" -> "[1, (/3"
-        if prev_non_space == Some(',') {
-            sep1 = true;
-        }
-
-        // Need space before [ after certain operators like + for array constructors
-        // But NOT before ( after operators (function call style: 3*(x), -(x))
-        if delim == "[" {
-            if let Some(pc) = prev_non_space {
-                if pc == '+' || pc == '-' {
-                    sep1 = true;
-                }
-            }
-        }
-
-        // General case: add space before ( unless the previous char is a special char
-        // This handles cases like "function name(", "subroutine name(", etc.
-        // Add space UNLESS the previous char is one of: ( [ (/ alphanumeric _ * / = + - :
-        if self.whitespace_flags[8] && !sep1 {
-            if let Some(pc) = prev_non_space {
-                // Skip space if ending with delimiter, operator, alphanumeric, or underscore
-                let skip_space = pc == '('
-                    || pc == '['
-                    || pc == '/'  // part of (/
-                    || pc.is_alphanumeric()
-                    || pc == '_'  // underscore is valid in variable names
-                    || pc == '*'
-                    || pc == '='
-                    || pc == '+'
-                    || pc == '-'
-                    || pc == ':';
-                if !skip_space {
-                    sep1 = true;
-                }
-            }
-        }
+        let sep1 = self.needs_space_before_delimiter(delim, &lhs);
 
         // Apply formatting
         // Remove trailing spaces (but preserve if sep1 is true, we'll add it back)
