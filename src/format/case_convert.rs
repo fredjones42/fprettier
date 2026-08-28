@@ -809,9 +809,7 @@ static EXPONENT_HEAD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\d.]+
 fn split_preserving_separators(s: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
-    let chars = s.chars().peekable();
-
-    for c in chars {
+    for c in s.chars() {
         if c.is_alphanumeric() || c == '_' || c == '.' {
             current.push(c);
         } else {
