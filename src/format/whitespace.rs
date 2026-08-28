@@ -50,6 +50,12 @@ static SCI_NOTATION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?:^|[^a-z_])(\d+\.?\d*|\d*\.?\d+)[ed]$").unwrap());
 
 /// Remove trailing spaces from the output buffer
+/// The last character of `s` that is not a space, ignoring any trailing run
+/// of spaces this pass has already emitted.
+fn last_non_space(s: &str) -> Option<char> {
+    s.chars().rev().find(|&c| c != ' ')
+}
+
 fn pop_trailing_spaces(s: &mut String) {
     s.truncate(s.trim_end_matches(' ').len());
 }
@@ -321,6 +327,16 @@ struct Charwise<'a> {
 }
 
 impl Charwise<'_> {
+    /// The last non-space character written to `out` so far
+    fn prev_non_space(&self) -> Option<char> {
+        last_non_space(&self.out)
+    }
+
+    /// The input character `offset` positions past the cursor, if any
+    fn peek(&self, offset: usize) -> Option<char> {
+        self.chars.get(self.i + offset).copied()
+    }
+
     /// Copy strings and fypp expressions (`#{...}#`, `${...}$`, `@{...}@`)
     /// verbatim, tracking their open/close state.
     fn try_verbatim_regions(&mut self) -> bool {
@@ -341,10 +357,7 @@ impl Charwise<'_> {
         }
 
         // Check for fypp expression start: #{ or ${ or @{
-        if (ch == '#' || ch == '$' || ch == '@')
-            && self.i + 1 < self.chars.len()
-            && self.chars[self.i + 1] == '{'
-        {
+        if (ch == '#' || ch == '$' || ch == '@') && self.peek(1) == Some('{') {
             self.in_fypp = Some(ch); // Store the open char - same char is used for close
             self.out.push(ch);
             self.out.push(self.chars[self.i + 1]);
@@ -411,7 +424,7 @@ impl Charwise<'_> {
         }
 
         // With nothing but spaces to the left there is nothing to separate from
-        let Some(prev) = lhs.chars().rev().find(|&c| c != ' ') else {
+        let Some(prev) = last_non_space(lhs) else {
             return false;
         };
 
@@ -456,7 +469,7 @@ impl Charwise<'_> {
         // Remove trailing spaces (but preserve if sep1 is true, we'll add it back)
         // Also preserve space after binary operators (+, -, *, /)
         // Check the last non-space character in the output
-        let last_non_space_in_out = self.out.chars().rev().find(|&c| c != ' ');
+        let last_non_space_in_out = self.prev_non_space();
         let preserve_space = matches!(last_non_space_in_out, Some('+' | '-' | '*' | '/'));
 
         if !preserve_space {
@@ -481,9 +494,7 @@ impl Charwise<'_> {
     /// preceding token and decide the spacing that follows.
     fn try_close_delimiter(&mut self) -> bool {
         let ch = self.chars[self.i];
-        let is_close_start = ch == ')'
-            || ch == ']'
-            || (ch == '/' && self.i + 1 < self.chars.len() && self.chars[self.i + 1] == ')');
+        let is_close_start = ch == ')' || ch == ']' || (ch == '/' && self.peek(1) == Some(')'));
         if !is_close_start {
             return false;
         }
@@ -547,9 +558,7 @@ impl Charwise<'_> {
                 || next_ch == '/'
                 || next_ch == '*'
                 || next_ch == ';'
-                || (next_ch == '/'
-                    && self.i + 1 < self.chars.len()
-                    && self.chars[self.i + 1] == ')');
+                || (next_ch == '/' && self.peek(1) == Some(')'));
 
             if !skip_space {
                 self.out.push(' ');
@@ -608,7 +617,7 @@ impl Charwise<'_> {
             return false;
         }
         // Check if it's => (pointer assignment) first
-        let is_pointer = self.i + 1 < self.chars.len() && self.chars[self.i + 1] == '>';
+        let is_pointer = self.peek(1) == Some('>');
 
         // Check if it's part of a relational operator (==, /=, <=, >=)
         // But NOT if it's => (pointer assignment)
@@ -654,8 +663,7 @@ impl Charwise<'_> {
     /// spacing is preserved by falling through.
     fn try_declaration(&mut self) -> bool {
         if self.chars[self.i] != ':'
-            || self.i + 1 >= self.chars.len()
-            || self.chars[self.i + 1] != ':'
+            || self.peek(1) != Some(':')
             || !self.format_decl
             || !self.whitespace_flags[9]
         {
@@ -682,17 +690,14 @@ impl Charwise<'_> {
     /// `whitespace_flags[10]` is set, otherwise normalized to no spaces.
     /// Must be checked before mult/div so `/` is not misread.
     fn try_concat(&mut self) -> bool {
-        if self.chars[self.i] != '/'
-            || self.i + 1 >= self.chars.len()
-            || self.chars[self.i + 1] != '/'
-        {
+        if self.chars[self.i] != '/' || self.peek(1) != Some('/') {
             return false;
         }
         // When whitespace_flags[10] is false, normalize by removing surrounding spaces
         if !self.whitespace_flags[10] {
             // Check if the previous non-space character is a comma
             // If so, preserve the space after comma (controlled by whitespace_flags[0])
-            let prev_non_space = self.out.chars().rev().find(|&c| c != ' ');
+            let prev_non_space = self.prev_non_space();
             let preserve_comma_space = prev_non_space == Some(',') && self.whitespace_flags[0];
 
             // Remove trailing spaces before // (unless preserving comma space)
@@ -712,13 +717,9 @@ impl Charwise<'_> {
 
         // whitespace_flags[10] is true - add spacing around //
         let prev_char = self.out.chars().last();
-        let prev_non_space = self.out.chars().rev().find(|&c| c != ' ');
+        let prev_non_space = self.prev_non_space();
         let skip_space_before = prev_non_space == Some('(') || prev_non_space == Some('[');
-        let next_after_concat = if self.i + 2 < self.chars.len() {
-            Some(self.chars[self.i + 2])
-        } else {
-            None
-        };
+        let next_after_concat = self.peek(2);
         let skip_space_after = next_after_concat == Some(')') || next_after_concat == Some(']');
 
         // Remove trailing spaces
@@ -753,7 +754,7 @@ impl Charwise<'_> {
             return false;
         }
         // Look at the last non-space character (we may have added a space after delimiter)
-        let prev_char = self.out.chars().rev().find(|&c| c != ' ');
+        let prev_char = self.prev_non_space();
 
         // Check if this is a scientific notation exponent sign
         // Must verify that what precedes is actually a number, not a variable name
@@ -816,26 +817,22 @@ impl Charwise<'_> {
             return false;
         }
         // Check for ** (exponentiation) - copy through
-        if ch == '*' && self.i + 1 < self.chars.len() && self.chars[self.i + 1] == '*' {
+        if ch == '*' && self.peek(1) == Some('*') {
             self.out.push(ch);
             self.i += 1;
             return true;
         }
 
         // Check for // (concatenation) - already handled by try_concat
-        if ch == '/' && self.i + 1 < self.chars.len() && self.chars[self.i + 1] == '/' {
+        if ch == '/' && self.peek(1) == Some('/') {
             self.out.push(ch);
             self.i += 1;
             return true;
         }
 
         // Check for (/ or /) - array constructor delimiters, copy through
-        let prev_non_space = self.out.chars().rev().find(|&c| c != ' ');
-        let next_char = if self.i + 1 < self.chars.len() {
-            Some(self.chars[self.i + 1])
-        } else {
-            None
-        };
+        let prev_non_space = self.prev_non_space();
+        let next_char = self.peek(1);
 
         if ch == '/' && (prev_non_space == Some('(') || next_char == Some(')')) {
             self.out.push(ch);

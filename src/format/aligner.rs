@@ -209,19 +209,16 @@ impl F90Aligner {
             }
         }
 
-        // Don't align if delimiter opening directly before line break
-        // Pattern: DEL_OPEN + whitespace + LINEBREAK (i.e., "( &" not "(x, y, &")
-        if self.level > 0 {
-            // Check for pattern: opening delimiter followed directly by whitespace and &
-            if DEL_BEFORE_BREAK_RE.is_match(line) {
-                if self.bracket_indent_stack.len() > 1 {
-                    let prev = self.bracket_indent_stack[self.bracket_indent_stack.len() - 2];
-                    if let Some(last) = self.bracket_indent_stack.last_mut() {
-                        *last = prev;
-                    }
-                } else if !self.bracket_indent_stack.is_empty() {
-                    self.bracket_indent_stack[0] = 0;
+        // Don't align on an opening delimiter that sits directly before the
+        // line break: "( &" gets the enclosing column, not the bracket's.
+        if self.level > 0 && DEL_BEFORE_BREAK_RE.is_match(line) {
+            if self.bracket_indent_stack.len() > 1 {
+                let prev = self.bracket_indent_stack[self.bracket_indent_stack.len() - 2];
+                if let Some(last) = self.bracket_indent_stack.last_mut() {
+                    *last = prev;
                 }
+            } else if !self.bracket_indent_stack.is_empty() {
+                self.bracket_indent_stack[0] = 0;
             }
         }
 
