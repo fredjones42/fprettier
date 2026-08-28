@@ -32,11 +32,12 @@ const POINTER_ASSIGNMENT: &str = "=>";
 /// The line with operators replaced
 #[must_use]
 pub fn replace_relational_operators(line: &str, use_c_style: bool) -> String {
-    // Byte positions outside string literals, the only ones safe to rewrite.
-    // Comments are deliberately not excluded here: this reproduces what
-    // get_safe_positions did, which rewrites operators inside comments too.
+    // Byte positions in code, the only ones safe to rewrite. Callers in the
+    // formatter have had their comments split off upstream, so in practice
+    // this only masks string literals - but the operators are just as much
+    // prose inside a comment, and nothing here should depend on that split.
     let mut safe = vec![false; line.len()];
-    for (pos, _) in CharFilter::code_and_comments(line) {
+    for (pos, _) in CharFilter::code(line) {
         safe[pos] = true;
     }
 
@@ -130,6 +131,21 @@ mod tests {
         let input = "if (a < b) then";
         let result = replace_relational_operators(input, true);
         assert_eq!(result, "if (a < b) then");
+    }
+
+    #[test]
+    fn test_comment_text_is_left_alone() {
+        // An operator spelled out in prose is prose, in either direction
+        let fortran = "if (a .lt. b) x = 1 ! .eq. means equal, not <";
+        assert_eq!(
+            replace_relational_operators(fortran, true),
+            "if (a < b) x = 1 ! .eq. means equal, not <"
+        );
+        let c_style = "if (a < b) x = 1 ! == means equal, not .lt.";
+        assert_eq!(
+            replace_relational_operators(c_style, false),
+            "if (a .lt. b) x = 1 ! == means equal, not .lt."
+        );
     }
 
     #[test]
