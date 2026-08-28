@@ -24,6 +24,10 @@ const CONFIG_FILE_NAME: &str = "fprettier.toml";
 /// would have fprettier write lines no conforming processor need accept.
 pub const MAX_LINE_LENGTH: usize = 10_000;
 
+/// Longest statement free source form permits, counting every continuation
+/// line but not the `&`s (F2023 6.3.2.6).
+pub const MAX_STATEMENT_LENGTH: usize = 1_000_000;
+
 /// Main configuration struct for fprettier
 ///
 /// TOML parsing goes through `PartialConfig`; this struct is never

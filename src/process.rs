@@ -24,7 +24,7 @@ use std::sync::LazyLock;
 use anyhow::Result;
 use regex::{Regex, RegexSet};
 
-use crate::config::Config;
+use crate::config::{Config, MAX_LINE_LENGTH, MAX_STATEMENT_LENGTH};
 use crate::format::case_convert::{convert_case, CaseSettings};
 use crate::format::continuation::{
     get_manual_alignment, prepend_ampersands, remove_pre_ampersands, should_auto_align,
@@ -343,6 +343,51 @@ fn extract_label(line: &str) -> (String, String) {
 /// Pass 1: Whitespace formatting (if `impose_whitespace` is true)
 /// Pass 2: Indentation (if `impose_indent` is true)
 /// Case conversion is applied in whichever pass runs (or a dedicated pass if neither)
+/// Diagnose input that already breaks the free source form limits on line
+/// (6.3.2.1) and statement (6.3.2.6) length.
+///
+/// Such input is still formatted — fprettier is not a compiler — but a
+/// formatter is the right place to notice, and no reformatting can bring a
+/// single over-long line back under the limit.
+fn over_limit_warnings(src: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut statement_start = 0;
+    let mut statement_length = 0;
+    let mut statement_reported = false;
+
+    for (i, line) in src.lines().enumerate() {
+        let line = line.trim_end_matches('\r');
+        let length = line.chars().count();
+
+        if length > MAX_LINE_LENGTH {
+            warnings.push(format!(
+                "line {} is {length} characters, over the free-form maximum of {MAX_LINE_LENGTH}",
+                i + 1
+            ));
+        }
+
+        if statement_length == 0 {
+            statement_start = i + 1;
+            statement_reported = false;
+        }
+        statement_length += length;
+        if statement_length > MAX_STATEMENT_LENGTH && !statement_reported {
+            warnings.push(format!(
+                "the statement at line {statement_start} is over the maximum of \
+                 {MAX_STATEMENT_LENGTH} characters"
+            ));
+            statement_reported = true;
+        }
+
+        // A trailing `&` continues the statement onto the next line
+        if !line.trim_end().ends_with('&') {
+            statement_length = 0;
+        }
+    }
+
+    warnings
+}
+
 pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Config) -> Result<()> {
     // Check if case conversion is enabled
     let case_settings = CaseSettings::from_dict(&config.case_dict);
@@ -359,6 +404,13 @@ pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Conf
     let mut reader = input;
     reader.read_to_end(&mut input_buffer)?;
     let crlf_input = input_buffer.windows(2).any(|pair| pair == b"\r\n");
+
+    // Only worth scanning when the input is long enough to break a limit
+    if input_buffer.len() > MAX_LINE_LENGTH {
+        for warning in over_limit_warnings(&String::from_utf8_lossy(&input_buffer)) {
+            eprintln!("Warning: {warning}");
+        }
+    }
 
     // Reorder `use` statements before anything else, so the passes below see the
     // final line order and fix up whatever the reordering left over-length.
@@ -1645,6 +1697,26 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    #[test]
+    fn test_over_limit_warnings() {
+        // Conforming input says nothing
+        assert!(over_limit_warnings("program p\nx = 1\nend program p\n").is_empty());
+
+        // A line past 10 000 characters (6.3.2.1)
+        let long = format!("x = {}\n", "a".repeat(MAX_LINE_LENGTH));
+        let warnings = over_limit_warnings(&long);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("line 1"), "{}", warnings[0]);
+
+        // A statement past 1 000 000 characters, spread over continuations
+        // (6.3.2.6), reported once and by its first line
+        let chunk = format!("x = x + {} &\n", "a".repeat(1000));
+        let statement = format!("program p\n{}x = x\n", chunk.repeat(1001));
+        let warnings = over_limit_warnings(&statement);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("line 2"), "{}", warnings[0]);
+    }
 
     #[test]
     fn test_format_file_whitespace_only() {
