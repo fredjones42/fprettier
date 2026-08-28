@@ -91,6 +91,23 @@ pub fn find_split_position(text: &str, max_width: usize) -> Option<usize> {
     None
 }
 
+/// Where to break what is left of a statement so the fragment before the break
+/// fits within `max_line_length`, or `None` when it neither needs nor admits a
+/// break: it already fits as the last line, or holds no break point.
+fn next_chunk_end(current: &str, max_line_length: usize, indent: usize) -> Option<usize> {
+    let available = max_line_length.checked_sub(indent)?;
+    // A final fragment carries no trailing ` &`, hence the 2
+    if current.len() + 2 <= available {
+        return None;
+    }
+    let cont_break = find_split_position(current, available.checked_sub(2)?)?;
+    // A break at either end makes no progress, and would loop forever
+    if cont_break == 0 || cont_break >= current.len() || current[..cont_break].trim().is_empty() {
+        return None;
+    }
+    Some(cont_break)
+}
+
 /// Attempt to split a long logical line into continuation lines that
 /// respect the configured line-length limit.
 ///
@@ -165,42 +182,40 @@ pub fn auto_split_line(
     let mut current = remainder;
 
     while !current.is_empty() {
-        let available = if max_line_length > current_indent {
-            max_line_length - current_indent
-        } else {
-            return None;
-        };
-
-        if available == 0 {
-            return None;
-        }
-
-        // Final chunk (fits without ampersand)
-        if current.len() + 2 <= available {
+        // What is left either fits, or has no break point in it at all — a
+        // long string literal, say, or a long `a%b%c` path. Emit it as the
+        // final fragment, over-length if it must be, rather than discarding
+        // the breaks already found and leaving the whole statement on one
+        // line.
+        let Some(cont_break) = next_chunk_end(current, max_line_length, current_indent) else {
             new_lines.push(current.to_string());
             break;
-        }
-
-        // Need to split further
-        let split_limit = if available > 2 {
-            available - 2
-        } else {
-            return None;
         };
 
-        let cont_break = find_split_position(current, split_limit)?;
-        // Prevent infinite loop: if we can't make progress, give up
-        if cont_break == 0 || cont_break >= current.len() {
-            return None;
-        }
-
-        let chunk = current[..cont_break].trim_end();
-        if chunk.is_empty() {
-            return None;
-        }
-
-        new_lines.push(format!("{chunk} &"));
+        new_lines.push(format!("{} &", current[..cont_break].trim_end()));
         current = current[cont_break..].trim_start();
+    }
+
+    let widest = new_lines
+        .iter()
+        .enumerate()
+        .map(|(i, fragment)| {
+            let indent = if i == 0 {
+                initial_indent
+            } else {
+                current_indent
+            };
+            indent + fragment.len()
+        })
+        .max()
+        .unwrap_or(0);
+    // Bringing every line within the limit is always worth it. When that is out
+    // of reach — an unbreakable string literal or `a%b%c` path is wider than
+    // the budget by itself — the split is only worth making if it saves more
+    // than the continuation indent it costs. Otherwise `call &` in front of a
+    // 200-character call buys a line and saves one character.
+    if widest > max_line_length && widest + current_indent >= initial_indent + stripped.len() {
+        return None;
     }
 
     // Restore newlines if original had them
@@ -410,6 +425,30 @@ mod tests {
         let text = "abcdefghijklmnopqrstuvwxyz";
         let pos = find_split_position(text, 10);
         assert!(pos.is_none());
+    }
+
+    #[test]
+    fn test_unbreakable_tail_keeps_the_breaks_before_it() {
+        // The tail is one 48-character token: it cannot be broken, but that is
+        // no reason to abandon the break found before it and leave the whole
+        // statement on one 82-character line.
+        let line =
+            "call sub(aaaaaaaaaa, bbbbbbbbbb, cccccccccccccccccccccccccccccccccccccccccccccccc)";
+        let split = auto_split_line(line, 4, 40, 13).expect("the head is breakable");
+        assert_eq!(split[0], "call sub(aaaaaaaaaa, bbbbbbbbbb, &");
+        assert_eq!(split.len(), 2, "one break, then the unbreakable tail");
+        assert!(
+            4 + split[0].len() < 4 + line.len(),
+            "the widest line must actually get narrower"
+        );
+    }
+
+    #[test]
+    fn test_split_not_worth_its_indent_is_declined() {
+        // Breaking after `y =` leaves a 65-character path that cannot be
+        // broken further, so the split costs a line and saves nothing.
+        let line = "y = obj%component%subcomponent%field%another_field_here%final_value_x";
+        assert!(auto_split_line(line, 4, 40, 8).is_none());
     }
 
     #[test]
