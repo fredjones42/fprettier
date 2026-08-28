@@ -34,6 +34,8 @@ pub struct F90Aligner {
     line_indents: Vec<usize>,
     level: usize,                     // Bracket nesting level
     bracket_indent_stack: Vec<usize>, // Stack of alignment positions
+    /// Whether an assignment in this logical line has set the alignment
+    assign_aligned: bool,
 }
 
 impl Default for F90Aligner {
@@ -50,6 +52,7 @@ impl F90Aligner {
             line_indents: Vec::new(),
             level: 0,
             bracket_indent_stack: Vec::new(),
+            assign_aligned: false,
         }
     }
 
@@ -58,6 +61,7 @@ impl F90Aligner {
         self.line_indents = vec![0];
         self.level = 0;
         self.bracket_indent_stack = vec![0];
+        self.assign_aligned = false;
     }
 
     /// Process lines of a Fortran logical line
@@ -151,6 +155,7 @@ impl F90Aligner {
             if ch == ',' && self.level == 0 && equals_position > 0 {
                 equals_position = 0;
                 self.bracket_indent_stack.pop();
+                self.assign_aligned = false;
             }
 
             // Handle assignment operator (not in brackets, not relational)
@@ -175,10 +180,15 @@ impl F90Aligner {
                     } else {
                         ASSIGN_BEFORE_BREAK_RE.is_match(line)
                     };
-                    if !assign_before_break {
+                    // A statement has one assignment: only the first `=`
+                    // sets the alignment. Without this an `=` on every
+                    // continuation line pushes another, and each one adds
+                    // the last, so the column runs away with the line count.
+                    if !assign_before_break && !self.assign_aligned {
                         let indent =
                             equals_position + 1 + usize::from(is_pointer) + relative_indent;
                         self.bracket_indent_stack.push(indent);
+                        self.assign_aligned = true;
                     }
                 }
             }
@@ -282,6 +292,22 @@ mod tests {
         let indents = aligner.get_lines_indent();
         assert_eq!(indents.len(), 1);
         assert_eq!(indents[0], 0); // First line always gets 0
+    }
+
+    #[test]
+    fn test_aligner_assignment_column_does_not_run_away() {
+        // Every physical line here holds an `=`, which is not valid Fortran
+        // but must not make the alignment column grow with the line count:
+        // it used to reach 20 000 columns for 5 000 lines.
+        let mut aligner = F90Aligner::new();
+        let lines: Vec<String> = std::iter::repeat_n("a = a + 1 &".to_string(), 50).collect();
+        let logical: String = lines.join(" ");
+
+        aligner.process_logical_line(&logical, &lines, 3);
+
+        let indents = aligner.get_lines_indent();
+        assert_eq!(indents.len(), 50);
+        assert!(indents[1..].iter().all(|&i| i == indents[1]), "{indents:?}");
     }
 
     #[test]
