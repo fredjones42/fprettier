@@ -5,6 +5,23 @@
 
 use crate::parser::char_filter::CharFilter;
 
+/// The six relational operators, as Fortran-style and C-style spellings.
+///
+/// Ordered so that a longer C form is tried before a shorter one that
+/// prefixes it: `<=` must match before `<`, or `a <= b` becomes `a .lt.= b`.
+const OPERATORS: [(&str, &str); 6] = [
+    (".le.", "<="),
+    (".ge.", ">="),
+    (".eq.", "=="),
+    (".ne.", "/="),
+    (".lt.", "<"),
+    (".gt.", ">"),
+];
+
+/// Pointer assignment, which is not a relational operator. Without skipping it
+/// the `>` rule would rewrite `p => t` to `p =.gt. t`.
+const POINTER_ASSIGNMENT: &str = "=>";
+
 /// Replace relational operators in a line
 ///
 /// # Arguments
@@ -15,170 +32,48 @@ use crate::parser::char_filter::CharFilter;
 /// The line with operators replaced
 #[must_use]
 pub fn replace_relational_operators(line: &str, use_c_style: bool) -> String {
-    if use_c_style {
-        // Convert Fortran-style to C-style
-        replace_fortran_to_c(line)
-    } else {
-        // Convert C-style to Fortran-style
-        replace_c_to_fortran(line)
-    }
-}
-
-/// Convert Fortran-style operators to C-style
-fn replace_fortran_to_c(line: &str) -> String {
-    // Get positions that are outside strings and comments (safe to modify)
-    let safe_positions = get_safe_positions(line);
-
-    // Process character by character, looking for Fortran-style operators
-    let mut result = String::with_capacity(line.len());
-    let chars: Vec<(usize, char)> = line.char_indices().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        // Check if this position is safe to modify
-        let byte_pos = chars[i].0;
-        let is_safe = byte_pos < safe_positions.len() && safe_positions[byte_pos];
-
-        if is_safe && chars[i].1 == '.' {
-            // Try to match Fortran operators (case-insensitive)
-            // Need at least 4 characters for .xx.
-            if i + 3 < chars.len() {
-                let four_chars: String = chars[i..i + 4].iter().map(|&(_, c)| c).collect();
-                let four_lower = four_chars.to_lowercase();
-
-                match four_lower.as_str() {
-                    ".lt." => {
-                        result.push('<');
-                        i += 4;
-                        continue;
-                    }
-                    ".gt." => {
-                        result.push('>');
-                        i += 4;
-                        continue;
-                    }
-                    ".eq." => {
-                        result.push_str("==");
-                        i += 4;
-                        continue;
-                    }
-                    ".ne." => {
-                        result.push_str("/=");
-                        i += 4;
-                        continue;
-                    }
-                    ".le." => {
-                        result.push_str("<=");
-                        i += 4;
-                        continue;
-                    }
-                    ".ge." => {
-                        result.push_str(">=");
-                        i += 4;
-                        continue;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Copy character as-is
-        result.push(chars[i].1);
-        i += 1;
-    }
-
-    result
-}
-
-/// Convert C-style operators to Fortran-style
-fn replace_c_to_fortran(line: &str) -> String {
-    // Get positions that are outside strings and comments (safe to modify)
-    let safe_positions = get_safe_positions(line);
-
-    // Process character by character, looking for C-style operators
-    let mut result = String::with_capacity(line.len() + 20);
-    let chars: Vec<(usize, char)> = line.char_indices().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        // Check if this position is safe to modify
-        let byte_pos = chars[i].0;
-        let is_safe = byte_pos < safe_positions.len() && safe_positions[byte_pos];
-
-        if is_safe {
-            // Check for two-character operators first
-            if i + 1 < chars.len() {
-                let two_chars: String = chars[i..=i + 1].iter().map(|&(_, c)| c).collect();
-                match two_chars.as_str() {
-                    "<=" => {
-                        result.push_str(".le.");
-                        i += 2;
-                        continue;
-                    }
-                    ">=" => {
-                        result.push_str(".ge.");
-                        i += 2;
-                        continue;
-                    }
-                    "==" => {
-                        result.push_str(".eq.");
-                        i += 2;
-                        continue;
-                    }
-                    "/=" => {
-                        result.push_str(".ne.");
-                        i += 2;
-                        continue;
-                    }
-                    "=>" => {
-                        // Pointer assignment - don't convert
-                        result.push_str("=>");
-                        i += 2;
-                        continue;
-                    }
-                    _ => {}
-                }
-            }
-
-            // Check for single-character operators
-            match chars[i].1 {
-                '<' => {
-                    // Check it's not part of <= (already handled above)
-                    result.push_str(".lt.");
-                    i += 1;
-                    continue;
-                }
-                '>' => {
-                    // Check it's not part of >= or => (already handled above)
-                    result.push_str(".gt.");
-                    i += 1;
-                    continue;
-                }
-                _ => {}
-            }
-        }
-
-        // Copy character as-is
-        result.push(chars[i].1);
-        i += 1;
-    }
-
-    result
-}
-
-/// Get a vector indicating which byte positions are safe to modify
-/// (i.e., outside strings and comments)
-fn get_safe_positions(line: &str) -> Vec<bool> {
+    // Byte positions outside string literals, the only ones safe to rewrite.
+    // Comments are deliberately not excluded here: this reproduces what
+    // get_safe_positions did, which rewrites operators inside comments too.
     let mut safe = vec![false; line.len()];
-
-    // Use CharFilter to find positions outside strings and comments
     for (pos, _) in CharFilter::new(line, false, true, true) {
-        if pos < safe.len() {
-            safe[pos] = true;
-        }
+        safe[pos] = true;
     }
 
-    safe
+    let mut result = String::with_capacity(line.len() + 16);
+    let mut i = 0;
+    'next: while i < line.len() {
+        let rest = &line.as_bytes()[i..];
+        if safe[i] {
+            if !use_c_style && rest.starts_with(POINTER_ASSIGNMENT.as_bytes()) {
+                result.push_str(POINTER_ASSIGNMENT);
+                i += POINTER_ASSIGNMENT.len();
+                continue;
+            }
+            for (fortran, c_style) in OPERATORS {
+                let (from, to) = if use_c_style {
+                    (fortran, c_style)
+                } else {
+                    (c_style, fortran)
+                };
+                // Fortran spellings are case-insensitive; the C ones have no case
+                if rest.len() >= from.len()
+                    && rest[..from.len()].eq_ignore_ascii_case(from.as_bytes())
+                {
+                    result.push_str(to);
+                    i += from.len();
+                    continue 'next;
+                }
+            }
+        }
+
+        // Not an operator, or not in code: copy it across untouched
+        let ch = line[i..].chars().next().unwrap_or_default();
+        result.push(ch);
+        i += ch.len_utf8();
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -235,6 +130,16 @@ mod tests {
         let input = "if (a < b) then";
         let result = replace_relational_operators(input, true);
         assert_eq!(result, "if (a < b) then");
+    }
+
+    #[test]
+    fn test_round_trip_through_both_directions() {
+        // The two directions are one table read in either order, so they have
+        // to be inverses for every operator, in code but not in strings
+        let fortran = "if (a .lt. b .and. c(1) .ge. 'x .gt. y') p => q";
+        let c_style = replace_relational_operators(fortran, true);
+        assert_eq!(c_style, "if (a < b .and. c(1) >= 'x .gt. y') p => q");
+        assert_eq!(replace_relational_operators(&c_style, false), fortran);
     }
 
     #[test]
