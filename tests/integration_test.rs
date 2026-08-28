@@ -2,9 +2,6 @@
 //!
 //! These tests verify that the components work together correctly
 
-#![warn(clippy::all)]
-#![warn(clippy::pedantic)]
-
 use std::io::{BufReader, Cursor};
 
 use fprettier::format::case_convert::CaseMode;

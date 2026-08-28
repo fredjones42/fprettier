@@ -3,9 +3,6 @@
 //! These tests verify correct formatting by comparing fprettier output
 //! against the expected output. A few exceptions are documented via comments.
 
-#![warn(clippy::all)]
-#![warn(clippy::pedantic)]
-
 use std::fs;
 use std::io::{BufReader, Cursor};
 

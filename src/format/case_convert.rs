@@ -512,8 +512,9 @@ pub(crate) const CASE_FLAG_VALUES: usize = CASE_KEYS.len() - 1;
 pub const CASE_KEYS: [&str; 5] = ["keywords", "procedures", "operators", "constants", "types"];
 
 /// Case conversion mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CaseMode {
+    #[default]
     NoChange = 0,
     Lower = 1,
     Upper = 2,
@@ -549,25 +550,13 @@ impl<'de> serde::Deserialize<'de> for CaseMode {
 }
 
 /// Case conversion settings for different token types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CaseSettings {
     pub keywords: CaseMode,
     pub procedures: CaseMode,
     pub operators: CaseMode,
     pub constants: CaseMode,
     pub types: CaseMode,
-}
-
-impl Default for CaseSettings {
-    fn default() -> Self {
-        Self {
-            keywords: CaseMode::NoChange,
-            procedures: CaseMode::NoChange,
-            operators: CaseMode::NoChange,
-            constants: CaseMode::NoChange,
-            types: CaseMode::NoChange,
-        }
-    }
 }
 
 impl CaseSettings {
