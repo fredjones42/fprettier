@@ -196,43 +196,23 @@ fn build_config(args: &CliArgs, for_path: Option<&Path>) -> Result<Config> {
     }
 
     // Apply fine-grained whitespace overrides
-    for (key, val) in &args.whitespace_overrides {
-        config.whitespace_dict.insert(key.clone(), *val);
-    }
+    config
+        .whitespace_dict
+        .extend(args.whitespace_overrides.iter().cloned());
 
-    if args.no_indent {
-        config.impose_indent = false;
-    }
-    if args.no_whitespace {
-        config.impose_whitespace = false;
-    }
-    if args.strict_indent {
-        config.strict_indent = true;
-    }
-    if args.no_indent_fypp {
-        config.indent_fypp = false;
-    }
-    if args.no_indent_mod {
-        config.indent_mod = false;
-    }
-    if args.normalize_comment_spacing {
-        config.normalize_comment_spacing = true;
-    }
-    if args.format_decl {
-        config.format_decl = true;
-    }
-    if args.sort_use {
-        config.sort_use = true;
-    }
-    if args.sort_use_only {
-        config.sort_use_only = true;
-    }
-    if args.enable_replacements {
-        config.enable_replacements = true;
-    }
-    if args.c_relations {
-        config.c_relations = true;
-    }
+    // Every boolean flag is one-way: a --no-* flag can only clear a setting the
+    // config file turned on, and the rest can only turn one on.
+    config.impose_indent &= !args.no_indent;
+    config.impose_whitespace &= !args.no_whitespace;
+    config.indent_fypp &= !args.no_indent_fypp;
+    config.indent_mod &= !args.no_indent_mod;
+    config.strict_indent |= args.strict_indent;
+    config.normalize_comment_spacing |= args.normalize_comment_spacing;
+    config.format_decl |= args.format_decl;
+    config.sort_use |= args.sort_use;
+    config.sort_use_only |= args.sort_use_only;
+    config.enable_replacements |= args.enable_replacements;
+    config.c_relations |= args.c_relations;
     if let Some(spacing) = args.comment_spacing {
         config.comment_spacing = spacing;
     }
@@ -475,44 +455,27 @@ fn apply_directive_overrides(
     source_name: &str,
 ) -> Result<()> {
     if debug {
-        eprintln!("[DEBUG] Found file directive in {source_name}");
+        // The whole struct at once: an Option field prints its own name and
+        // whether it was set, which is what five per-field lines used to say
+        eprintln!("[DEBUG] Found file directive in {source_name}: {overrides:?}");
     }
+
     if let Some(indent) = overrides.indent {
-        if debug {
-            eprintln!("[DEBUG]   Directive override: indent = {indent}");
-        }
         config.indent = indent;
     }
     if let Some(line_length) = overrides.line_length {
-        if debug {
-            eprintln!("[DEBUG]   Directive override: line_length = {line_length}");
-        }
         config.line_length = line_length;
     }
     if let Some(whitespace) = overrides.whitespace {
-        if debug {
-            eprintln!("[DEBUG]   Directive override: whitespace = {whitespace}");
-        }
         config.whitespace = whitespace;
     }
     if let Some(impose_indent) = overrides.impose_indent {
-        if debug {
-            eprintln!("[DEBUG]   Directive override: impose_indent = {impose_indent}");
-        }
         config.impose_indent = impose_indent;
     }
     if let Some(impose_whitespace) = overrides.impose_whitespace {
-        if debug {
-            eprintln!("[DEBUG]   Directive override: impose_whitespace = {impose_whitespace}");
-        }
         config.impose_whitespace = impose_whitespace;
     }
-    for (key, value) in overrides.get_case_dict() {
-        if debug {
-            eprintln!("[DEBUG]   Directive override: case[{key}] = {value:?}");
-        }
-        config.case_dict.insert(key, value);
-    }
+    config.case_dict.extend(overrides.get_case_dict());
 
     // The directive can set the same values the CLI can, so it needs the same
     // check the CLI got in build_config
