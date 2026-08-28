@@ -958,57 +958,50 @@ fn add_spacing_around_conditional(text: &str, paren_has_cond: &mut Vec<bool>) ->
     out
 }
 
-fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
-    // Placeholder to protect pointer assignment (=>) from relational processing
-    const PLACEHOLDER: &str = "\x00POINTER_ASSIGN\x00";
-
-    // Split line into code parts and non-code parts (strings/comments)
+/// Split a line into alternating code and non-code parts.
+///
+/// Everything [`CharFilter`] skips over — a string literal, a comment, a fypp
+/// expression — becomes a part of its own, so the operator passes can walk the
+/// parts and leave those alone. Returns `None` when the filter yields nothing,
+/// i.e. the whole line is one of those regions and there is no code to format.
+fn split_code_parts(line: &str) -> Option<Vec<String>> {
     let mut line_parts: Vec<String> = vec![String::new()];
-    // Store (byte_position, char) to correctly compute next byte position for multi-byte chars
+    // The byte just past the last code character, which is where any skipped
+    // region begins. Tracked as (position, char) so multi-byte chars advance
+    // it correctly.
     let mut prev_info: Option<(usize, char)> = None;
 
-    let char_filter = CharFilter::new(line, true, true, true);
-
-    for (pos, ch) in char_filter {
-        // Add skipped content (strings, comments, fypp expressions) as separate parts
-        if let Some((prev_pos, prev_char)) = prev_info {
-            // Next byte position after previous char (accounts for multi-byte Unicode)
-            let next_byte = prev_pos + prev_char.len_utf8();
-            if pos > next_byte {
-                let skipped = &line[next_byte..pos];
-                if !skipped.trim().is_empty() {
-                    line_parts.push(skipped.to_string());
-                    line_parts.push(String::new());
-                }
-            }
-        } else if pos > 0 {
-            // First character in the loop, but there's skipped content before it
-            // This handles fypp/string content at the start of the line
-            let skipped = &line[0..pos];
-            if !skipped.trim().is_empty() {
-                line_parts.push(skipped.to_string());
-                line_parts.push(String::new());
-            }
+    for (pos, ch) in CharFilter::new(line, true, true, true) {
+        let resume = prev_info.map_or(0, |(prev_pos, prev_char): (usize, char)| {
+            prev_pos + prev_char.len_utf8()
+        });
+        if pos > resume && !line[resume..pos].trim().is_empty() {
+            line_parts.push(line[resume..pos].to_string());
+            line_parts.push(String::new());
         }
 
-        // Add character to current part (line_parts always has at least one element)
+        // `line_parts` always has at least one element
         if let Some(last_part) = line_parts.last_mut() {
             last_part.push(ch);
         }
         prev_info = Some((pos, ch));
     }
 
-    // Add any remaining content after last filtered character
-    if let Some((prev_pos, prev_char)) = prev_info {
-        let next_byte = prev_pos + prev_char.len_utf8();
-        if next_byte < line.len() {
-            line_parts.push(line[next_byte..].to_string());
-        }
-    } else {
-        // No filtered characters - line is entirely in a string/comment/fypp
-        // Return the original line unchanged
-        return line.to_string();
+    let (last_pos, last_char) = prev_info?;
+    let resume = last_pos + last_char.len_utf8();
+    if resume < line.len() {
+        line_parts.push(line[resume..].to_string());
     }
+    Some(line_parts)
+}
+
+fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
+    // Placeholder to protect pointer assignment (=>) from relational processing
+    const PLACEHOLDER: &str = "\x00POINTER_ASSIGN\x00";
+
+    let Some(mut line_parts) = split_code_parts(line) else {
+        return line.to_string();
+    };
 
     // Process each code part (not strings/comments) with operator regexes
     // Operators array maps to whitespace_flags indices:
@@ -1074,44 +1067,37 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
         }
     }
 
-    // Join all parts back together
-    let mut result = line_parts.join("");
+    space_out_keywords(line_parts.join(""), whitespace_flags)
+}
 
-    // Format namelists with spaces around / delimiters
-    // Pattern: namelist /name/ variables -> namelist /name/ variables (with spaces)
+/// Whole-statement keyword spacing, applied once the code and non-code parts
+/// have been rejoined because every one of these patterns spans them.
+fn space_out_keywords(mut result: String, whitespace_flags: &[bool; 11]) -> String {
+    // namelist /name/ variables
     if NML_STMT_RE.is_match(&result) {
-        // Add spaces around /word/ patterns
         result = NML_RE.replace_all(&result, " $1 ").to_string();
-        // Clean up any double spaces that might have been introduced
         result = RUN_OF_SPACES_RE.replace_all(&result, " ").to_string();
     }
 
-    // Separate compound END keywords (e.g., ENDIF -> END IF) if whitespace_flags[8] is true
-    // BUT: Don't split if followed by assignment (e.g., "endif = 3" is a variable name)
-    if whitespace_flags[8] && END_RE.is_match(&result) {
-        // Check if this is really an END statement (not followed by =)
-        if !END_WITH_EQ_RE.is_match(&result) {
-            result = END_RE.replace_all(&result, "$1 $2").to_string();
-        }
+    // ENDIF -> END IF, but not in `endif = 3`, where it is a variable name
+    if whitespace_flags[8] && END_RE.is_match(&result) && !END_WITH_EQ_RE.is_match(&result) {
+        result = END_RE.replace_all(&result, "$1 $2").to_string();
     }
 
-    // Also handle END keywords after semicolon (e.g., "end do; enddo" -> "end do; end do")
+    // The same, after a semicolon: `end do; enddo` -> `end do; end do`
     if whitespace_flags[8] {
         result = END_AFTER_SEMI_RE
             .replace_all(&result, "$1$2 $3")
             .to_string();
     }
 
-    // Format ':' for USE only statements (use module, only: ...)
+    // `use module, only:` -> `use module, only: `
     if whitespace_flags[0] && USE_RE.is_match(&result) {
-        // Add space after 'only:' -> 'only: '
         result = ONLY_RE.replace_all(&result, "$1: ").to_string();
     }
 
-    // Format labeled statements (label: statement)
-    // Pattern: identifier followed by : (not ::) followed by keyword
+    // A construct name: `loop:do` -> `loop: do`
     if whitespace_flags[8] {
-        // Match label followed by : and a keyword (DO, IF, etc.) without intervening space
         result = LABEL_STMT_RE.replace_all(&result, "$1: $3").to_string();
     }
 
