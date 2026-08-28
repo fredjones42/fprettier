@@ -785,6 +785,46 @@ fn apply_whitespace_to_lines(
     }
 }
 
+/// Re-base the continuation indents of a labeled statement.
+///
+/// The indenter works on label-stripped lines, so it computes continuation
+/// indents relative to a first line starting at column 0. In the output that
+/// line is `label + padding + content`, so its content really starts at
+/// `max(label.len(), base_indent)` and the continuations have to follow it
+/// there.
+///
+/// Manual alignment (a leading `&`) strips the base indent instead: those
+/// lines keep just their manual indent, and `prepend_ampersands` re-applies
+/// the base along with `label_shift`.
+fn shift_indents_for_label(
+    computed_indents: &mut [usize],
+    output_lines: &[String],
+    label: &str,
+    has_pre_amp: bool,
+) {
+    if label.is_empty() || computed_indents.is_empty() {
+        return;
+    }
+    // Leading whitespace on the first line is what encodes the label's column
+    if output_lines.first().map_or(0, |line| indent_of(line)) == 0 {
+        return;
+    }
+
+    let base_indent = computed_indents[0];
+    if has_pre_amp {
+        for ind in computed_indents.iter_mut().skip(1) {
+            *ind = ind.saturating_sub(base_indent);
+        }
+        return;
+    }
+
+    #[allow(clippy::cast_possible_wrap)] // indents are columns, far below isize::MAX
+    let adjustment = label.len().max(base_indent) as isize - base_indent as isize;
+    for ind in computed_indents.iter_mut().skip(1) {
+        *ind = adjust_indent(*ind, adjustment);
+    }
+}
+
 /// Compute and apply indentation to output lines
 ///
 /// Processes the logical line through the indenter, computes indentation levels,
@@ -828,68 +868,12 @@ fn compute_and_apply_indentation(
     let indents = indenter.get_lines_indent();
     *computed_indents = indents.to_vec();
 
-    // Shift indents if there's a label (to account for label position)
-    // The indenter trims lines before computing, so we need to add back
-    // the leading whitespace from the first line (which encodes label position)
-    //
-    // IMPORTANT: Only shift the FIRST line's indent when there are continuation
-    // lines with leading & (pre_ampersand). Continuation lines with leading &
-    // should use normal scope-based indent, not label-shifted indent.
-    if !labels.label.is_empty() && !computed_indents.is_empty() && !output_lines.is_empty() {
-        // Get leading whitespace from first line (this includes label spacing)
-        let first_line_leading = indent_of(&output_lines[0]);
-        if first_line_leading > 0 {
-            let has_pre_amp = !pre_ampersand.is_empty();
-
-            // For labeled lines with manual alignment (leading &),
-            // continuation lines should NOT have base_indent.
-            // The indenter adds base_indent to all continuation indents, but for
-            // manual alignment with labels, we want just the manual_indent values.
-            // These will later have label_shift applied in the prepend_ampersands loop.
-            // Note: We do NOT modify computed_indents[0] here - the first line uses
-            // the target indent from the indenter, not the processed line's spacing.
-            if has_pre_amp {
-                if !computed_indents.is_empty() {
-                    // Compute base_indent from first line
-                    let base_indent = computed_indents[0];
-                    // Continuation lines: subtract base_indent to get just manual_indent
-                    for ind in computed_indents.iter_mut().skip(1) {
-                        *ind = ind.saturating_sub(base_indent);
-                    }
-                }
-            } else {
-                // For labeled lines with auto-alignment (no leading &),
-                // continuation indents should align relative to where content starts
-                // in the OUTPUT (not the intermediate representation).
-                //
-                // In the output, the first line is: label + padding + content
-                // where padding = max(0, target_indent - label.len())
-                //
-                // So content starts at position: max(label.len(), target_indent)
-                // This is the effective_leading we should use for continuation alignment.
-
-                // Compute base_indent from first line (this is target_indent for the content)
-                let base_indent = computed_indents[0];
-
-                // In output format: label (len) + padding + content
-                // padding = max(0, base_indent - labels.label.len())
-                // So content starts at: max(labels.label.len(), base_indent)
-                let effective_leading = labels.label.len().max(base_indent);
-
-                // Adjustment = effective_leading - base_indent
-                // This replaces base_indent with effective_leading
-                #[allow(clippy::cast_possible_wrap)]
-                let adjustment = effective_leading as isize - base_indent as isize;
-
-                // Only adjust continuation lines (skip the first line).
-                // The first line should use the target indent from the indenter,
-                // not be replaced with first_line_leading (which is normalized to label.len()).
-                for ind in computed_indents.iter_mut().skip(1) {
-                    *ind = adjust_indent(*ind, adjustment);
-                }
-            }
-        }
-    }
+    shift_indents_for_label(
+        computed_indents,
+        output_lines,
+        labels.label,
+        !pre_ampersand.is_empty(),
+    );
 
     // Check if this is a multi-line fypp directive (first line is fypp + continuation)
     // If so, preserve original indent for ALL lines
