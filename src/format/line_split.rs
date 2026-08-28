@@ -3,6 +3,7 @@
 //! Implements automatic line breaking for long Fortran lines,
 //! inserting continuation markers (&) at appropriate positions.
 
+use crate::format::aligner::F90Aligner;
 use crate::parser::char_filter::{comment_start, CharFilter};
 
 /// Split a line into (code, comment) parts if it contains a detachable inline comment.
@@ -99,13 +100,13 @@ pub fn find_split_position(text: &str, max_width: usize) -> Option<usize> {
 /// * `line` - The line to split
 /// * `initial_indent` - Current indentation level in characters
 /// * `max_line_length` - Maximum line length
-/// * `indent_size` - Size of indent for continuation lines
+/// * `continuation_indent` - Column the fragments after the break start in
 #[must_use]
 pub fn auto_split_line(
     line: &str,
     initial_indent: usize,
     max_line_length: usize,
-    indent_size: usize,
+    continuation_indent: usize,
 ) -> Option<Vec<String>> {
     // Don't try to split very short lines
     if max_line_length < 40 {
@@ -160,7 +161,7 @@ pub fn auto_split_line(
     let first_chunk = stripped[..break_pos].trim_end();
     let mut new_lines = vec![format!("{} &", first_chunk)];
 
-    let current_indent = initial_indent + indent_size;
+    let current_indent = continuation_indent;
     let mut current = remainder;
 
     while !current.is_empty() {
@@ -216,6 +217,55 @@ pub fn auto_split_line(
     Some(new_lines)
 }
 
+/// The column the next pass will align a continuation to, relative to the
+/// start of the statement.
+///
+/// Asking the aligner the same question the indentation pass asks keeps a
+/// freshly split line in the column a hand-written continuation would get,
+/// so the split does not move on a second run.
+fn aligned_continuation_offset(logical_line: &str, first_chunk: &str, indent_size: usize) -> usize {
+    let mut aligner = F90Aligner::new();
+    let lines = [first_chunk.trim_start().to_string(), String::new()];
+    aligner.process_logical_line(logical_line, &lines, indent_size);
+    aligner
+        .get_lines_indent()
+        .get(1)
+        .copied()
+        .unwrap_or(indent_size)
+}
+
+/// Split one line, returning the fragments and the column its continuations
+/// belong in.
+///
+/// `follow_indent` is the column when the caller already knows it, i.e. the
+/// statement has other continuation lines that have been aligned. Otherwise
+/// the line is split once to see where the break lands, and split again if
+/// the aligner would put the remainder somewhere other than the plain extra
+/// indent guessed for the first attempt.
+fn split_with_alignment(
+    line: &str,
+    indent: usize,
+    max_line_length: usize,
+    follow_indent: Option<usize>,
+    indent_size: usize,
+) -> Option<(Vec<String>, usize)> {
+    if let Some(follow) = follow_indent {
+        return Some((
+            auto_split_line(line, indent, max_line_length, follow)?,
+            follow,
+        ));
+    }
+
+    let guess = indent + indent_size;
+    let probe = auto_split_line(line, indent, max_line_length, guess)?;
+    let follow = indent + aligned_continuation_offset(line, &probe[0], indent_size);
+    if follow == guess {
+        return Some((probe, guess));
+    }
+    auto_split_line(line, indent, max_line_length, follow)
+        .map_or(Some((probe, guess)), |split| Some((split, follow)))
+}
+
 /// Apply line splitting to an array of lines, replacing long lines with split versions.
 ///
 /// Returns a tuple of:
@@ -236,6 +286,22 @@ pub fn split_long_lines(
     for (i, line) in lines.iter().enumerate() {
         let indent = if i < indents.len() { indents[i] } else { 0 };
 
+        // Where the fragments after the break go. A statement that already
+        // has continuation lines has had them aligned (on the open bracket,
+        // `::` or `=`); a fragment broken out of it belongs in that same
+        // column, or the statement comes out ragged. Only a statement that
+        // is still a single line falls back to a plain extra indent.
+        let next_is_code = lines
+            .get(i + 1)
+            .is_some_and(|next| !next.trim_start().starts_with('!'));
+        let follow_indent = if next_is_code {
+            indents.get(i + 1).copied()
+        } else if i > 0 {
+            Some(indent)
+        } else {
+            None
+        };
+
         // Calculate actual visual line length (including strings)
         // Don't filter strings - they contribute to visual line length
         let line_length = line.trim_end_matches('\n').len();
@@ -249,16 +315,19 @@ pub fn split_long_lines(
 
                 // Check if code part still needs splitting
                 if code_length > max_line_length {
-                    if let Some(split_lines) =
-                        auto_split_line(&code_line, indent, max_line_length, indent_size)
-                    {
+                    if let Some((split_lines, follow_indent)) = split_with_alignment(
+                        &code_line,
+                        indent,
+                        max_line_length,
+                        follow_indent,
+                        indent_size,
+                    ) {
                         // Add first line with original indent
                         result_lines.push(split_lines[0].clone());
                         result_indents.push(indent);
                         result_origins.push(i);
 
                         // Add continuation lines with follow indent
-                        let follow_indent = indent + indent_size;
                         for split_line in split_lines.iter().skip(1) {
                             result_lines.push(split_line.clone());
                             result_indents.push(follow_indent);
@@ -284,14 +353,15 @@ pub fn split_long_lines(
             }
 
             // No comment to detach, try regular splitting
-            if let Some(split_lines) = auto_split_line(line, indent, max_line_length, indent_size) {
+            if let Some((split_lines, follow_indent)) =
+                split_with_alignment(line, indent, max_line_length, follow_indent, indent_size)
+            {
                 // Add first line with original indent
                 result_lines.push(split_lines[0].clone());
                 result_indents.push(indent);
                 result_origins.push(i);
 
                 // Add continuation lines with follow indent
-                let follow_indent = indent + indent_size;
                 for split_line in split_lines.iter().skip(1) {
                     result_lines.push(split_line.clone());
                     result_indents.push(follow_indent);
@@ -340,6 +410,36 @@ mod tests {
         let text = "abcdefghijklmnopqrstuvwxyz";
         let pos = find_split_position(text, 10);
         assert!(pos.is_none());
+    }
+
+    #[test]
+    fn test_split_continuations_share_one_column() {
+        // A statement broken into three lines must not alternate columns:
+        // every fragment goes where the aligner puts a continuation.
+        let line = "      real, intent(in) :: alpha, beta, gamma, delta, epsilon, zeta, eta, \
+                    theta, iota, kappa, lambda, mu, nu, xi, omicron";
+        let (lines, indents, _) = split_long_lines(&[line.to_string()], &[6], 60, 3);
+        assert!(lines.len() > 2);
+        assert!(indents[1..].iter().all(|&i| i == indents[1]));
+        // Aligned on the `::`, not on a plain extra indent
+        assert_eq!(indents[1], 6 + "real, intent(in) :: ".len());
+        // And every line fits
+        for (line, indent) in lines.iter().zip(&indents) {
+            assert!(indent + line.trim_start().len() <= 60);
+        }
+    }
+
+    #[test]
+    fn test_split_keeps_the_column_of_existing_continuations() {
+        // Re-splitting one line of an already aligned statement keeps the
+        // column the other continuation lines use
+        let lines = [
+            "call sub(alpha, beta, gamma, delta, epsilon, zeta, eta, theta, iota, &".to_string(),
+            "         kappa)".to_string(),
+        ];
+        let (out, indents, _) = split_long_lines(&lines, &[6, 15], 60, 3);
+        assert_eq!(out.len(), 3);
+        assert_eq!(indents, vec![6, 15, 15]);
     }
 
     #[test]
