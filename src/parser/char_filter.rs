@@ -9,7 +9,7 @@
 /// i.e. outside strings and fypp expressions.
 #[must_use]
 pub fn comment_start(line: &str) -> Option<usize> {
-    CharFilter::new(line, false, true, true).find_map(|(pos, c)| (c == '!').then_some(pos))
+    CharFilter::code_and_comments(line).find_map(|(pos, c)| (c == '!').then_some(pos))
 }
 
 /// Type of string delimiter we're currently inside
@@ -77,6 +77,20 @@ impl<'a> CharFilter<'a> {
         }
     }
 
+    /// Iterate the line's code: string literals, comments and fypp inline
+    /// blocks are all masked out
+    #[must_use]
+    pub fn code(content: &'a str) -> Self {
+        Self::new(content, true, true, true)
+    }
+
+    /// Iterate the line's code and its comment, masking only string literals
+    /// and fypp inline blocks
+    #[must_use]
+    pub fn code_and_comments(content: &'a str) -> Self {
+        Self::new(content, false, true, true)
+    }
+
     /// Check if we're currently inside a string
     #[must_use]
     pub fn instring(&self) -> bool {
@@ -100,15 +114,12 @@ impl<'a> CharFilter<'a> {
             StringDelimiter::FyppHash | StringDelimiter::FyppDollar | StringDelimiter::FyppAt
         );
         Self {
-            chars: content.char_indices().peekable(),
             state: FilterState {
                 instring: string_state,
                 infypp,
                 incomment: false,
             },
-            filter_comments,
-            filter_strings,
-            filter_fypp,
+            ..Self::new(content, filter_comments, filter_strings, filter_fypp)
         }
     }
 

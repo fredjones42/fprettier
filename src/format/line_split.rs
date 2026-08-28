@@ -61,7 +61,7 @@ pub fn find_split_position(text: &str, max_width: usize) -> Option<usize> {
     let mut commas: Vec<usize> = Vec::new();
 
     // Use CharFilter to skip strings and comments
-    for (pos, char) in CharFilter::new(text, true, true, true) {
+    for (pos, char) in CharFilter::code(text) {
         if pos > search_limit {
             break;
         }

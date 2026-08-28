@@ -119,7 +119,7 @@ fn rm_extra_whitespace(line: &str, format_decl: bool) -> String {
     let leading_spaces = line.len() - line.trim_start().len();
     formatted_line.push_str(&" ".repeat(leading_spaces));
 
-    let char_filter = CharFilter::new(line, true, true, true);
+    let char_filter = CharFilter::code(line);
 
     for (pos, ch) in char_filter {
         // Skip characters that are part of leading whitespace (already handled)
@@ -284,7 +284,7 @@ fn add_whitespace_charwise_with_level(
     // This is used to determine if leading +/- on next line is binary or unary
     let last_significant_char = {
         let mut last_char = None;
-        for (_, c) in CharFilter::new(&f.out, true, true, true) {
+        for (_, c) in CharFilter::code(&f.out) {
             if !c.is_whitespace() {
                 last_char = Some(c);
             }
@@ -936,7 +936,7 @@ fn split_code_parts(line: &str) -> Option<Vec<String>> {
     // it correctly.
     let mut prev_info: Option<(usize, char)> = None;
 
-    for (pos, ch) in CharFilter::new(line, true, true, true) {
+    for (pos, ch) in CharFilter::code(line) {
         let resume = prev_info.map_or(0, |(prev_pos, prev_char): (usize, char)| {
             prev_pos + prev_char.len_utf8()
         });

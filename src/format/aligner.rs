@@ -121,7 +121,7 @@ impl F90Aligner {
         let mut end_of_delim = None;
 
         // Process each character using CharFilter
-        let char_filter = CharFilter::new(line, true, true, true);
+        let char_filter = CharFilter::code(line);
 
         for (pos, ch) in char_filter {
             // Check for delimiters

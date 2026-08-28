@@ -674,7 +674,7 @@ pub fn convert_case(line: &str, settings: &CaseSettings) -> String {
     let mut next_byte: Option<usize> = None;
 
     // Use CharFilter to iterate through non-string, non-comment positions
-    for (pos, c) in CharFilter::new(line, false, true, true) {
+    for (pos, c) in CharFilter::code_and_comments(line) {
         // If we skipped positions, there was a string
         if let Some(prev_end) = next_byte {
             if pos > prev_end {

@@ -103,9 +103,7 @@ impl F90Indenter {
         self.line_indents.clear();
 
         // Filter the line to get only code (no strings/comments)
-        let filtered_line: String = CharFilter::new(logical_line, true, true, true)
-            .map(|(_, c)| c)
-            .collect();
+        let filtered_line: String = CharFilter::code(logical_line).map(|(_, c)| c).collect();
 
         // Split by semicolon for multi-statement handling
         let parts: Vec<&str> = filtered_line.split(';').collect();
@@ -579,7 +577,8 @@ impl F90Indenter {
         let mut level = 0;
         let mut in_parens = false;
 
-        // Filter comments and strings when checking for content after )
+        // Comments and strings are masked, but not fypp: a `${...}` after the
+        // `)` is content, so this is the one caller that cannot use code()
         for (pos, ch) in CharFilter::new(line, true, true, false) {
             match ch {
                 '(' => {

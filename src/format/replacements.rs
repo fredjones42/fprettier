@@ -36,7 +36,7 @@ pub fn replace_relational_operators(line: &str, use_c_style: bool) -> String {
     // Comments are deliberately not excluded here: this reproduces what
     // get_safe_positions did, which rewrites operators inside comments too.
     let mut safe = vec![false; line.len()];
-    for (pos, _) in CharFilter::new(line, false, true, true) {
+    for (pos, _) in CharFilter::code_and_comments(line) {
         safe[pos] = true;
     }
 

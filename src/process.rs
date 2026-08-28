@@ -84,7 +84,7 @@ fn ends_with_continuation(line: &str) -> bool {
     }
     // Check if the trailing & is visible to CharFilter (outside strings)
     let mut last_amp_outside_string = None;
-    for (pos, c) in CharFilter::new(trimmed, true, true, true) {
+    for (pos, c) in CharFilter::code(trimmed) {
         if c == '&' {
             last_amp_outside_string = Some(pos);
         }
@@ -612,7 +612,7 @@ fn extract_and_format_pre_ampersands(
             let trimmed = line0.trim_end().trim_end_matches('&').trim_end();
             // Use CharFilter to skip strings and comments
             let mut last_char = None;
-            for (_, c) in CharFilter::new(trimmed, true, true, true) {
+            for (_, c) in CharFilter::code(trimmed) {
                 if !c.is_whitespace() {
                     last_char = Some(c);
                 }
