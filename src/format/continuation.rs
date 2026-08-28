@@ -85,50 +85,43 @@ pub fn remove_pre_ampersands(lines: &[String], is_special: &[bool]) -> PreAmpers
     let mut ampersand_sep = Vec::with_capacity(lines.len());
 
     for (pos, line) in lines.iter().enumerate() {
-        // Check if this line is special (fypp or inside multiline string)
-        // Special lines should NOT have their leading & captured or stripped,
-        // because they are preserved as-is and we don't want to re-add the &
+        // A special line (fypp, or inside a multiline string) is reproduced
+        // verbatim, so a leading & on it is content, not a continuation
+        // marker: it is neither captured nor stripped.
         let is_line_special = is_special.get(pos).copied().unwrap_or(false);
-
-        if is_line_special {
-            // Special line - don't capture or strip the leading &
-            pre_ampersand.push(String::new());
-            if pos > 0 {
-                ampersand_sep.push(1); // default
-            }
-        } else if let Some(caps) = PRE_AMPERSAND_RE.captures(line) {
-            // Line starts with & (possibly with leading spaces)
-            // Capture the "& " or "&  " etc.
-            let amp_match = caps.get(1).unwrap();
-            pre_ampersand.push(amp_match.as_str().to_string());
-
-            // Get amount of whitespace before & on previous line
-            if pos > 0 {
-                if let Some(prev_caps) = TRAILING_AMPERSAND_RE.captures(&lines[pos - 1]) {
-                    let sep = prev_caps.get(1).map_or(0, |m| m.as_str().len());
-                    ampersand_sep.push(sep);
-                } else {
-                    // Previous line should have trailing &, but doesn't match
-                    // This could be a parse error, but we'll be lenient
-                    ampersand_sep.push(1); // default to 1 space
-                }
-            }
+        let leading_amp = if is_line_special {
+            None
         } else {
-            pre_ampersand.push(String::new());
-            if pos > 0 {
-                // No leading & on this line, use default 1 space before & on previous line
-                ampersand_sep.push(1);
-            }
+            PRE_AMPERSAND_RE.captures(line)
+        };
+
+        // The "& " or "&  " to put back in front of this line
+        pre_ampersand.push(
+            leading_amp
+                .as_ref()
+                .map_or_else(String::new, |caps| caps[1].to_string()),
+        );
+
+        if pos > 0 {
+            // How much space the previous line left before its trailing &, so
+            // that spacing survives the round trip. Only meaningful when this
+            // line has a leading & to pair with it; one space otherwise, and
+            // one too if the previous line has no trailing & to measure.
+            ampersand_sep.push(
+                leading_amp
+                    .and_then(|_| TRAILING_AMPERSAND_RE.captures(&lines[pos - 1]))
+                    .and_then(|prev| prev.get(1))
+                    .map_or(1, |m| m.as_str().len()),
+            );
         }
 
-        // Strip leading spaces and & from line (unless it's a special line)
-        if is_line_special {
-            result_lines.push(line.clone());
+        result_lines.push(if is_line_special {
+            line.clone()
         } else {
-            // Strip leading spaces, then strip leading &
-            let stripped = line.trim_start_matches(' ').trim_start_matches('&');
-            result_lines.push(stripped.to_string());
-        }
+            line.trim_start_matches(' ')
+                .trim_start_matches('&')
+                .to_string()
+        });
     }
 
     PreAmpersandResult {
