@@ -114,6 +114,13 @@ fn ws_flag_name(key: &str) -> String {
 #[must_use]
 pub fn build_cli() -> Command {
     let mut cmd = Command::new("fprettier")
+        // clap puts each argument's help on its own line once the argument
+        // column takes more than 40% of the width, which the longest flag,
+        // --whitespace-assignments[=<BOOL>], does at clap's default of 100.
+        // Widen it enough to keep the two-column layout. Nothing is detected
+        // here: without clap's "wrap_help" feature this is a fixed constant
+        // either way, not the real terminal width.
+        .term_width(110)
         .version(env!("CARGO_PKG_VERSION"))
         .author("Fred Jones")
         .about("Auto-formatter for modern Fortran code (Fortran 90+)")
@@ -421,6 +428,24 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_help_keeps_the_two_column_layout() {
+        // clap moves every argument's help onto its own line once the widest
+        // argument takes more than 40% of term_width. Adding a longer flag,
+        // or renaming one, can cross that line silently.
+        let help = build_cli().render_help().to_string();
+        let flag = "--whitespace-assignments[=<BOOL>]";
+        let line = help
+            .lines()
+            .find(|l| l.contains(flag))
+            .expect("the flag should appear in --help");
+        assert!(
+            line.contains("Enable/disable"),
+            "help wrapped onto its own line; raise term_width past \
+             (widest flag + 8) / 0.40. Got: {line:?}"
+        );
+    }
 
     #[test]
     fn test_cli_builds() {
