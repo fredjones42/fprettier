@@ -55,74 +55,63 @@ pub const WS_DECL: usize = 9;
 pub const WS_CONCAT: usize = 10;
 
 /// Every fine-grained whitespace option, in the order `--help` lists them:
-/// its `--whitespace-*` flag, its `whitespace_dict` key, the flag-array index
-/// it sets, and what it controls.
+/// its `whitespace_dict` key, the flag-array index it sets, and what it
+/// controls. The CLI flag is the key with a `whitespace-` prefix.
 ///
 /// One row per option, so a flag, its config-file key and the behavior it
 /// reaches cannot drift apart.
-pub const WS_FLAGS: [(&str, &str, usize, &str); 11] = [
+pub const WS_FLAGS: [(&str, usize, &str); 11] = [
     (
-        "whitespace-comma",
         "comma",
         WS_COMMA,
         "Enable/disable spacing after commas and semicolons",
     ),
     (
-        "whitespace-assignment",
         "assignments",
         WS_ASSIGNMENT,
         "Enable/disable spacing around assignment operators (=, =>)",
     ),
     (
-        "whitespace-decl",
         "decl",
         WS_DECL,
         "Enable/disable spacing around declaration operator (::)",
     ),
     (
-        "whitespace-relational",
         "relational",
         WS_RELATIONAL,
         "Enable/disable spacing around relational operators (<, >, ==, /=, .eq., etc.)",
     ),
     (
-        "whitespace-logical",
         "logical",
         WS_LOGICAL,
         "Enable/disable spacing around logical operators (.and., .or., etc.)",
     ),
     (
-        "whitespace-plusminus",
         "plusminus",
         WS_PLUSMINUS,
         "Enable/disable spacing around plus/minus operators",
     ),
     (
-        "whitespace-multdiv",
         "multdiv",
         WS_MULTDIV,
         "Enable/disable spacing around multiply/divide operators",
     ),
     (
-        "whitespace-print",
         "print",
         WS_PRINT,
         "Enable/disable spacing in print/read statements",
     ),
     (
-        "whitespace-type",
         "type",
         WS_TYPE,
         "Enable/disable spacing around type selector (%)",
     ),
     (
-        "whitespace-intrinsics",
         "intrinsics",
         WS_INTRINSICS,
         "Enable/disable spacing before intrinsic function parentheses",
     ),
     (
-        "whitespace-concat",
         "concat",
         WS_CONCAT,
         "Enable/disable spacing around string concatenation operator (//)",
@@ -333,7 +322,7 @@ impl Config {
         };
 
         // Override with whitespace_dict settings
-        for (_, key, idx, _) in WS_FLAGS {
+        for (key, idx, _) in WS_FLAGS {
             if let Some(&value) = self.whitespace_dict.get(key) {
                 whitespace_flags[idx] = value;
             }

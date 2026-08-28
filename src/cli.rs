@@ -104,6 +104,12 @@ pub struct CliArgs {
     pub debug: bool,
 }
 
+/// The `--whitespace-*` flag that sets `key`, one of the `whitespace_dict`
+/// keys listed in [`WS_FLAGS`]
+fn ws_flag_name(key: &str) -> String {
+    format!("whitespace-{key}")
+}
+
 /// Build the clap Command for parsing CLI arguments
 #[must_use]
 pub fn build_cli() -> Command {
@@ -317,17 +323,22 @@ pub fn build_cli() -> Command {
                 .value_parser(clap::value_parser!(usize)),
         );
 
-    for (name, _, _, help) in WS_FLAGS {
-        cmd = cmd.arg(
-            Arg::new(name)
-                .long(name)
-                .help(help)
-                .value_name("BOOL")
-                .num_args(0..=1)
-                .require_equals(true)
-                .default_missing_value("true")
-                .value_parser(clap::value_parser!(bool)),
-        );
+    for (key, _, help) in WS_FLAGS {
+        let name = ws_flag_name(key);
+        let mut arg = Arg::new(name.clone())
+            .long(name)
+            .help(help)
+            .value_name("BOOL")
+            .num_args(0..=1)
+            .require_equals(true)
+            .default_missing_value("true")
+            .value_parser(clap::value_parser!(bool));
+        // This flag was --whitespace-assignment before it was made to match
+        // its config key; the old spelling still works, undocumented.
+        if key == "assignments" {
+            arg = arg.alias("whitespace-assignment");
+        }
+        cmd = cmd.arg(arg);
     }
 
     cmd
@@ -367,9 +378,9 @@ fn args_from_matches(matches: &clap::ArgMatches) -> CliArgs {
         whitespace: matches.get_one::<u8>("whitespace").copied(),
         whitespace_overrides: WS_FLAGS
             .iter()
-            .filter_map(|(name, key, _, _)| {
+            .filter_map(|(key, _, _)| {
                 matches
-                    .get_one::<bool>(name)
+                    .get_one::<bool>(&ws_flag_name(key))
                     .map(|&val| ((*key).to_string(), val))
             })
             .collect(),
@@ -499,12 +510,20 @@ mod tests {
     }
 
     #[test]
+    fn test_whitespace_assignment_alias_still_parses() {
+        // The flag was --whitespace-assignment before it was renamed to match
+        // its config key; the old spelling has to keep working
+        let args = parse_args_from(vec!["fprettier", "--whitespace-assignment=false", "f.f90"]);
+        assert_eq!(ws_override(&args, "assignments"), Some(false));
+    }
+
+    #[test]
     fn test_all_whitespace_options() {
         // Test all 11 options
         let args = parse_args_from(vec![
             "fprettier",
             "--whitespace-comma=true",
-            "--whitespace-assignment=false",
+            "--whitespace-assignments=false",
             "--whitespace-decl=true",
             "--whitespace-relational=false",
             "--whitespace-logical=true",
