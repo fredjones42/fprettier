@@ -11,8 +11,8 @@ use regex::Regex;
 
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
-    DEFINED_OP_RE, END_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOGICAL_LIT_RE, LOG_OP_RE,
-    REL_OP_RE, USE_RE,
+    DEFINED_OP_RE, END_RE, GENERIC_SPEC_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOGICAL_LIT_RE,
+    LOG_OP_RE, REL_OP_RE, USE_RE,
 };
 
 // Print/read statement formatting
@@ -419,6 +419,7 @@ impl Charwise<'_> {
             // or IF, DO WHILE, CASE, etc.
             // But NOT if preceded by % (e.g., obj%open should not add space)
             if !ends_with_percent_word
+                && !GENERIC_SPEC_RE.is_match(&lhs)
                 && (INTR_STMTS_PAR_RE.is_match(&lhs) || KEYWORD_PAREN_RE.is_match(&lhs))
             {
                 sep1 = true;
@@ -1240,6 +1241,30 @@ fn add_spacing_around_operator(text: &str, operator_re: &regex::Regex) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_generic_spec_keeps_its_parenthesis() {
+        // READ/WRITE name a defined-I/O generic spec here, not an I/O
+        // statement, so no space is inserted before the parenthesis
+        let flags = [true; 11];
+        let fmt = |s: &str| format_line(s, &flags, true);
+        assert_eq!(
+            fmt("interface read(formatted)"),
+            "interface read(formatted)"
+        );
+        assert_eq!(
+            fmt("end interface write(unformatted)"),
+            "end interface write(unformatted)"
+        );
+        assert_eq!(
+            fmt("generic :: read(formatted) => rf"),
+            "generic :: read(formatted) => rf"
+        );
+        assert_eq!(fmt("integer :: read(10)"), "integer :: read(10)");
+        // ... but a real I/O statement still gets one
+        assert_eq!(fmt("read(unit, *) x"), "read (unit, *) x");
+        assert_eq!(fmt("write(unit, *) y"), "write (unit, *) y");
+    }
 
     #[test]
     fn test_conditional_expression_spacing() {

@@ -222,6 +222,13 @@ pub static INTR_STMTS_PAR_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
 });
 
+// READ and WRITE also name a defined-I/O generic spec (R1509), where the
+// parenthesis belongs to the spec rather than to an I/O statement:
+// `interface read(formatted)`, `generic :: write(unformatted) => w`. The
+// `::` branch also covers an array named `read` or `write`.
+pub static GENERIC_SPEC_RE: LazyLock<Regex> =
+    LazyLock::new(|| build_re(r"(\bINTERFACE|::)\s*(READ|WRITE)\s*$"));
+
 // Keywords before parentheses that need space (using line context)
 // Matches: IF, ELSE IF, DO WHILE, CASE, SELECT RANK/TYPE, CLASS IS/DEFAULT, TYPE IS
 // All support optional labels (label:) where applicable
