@@ -2,6 +2,37 @@
 
 All notable changes to fprettier are recorded here.
 
+## Version 0.5.0
+
+**Fortran 2023 coverage:**
+- Brought the keyword and intrinsic tables up to Fortran 2023
+- `CRITICAL`, `CHANGE TEAM` and `ENUMERATION TYPE` now open an indented scope, as does the `BLOCK DATA` program unit
+- Recognized construct names on `ELSE`, `ELSE IF`, `CASE`, `CASE DEFAULT`, `TYPE IS`, `CLASS IS`, `CLASS DEFAULT`, `RANK` and `ASSOCIATE`, and on named enums; five patterns stopped at end-of-statement, so the constructs went unindented
+- Recognized parameterized derived types and defined-I/O interfaces
+- Spaced the `?` and `:` of an F2023 conditional expression, which separate a scalar-logical-expr the same way a relational operator does
+- Spaced user-defined operators (R1004/R1024) like the intrinsic dotted ones, so `n = 1 .plus. 2` no longer comes out as `n = 1.plus.2`, which reads as the literal `1.` followed by a name
+
+**New Features:**
+- Renamed `--whitespace-assignment` to `--whitespace-assignments`, matching its `whitespace_dict` key and every other `--whitespace-*` flag. The old spelling still works
+- Added warnings for input that already exceeds the free source form limits: 10 000 characters per line (F2023 6.3.2.1) and 1 000 000 per statement (6.3.2.6). Each offense is reported on stderr with its line number, and the file is still formatted
+- `--line-length` is now rejected above 10 000, the most free source form permits
+
+**Bug Fixes:**
+- Fixed a labeled `DO` not closing at its terminating label, including the shared-terminator case
+- Fixed an `END` that closes nothing popping the scope stack anyway, so everything after it was under-indented
+- Fixed `IF` being stacked against a `CRITICAL`, a named `ASSOCIATE` or a parameterized derived type
+- Fixed the assignment alignment column running away: an `=` on every continuation line pushed another, and each one added the last
+- Fixed a long statement being left on one line when its tail could not be broken, discarding the breaks already found
+- Fixed the fragments of a split line landing in different columns
+- Fixed a statement's length being bounded by its continuation count rather than its length
+- Fixed tabs inside a character literal being expanded
+- Fixed a space being inserted before the parenthesis of a defined-I/O generic spec
+- Fixed relational operator replacement rewriting operators inside comments. This was unreachable through the formatter, which splits comments off first, but `replace_relational_operators` is public
+
+**Other:**
+- Added a CI workflow gating pushes and pull requests on the test suite, clippy, rustfmt, rustdoc and the MSRV
+- Moved the revision history out of the README into this file
+
 ## Version 0.4.0
 
 **New Features:**
