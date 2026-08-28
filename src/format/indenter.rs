@@ -8,6 +8,7 @@ use crate::parser::patterns::DO_LABEL_RE;
 use crate::scope::{ScopeParser, SCOPES};
 
 /// Parameters for indentation processing
+#[derive(Default)]
 pub struct IndentParams<'a> {
     /// Relative indent size for new scopes
     pub relative_indent: usize,
@@ -30,10 +31,7 @@ impl IndentParams<'_> {
         IndentParams {
             relative_indent: indent,
             continuation_indent: indent,
-            indent_fypp: false,
-            manual_lines_indent: None,
-            semicolon_line_index: None,
-            label: "",
+            ..Default::default()
         }
     }
 }
@@ -562,9 +560,10 @@ impl F90Indenter {
         *self.indent_storage.last().unwrap_or(&0)
     }
 
-    /// Get current scope depth
-    #[must_use]
-    pub fn scope_depth(&self) -> usize {
+    /// Get current scope depth. The indent this produces is the public
+    /// signal; this exists so the tests can watch the stack itself unwind.
+    #[cfg(test)]
+    fn scope_depth(&self) -> usize {
         self.scope_storage.len()
     }
 
