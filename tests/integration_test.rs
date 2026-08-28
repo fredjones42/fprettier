@@ -4,6 +4,7 @@
 
 use std::io::{BufReader, Cursor};
 
+use fprettier::format::aligner::F90Aligner;
 use fprettier::format::case_convert::CaseMode;
 use fprettier::format::indenter::{F90Indenter, IndentParams};
 use fprettier::process::format_file;
@@ -18,72 +19,54 @@ fn run_format(input: &str, config: &Config) -> String {
     String::from_utf8(output).unwrap()
 }
 
+/// Feed statements to a fresh indenter one at a time and collect the indent
+/// it assigns each. One statement per line, no continuations.
+fn indents_for(indent_mod: bool, indent: usize, statements: &[&str]) -> Vec<usize> {
+    let mut indenter = F90Indenter::new(build_scope_parser(false, indent_mod), 0);
+    let params = IndentParams::new(indent);
+    statements
+        .iter()
+        .map(|stmt| {
+            indenter.process_logical_line(stmt, &[(*stmt).to_string()], &params);
+            indenter.get_lines_indent()[0]
+        })
+        .collect()
+}
+
 #[test]
-#[allow(clippy::too_many_lines)]
 fn test_complete_fortran_program() {
-    // Enable module indentation to recognize PROGRAM
-    let parser = build_scope_parser(false, true);
-    let mut indenter = F90Indenter::new(parser, 0);
-    let params = IndentParams::new(3);
-
-    // program main
-    indenter.process_logical_line("program main", &["program main".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 0);
-
-    // integer :: x, y
-    indenter.process_logical_line("integer :: x, y", &["integer :: x, y".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 3);
-
-    // if (x > 0) then
-    indenter.process_logical_line("if (x > 0) then", &["if (x > 0) then".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 3);
-
-    // y = x + 1
-    indenter.process_logical_line("y = x + 1", &["y = x + 1".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 6);
-
-    // else
-    indenter.process_logical_line("else", &["else".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 3);
-
-    // y = 0
-    indenter.process_logical_line("y = 0", &["y = 0".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 6);
-
-    // end if
-    indenter.process_logical_line("end if", &["end if".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 3);
-
-    // end program
-    indenter.process_logical_line("end program", &["end program".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 0);
+    // indent_mod, so PROGRAM opens a scope
+    let indents = indents_for(
+        true,
+        3,
+        &[
+            "program main",
+            "integer :: x, y",
+            "if (x > 0) then",
+            "y = x + 1",
+            "else",
+            "y = 0",
+            "end if",
+            "end program",
+        ],
+    );
+    assert_eq!(indents, [0, 3, 3, 6, 3, 6, 3, 0]);
 }
 
 #[test]
 fn test_nested_do_loops() {
-    let parser = build_scope_parser(false, false);
-    let mut indenter = F90Indenter::new(parser, 0);
-    let params = IndentParams::new(2);
-
-    // do i = 1, 10
-    indenter.process_logical_line("do i = 1, 10", &["do i = 1, 10".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 0);
-
-    // do j = 1, 20
-    indenter.process_logical_line("do j = 1, 20", &["do j = 1, 20".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 2);
-
-    // x = i * j
-    indenter.process_logical_line("x = i * j", &["x = i * j".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 4);
-
-    // end do (inner)
-    indenter.process_logical_line("end do", &["end do".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 2);
-
-    // end do (outer)
-    indenter.process_logical_line("end do", &["end do".to_string()], &params);
-    assert_eq!(indenter.get_lines_indent()[0], 0);
+    let indents = indents_for(
+        false,
+        2,
+        &[
+            "do i = 1, 10",
+            "do j = 1, 20",
+            "x = i * j",
+            "end do", // inner
+            "end do", // outer
+        ],
+    );
+    assert_eq!(indents, [0, 2, 4, 2, 0]);
 }
 
 /// End-to-end test: format a complete program with both whitespace and indentation
@@ -167,90 +150,63 @@ fn test_end_to_end_subroutine() {
     assert!(lines[5].starts_with("end subroutine")); // No indent
 }
 
+/// The continuation indents `F90Aligner` computes for one logical line
+fn continuation_indents(logical: &str, lines: &[&str]) -> Vec<usize> {
+    let physical: Vec<String> = lines.iter().map(|l| (*l).to_string()).collect();
+    let mut aligner = F90Aligner::new();
+    aligner.process_logical_line(logical, &physical, 3);
+    aligner.get_lines_indent().to_vec()
+}
+
 /// Test `F90Aligner` bracket alignment
 #[test]
 fn test_aligner_bracket_continuation() {
-    use fprettier::format::aligner::F90Aligner;
-
-    let mut aligner = F90Aligner::new();
-
-    // Function call with argument on continuation line
-    let lines = vec!["call foo(a,".to_string(), "         b)".to_string()];
-
-    aligner.process_logical_line("call foo(a, b)", &lines, 3);
-
-    let indents = aligner.get_lines_indent();
+    let indents = continuation_indents("call foo(a, b)", &["call foo(a,", "         b)"]);
+    // The continuation aligns past the opening `(` of "call foo("
     assert_eq!(indents.len(), 2);
-    assert_eq!(indents[0], 0); // First line
-                               // Second line should align after the opening (
-    assert!(indents[1] >= 9); // Position after "call foo("
+    assert_eq!(indents[0], 0);
+    assert!(indents[1] >= 9);
 }
 
 /// Test `F90Aligner` assignment alignment
 #[test]
 fn test_aligner_assignment_continuation() {
-    use fprettier::format::aligner::F90Aligner;
-
-    let mut aligner = F90Aligner::new();
-
-    // Assignment with expression on continuation line
-    let lines = vec!["result = a +".to_string(), "         b".to_string()];
-
-    aligner.process_logical_line("result = a + b", &lines, 3);
-
-    let indents = aligner.get_lines_indent();
+    let indents = continuation_indents("result = a + b", &["result = a +", "         b"]);
+    // The continuation aligns past the `=` of "result = "
     assert_eq!(indents.len(), 2);
-    assert_eq!(indents[0], 0); // First line
-                               // Second line should align after the = sign
-    assert!(indents[1] >= 9); // Position after "result = "
+    assert_eq!(indents[0], 0);
+    assert!(indents[1] >= 9);
 }
 
 /// Test `F90Aligner` declaration alignment
 #[test]
 fn test_aligner_declaration_continuation() {
-    use fprettier::format::aligner::F90Aligner;
-
-    let mut aligner = F90Aligner::new();
-
-    // Declaration with variables on continuation line
-    let lines = vec![
-        "integer :: x,".to_string(),
-        "           y,".to_string(),
-        "           z".to_string(),
-    ];
-
-    aligner.process_logical_line("integer :: x, y, z", &lines, 3);
-
-    let indents = aligner.get_lines_indent();
+    let indents = continuation_indents(
+        "integer :: x, y, z",
+        &["integer :: x,", "           y,", "           z"],
+    );
+    // Both continuations align past the `::` of "integer :: "
     assert_eq!(indents.len(), 3);
-    assert_eq!(indents[0], 0); // First line
-                               // Continuation lines should align after the ::
-    assert!(indents[1] >= 11); // Position after "integer :: "
+    assert_eq!(indents[0], 0);
+    assert!(indents[1] >= 11);
     assert!(indents[2] >= 11);
 }
 
 /// Test `F90Aligner` nested brackets
 #[test]
 fn test_aligner_nested_brackets() {
-    use fprettier::format::aligner::F90Aligner;
-
-    let mut aligner = F90Aligner::new();
-
-    // Nested function calls
-    let lines = vec![
-        "result = func1(func2(a,".to_string(),
-        "                     b),".to_string(),
-        "               c)".to_string(),
-    ];
-
-    aligner.process_logical_line("result = func1(func2(a, b), c)", &lines, 3);
-
-    let indents = aligner.get_lines_indent();
+    let indents = continuation_indents(
+        "result = func1(func2(a, b), c)",
+        &[
+            "result = func1(func2(a,",
+            "                     b),",
+            "               c)",
+        ],
+    );
     assert_eq!(indents.len(), 3);
-    assert_eq!(indents[0], 0); // First line
-                               // Should align to innermost bracket
+    assert_eq!(indents[0], 0);
+    // Second line aligns to the innermost bracket, third to func1's opening
     assert!(indents[1] > indents[0]);
-    // Third line should align to func1's opening
     assert!(indents[2] > 0);
 }
 
