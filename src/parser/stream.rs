@@ -11,10 +11,17 @@ use anyhow::{bail, Result};
 
 use super::char_filter::{comment_start, CharFilter, StringDelimiter};
 use super::patterns::OMP_COND_RE;
+use crate::config::MAX_STATEMENT_LENGTH;
 
-/// Maximum number of physical lines allowed in a single logical line.
-/// This prevents memory exhaustion from pathological inputs with many continuations.
-const MAX_CONTINUATION_LINES: usize = 10_000;
+/// Maximum length of a single logical line, in characters, as a guard
+/// against memory exhaustion from pathological input.
+///
+/// Fortran 2023 dropped the limit on how many continuation lines a statement
+/// may have (6.3.2.4), so counting lines would reject conforming input; the
+/// standard bounds the statement itself instead (6.3.2.6). This budget is
+/// ten times that, leaving room for the indentation and `&`s the physical
+/// lines carry on top of the statement text.
+const MAX_LOGICAL_LINE_CHARS: usize = 10 * MAX_STATEMENT_LENGTH;
 
 /// A logical Fortran line with associated metadata
 #[derive(Debug, Clone)]
@@ -121,6 +128,7 @@ impl<R: BufRead> InputStream<R> {
         let mut line_parts = Vec::new();
         let mut first_omp_prefix = String::new();
         let mut lines_in_string = Vec::new(); // Track which lines start inside a string
+        let mut logical_line_chars = 0;
 
         // Reset string state for each new logical line
         self.string_state = StringDelimiter::None;
@@ -167,13 +175,14 @@ impl<R: BufRead> InputStream<R> {
             // 2. Splitting would produce multiple lines instead of one formatted line
 
             lines.push(what_omp.clone() + &line);
+            logical_line_chars += lines.last().map_or(0, |l| l.chars().count());
 
             // Guard against memory exhaustion from pathological inputs
-            if lines.len() > MAX_CONTINUATION_LINES {
+            if logical_line_chars > MAX_LOGICAL_LINE_CHARS {
                 bail!(
-                    "line {} exceeds maximum continuation lines ({})",
+                    "the statement ending at line {} is over {} characters",
                     self.line_number,
-                    MAX_CONTINUATION_LINES
+                    MAX_LOGICAL_LINE_CHARS
                 );
             }
 
@@ -317,6 +326,17 @@ impl<'a> InputStream<BufReader<&'a [u8]>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_many_continuation_lines_are_accepted() {
+        // Fortran 2023 removed the limit on how many continuation lines a
+        // statement may have (6.3.2.4); only its length is bounded
+        let input = format!("x = 1 &\n{}   + 1\n", "   + 1 &\n".repeat(20_000));
+        let mut stream = InputStream::from_string(&input);
+
+        let fortran_line = stream.next_fortran_line().unwrap().unwrap();
+        assert_eq!(fortran_line.lines.len(), 20_002);
+    }
 
     #[test]
     fn test_single_line() {
