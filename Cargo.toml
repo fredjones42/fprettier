@@ -13,8 +13,6 @@ readme = "README.md"
 keywords = ["fortran", "formatter", "cli", "code-formatting", "pretty-print"]
 categories = ["command-line-utilities", "development-tools"]
 
-# Stated here rather than as `#![warn(...)]` in each target, so lib.rs and
-# main.rs cannot drift apart on which lints they are held to.
 [lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
