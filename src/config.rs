@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use serde::Deserialize;
+use toml::{Table, Value};
 
 use crate::format::case_convert::CaseMode;
 
@@ -30,9 +31,10 @@ pub const MAX_STATEMENT_LENGTH: usize = 1_000_000;
 
 /// Main configuration struct for fprettier
 ///
-/// TOML parsing goes through `PartialConfig`; this struct is never
-/// (de)serialized directly.
-#[derive(Debug, Clone)]
+/// Deserialized straight from a config file's TOML table. Every field falls
+/// back to its [`Default`] value, so a file need only name what it changes.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     /// Number of spaces per indent level (default: 4)
     pub indent: usize,
@@ -93,34 +95,6 @@ pub struct Config {
     pub sort_use_only: bool,
 }
 
-/// Partial configuration for TOML parsing
-///
-/// All fields are `Option<T>` so we can distinguish between
-/// "explicitly set" and "not specified" when merging configs.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PartialConfig {
-    pub indent: Option<usize>,
-    pub line_length: Option<usize>,
-    pub whitespace: Option<u8>,
-    #[serde(default)]
-    pub whitespace_dict: BTreeMap<String, bool>,
-    pub impose_indent: Option<bool>,
-    pub impose_whitespace: Option<bool>,
-    pub strict_indent: Option<bool>,
-    pub indent_fypp: Option<bool>,
-    pub indent_mod: Option<bool>,
-    pub normalize_comment_spacing: Option<bool>,
-    pub format_decl: Option<bool>,
-    #[serde(default)]
-    pub case_dict: BTreeMap<String, CaseMode>,
-    pub comment_spacing: Option<usize>,
-    pub enable_replacements: Option<bool>,
-    pub c_relations: Option<bool>,
-    pub sort_use: Option<bool>,
-    pub sort_use_only: Option<bool>,
-}
-
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -166,66 +140,7 @@ impl Config {
     /// Load configuration from a TOML file
     pub fn from_toml_file(path: &Path) -> anyhow::Result<Self> {
         let contents = std::fs::read_to_string(path)?;
-        let partial: PartialConfig = toml::from_str(&contents)?;
-        let mut config = Self::default();
-        config.apply_partial(&partial);
-        Ok(config)
-    }
-
-    /// Apply a partial config, only overriding fields that are explicitly set
-    fn apply_partial(&mut self, partial: &PartialConfig) {
-        if let Some(v) = partial.indent {
-            self.indent = v;
-        }
-        if let Some(v) = partial.line_length {
-            self.line_length = v;
-        }
-        if let Some(v) = partial.whitespace {
-            self.whitespace = v;
-        }
-        if let Some(v) = partial.impose_indent {
-            self.impose_indent = v;
-        }
-        if let Some(v) = partial.impose_whitespace {
-            self.impose_whitespace = v;
-        }
-        if let Some(v) = partial.strict_indent {
-            self.strict_indent = v;
-        }
-        if let Some(v) = partial.indent_fypp {
-            self.indent_fypp = v;
-        }
-        if let Some(v) = partial.indent_mod {
-            self.indent_mod = v;
-        }
-        if let Some(v) = partial.normalize_comment_spacing {
-            self.normalize_comment_spacing = v;
-        }
-        if let Some(v) = partial.format_decl {
-            self.format_decl = v;
-        }
-        if let Some(v) = partial.comment_spacing {
-            self.comment_spacing = v;
-        }
-        if let Some(v) = partial.enable_replacements {
-            self.enable_replacements = v;
-        }
-        if let Some(v) = partial.c_relations {
-            self.c_relations = v;
-        }
-        if let Some(v) = partial.sort_use {
-            self.sort_use = v;
-        }
-        if let Some(v) = partial.sort_use_only {
-            self.sort_use_only = v;
-        }
-        // Merge dictionaries (partial values override)
-        for (k, v) in &partial.whitespace_dict {
-            self.whitespace_dict.insert(k.clone(), *v);
-        }
-        for (k, v) in &partial.case_dict {
-            self.case_dict.insert(k.clone(), *v);
-        }
+        Ok(toml::from_str(&contents)?)
     }
 
     /// Discover config files from parent directories of a given path
@@ -278,13 +193,20 @@ impl Config {
     /// cannot be read or parsed is an error: carrying on with the defaults
     /// would silently reformat the tree with settings nobody asked for.
     pub fn from_discovered_files(start_path: &Path) -> anyhow::Result<Self> {
+        let mut merged = Table::new();
         let mut config = Self::default();
         for path in &Self::discover_config_files(start_path) {
             let contents = std::fs::read_to_string(path)
                 .with_context(|| format!("failed to read {}", path.display()))?;
-            let partial: PartialConfig = toml::from_str(&contents)
+            let table: Table = toml::from_str(&contents)
                 .with_context(|| format!("failed to parse {}", path.display()))?;
-            config.apply_partial(&partial);
+            merge_tables(&mut merged, table);
+            // Deserialized once per file rather than once at the end, so an
+            // unknown key or a bad value is reported against the file that
+            // introduced it. Everything merged so far already deserialized.
+            config = Value::Table(merged.clone())
+                .try_into()
+                .with_context(|| format!("failed to parse {}", path.display()))?;
         }
         Ok(config)
     }
@@ -344,6 +266,20 @@ impl Config {
         }
 
         whitespace_flags
+    }
+}
+
+/// Overlay `overlay` onto `base`, recursing into nested tables so that a
+/// closer config file adds to `whitespace_dict`/`case_dict` rather than
+/// replacing whatever a parent directory put there.
+fn merge_tables(base: &mut Table, overlay: Table) {
+    for (key, value) in overlay {
+        match (base.get_mut(&key), value) {
+            (Some(Value::Table(existing)), Value::Table(new)) => merge_tables(existing, new),
+            (_, value) => {
+                base.insert(key, value);
+            }
+        }
     }
 }
 
@@ -415,64 +351,51 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_config_apply_partial() {
-        let mut base = Config::default();
-        assert_eq!(base.indent, 4);
-        assert_eq!(base.line_length, 132);
-
-        // Only set indent and line_length, leave others as None
-        let partial = PartialConfig {
-            indent: Some(2),
-            line_length: Some(80),
-            ..Default::default()
-        };
-
-        base.apply_partial(&partial);
-        assert_eq!(base.indent, 2);
-        assert_eq!(base.line_length, 80);
-        // Other fields should remain at defaults
-        assert_eq!(base.whitespace, 2);
-        assert!(base.impose_indent);
+    /// Merge TOML sources the way `from_discovered_files` does: least
+    /// specific first, then deserialize the result.
+    fn merge_all(sources: &[&str]) -> Config {
+        let mut merged = Table::new();
+        for src in sources {
+            merge_tables(&mut merged, toml::from_str(src).unwrap());
+        }
+        Value::Table(merged).try_into().unwrap()
     }
 
     #[test]
-    fn test_config_apply_partial_preserves_unset() {
-        let mut base = Config {
-            indent: 2, // A non-default value the partial must not reset
-            ..Default::default()
-        };
-
-        // Partial config that only sets line_length
-        let partial = PartialConfig {
-            line_length: Some(80),
-            ..Default::default()
-        };
-
-        base.apply_partial(&partial);
-        // indent should be preserved (not reset to default)
-        assert_eq!(base.indent, 2);
-        assert_eq!(base.line_length, 80);
+    fn test_unset_keys_keep_their_defaults() {
+        let config = merge_all(&["indent = 2\nline_length = 80\n"]);
+        assert_eq!(config.indent, 2);
+        assert_eq!(config.line_length, 80);
+        // Everything the file did not name
+        assert_eq!(config.whitespace, 2);
+        assert!(config.impose_indent);
     }
 
     #[test]
-    fn test_config_apply_partial_whitespace_dict() {
-        let mut base = Config::default();
-        base.whitespace_dict.insert("comma".to_string(), true);
-        base.whitespace_dict.insert("concat".to_string(), false);
+    fn test_later_file_preserves_keys_it_does_not_set() {
+        let config = merge_all(&["indent = 2\n", "line_length = 80\n"]);
+        // The closer file said nothing about indent, so the outer one stands
+        assert_eq!(config.indent, 2);
+        assert_eq!(config.line_length, 80);
+    }
 
-        let mut partial = PartialConfig::default();
-        partial.whitespace_dict.insert("concat".to_string(), true);
-        partial.whitespace_dict.insert("multdiv".to_string(), true);
+    #[test]
+    fn test_dicts_merge_key_by_key() {
+        let config = merge_all(&[
+            "[whitespace_dict]\ncomma = true\nconcat = false\n",
+            "[whitespace_dict]\nconcat = true\nmultdiv = true\n",
+        ]);
+        // Untouched by the closer file
+        assert_eq!(config.whitespace_dict.get("comma"), Some(&true));
+        // Overridden, and added
+        assert_eq!(config.whitespace_dict.get("concat"), Some(&true));
+        assert_eq!(config.whitespace_dict.get("multdiv"), Some(&true));
+    }
 
-        base.apply_partial(&partial);
-
-        // comma should be preserved
-        assert_eq!(base.whitespace_dict.get("comma"), Some(&true));
-        // concat should be overridden to true
-        assert_eq!(base.whitespace_dict.get("concat"), Some(&true));
-        // multdiv should be added
-        assert_eq!(base.whitespace_dict.get("multdiv"), Some(&true));
+    #[test]
+    fn test_unknown_key_is_rejected() {
+        let table: Table = toml::from_str("indnet = 2\n").unwrap();
+        assert!(Value::Table(table).try_into::<Config>().is_err());
     }
 
     #[test]
