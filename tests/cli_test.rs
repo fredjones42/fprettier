@@ -38,7 +38,7 @@ fn test_check_passes_on_formatted_file() {
     assert!(bin().arg(&path).output().unwrap().status.success());
     let out = bin().arg("--check").arg(&path).output().unwrap();
     assert_eq!(out.status.code(), Some(0));
-    assert!(out.stdout.is_empty());
+    assert_eq!(out.stdout, b"");
 
     std::fs::remove_file(&path).unwrap();
 }

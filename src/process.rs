@@ -1616,7 +1616,10 @@ mod tests {
     #[test]
     fn test_over_limit_warnings() {
         // Conforming input says nothing
-        assert!(over_limit_warnings("program p\nx = 1\nend program p\n").is_empty());
+        assert_eq!(
+            over_limit_warnings("program p\nx = 1\nend program p\n"),
+            Vec::<String>::new()
+        );
 
         // A line past 10 000 characters (6.3.2.1)
         let long = format!("x = {}\n", "a".repeat(MAX_LINE_LENGTH));

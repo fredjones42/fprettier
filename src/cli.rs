@@ -514,7 +514,7 @@ mod tests {
     fn test_whitespace_options_not_set() {
         // Test that no overrides are collected when not specified
         let args = parse_args_from(vec!["fprettier", "file.f90"]);
-        assert!(args.whitespace_overrides.is_empty());
+        assert_eq!(args.whitespace_overrides, Vec::<(String, bool)>::new());
     }
 
     #[test]
@@ -657,7 +657,7 @@ mod tests {
     #[test]
     fn test_exclude_empty() {
         let args = parse_args_from(vec!["fprettier", "file.f90"]);
-        assert!(args.exclude.is_empty());
+        assert_eq!(args.exclude, Vec::<String>::new());
     }
 
     #[test]
@@ -685,7 +685,7 @@ mod tests {
     #[test]
     fn test_fortran_extensions_empty() {
         let args = parse_args_from(vec!["fprettier", "file.f90"]);
-        assert!(args.fortran_extensions.is_empty());
+        assert_eq!(args.fortran_extensions, Vec::<String>::new());
     }
 
     #[test]
