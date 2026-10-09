@@ -179,13 +179,13 @@ that comment would have nowhere to go.
 A comment anywhere in a file overrides everything else for that file:
 
 ```fortran
-! fprettier: --indent 2 --line-length 100
-! fprettier: --case 1 1 1 1 --case-types 2
+! fprettier: --indent 2 --line-length 100 --case 1 1 1 1 --case-types 2
 ```
 
 Directives accept `-i`/`--indent`, `-l`/`--line-length`, `-w`/`--whitespace`,
 `--case`, `--case-types`, `--no-indent`, `--enable-indent`, `--no-whitespace`
-and `--enable-whitespace`. Only the first directive in a file is used.
+and `--enable-whitespace`. Only the first directive in a file is used, so put
+every option on that one line; later directives are ignored, not merged.
 
 ### Turning formatting off
 
