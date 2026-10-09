@@ -31,7 +31,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use anyhow::Result;
 use fprettier::format::case_convert::CASE_KEYS;
 use fprettier::process::format_file;
-use fprettier::{build_cli, find_directive, parse_args, CliArgs, Config, DirectiveOverrides};
+use fprettier::{CliArgs, Config, DirectiveOverrides, build_cli, find_directive, parse_args};
 use glob::Pattern;
 use rayon::prelude::*;
 use similar::TextDiff;

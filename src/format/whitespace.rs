@@ -13,10 +13,10 @@ use crate::config::{
     WS_ASSIGNMENT, WS_COMMA, WS_CONCAT, WS_DECL, WS_INTRINSICS, WS_LOGICAL, WS_MULTDIV,
     WS_PLUSMINUS, WS_PRINT, WS_RELATIONAL, WS_TYPE,
 };
-use crate::parser::char_filter::{split_masked_regions, CharFilter};
+use crate::parser::char_filter::{CharFilter, split_masked_regions};
 use crate::parser::patterns::{
-    DEFINED_OP_RE, END_RE, GENERIC_SPEC_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOGICAL_LIT_RE,
-    LOG_OP_RE, REL_OP_RE, USE_RE,
+    DEFINED_OP_RE, END_RE, GENERIC_SPEC_RE, INTR_STMTS_PAR_RE, KEYWORD_PAREN_RE, LOG_OP_RE,
+    LOGICAL_LIT_RE, REL_OP_RE, USE_RE,
 };
 
 // Print/read statement formatting

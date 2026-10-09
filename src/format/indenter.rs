@@ -5,7 +5,7 @@
 use crate::format::aligner::F90Aligner;
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::DO_LABEL_RE;
-use crate::scope::{ScopeParser, SCOPES};
+use crate::scope::{SCOPES, ScopeParser};
 
 /// Parameters for indentation processing
 #[derive(Default)]

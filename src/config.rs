@@ -379,7 +379,9 @@ mod tests {
         let whitespace_flags = config.get_whitespace_flags();
         assert_eq!(
             whitespace_flags,
-            [true, true, true, true, true, false, true, false, true, true, false]
+            [
+                true, true, true, true, true, false, true, false, true, true, false
+            ]
         );
     }
 
@@ -410,7 +412,9 @@ mod tests {
         // Override plusminus (idx 4) to false, multdiv (idx 5) to true
         assert_eq!(
             whitespace_flags,
-            [true, true, true, true, false, true, true, false, true, true, false]
+            [
+                true, true, true, true, false, true, true, false, true, true, false
+            ]
         );
     }
 

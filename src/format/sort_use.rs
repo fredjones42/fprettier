@@ -7,7 +7,7 @@
 //! list is re-broken later by the normal line-splitting pass.
 
 use crate::parser::char_filter::comment_start;
-use crate::parser::patterns::{is_fypp_directive, CPP_LINE_RE, USE_NAME_RE, USE_RE};
+use crate::parser::patterns::{CPP_LINE_RE, USE_NAME_RE, USE_RE, is_fypp_directive};
 use crate::parser::stream::has_semicolon_outside_strings;
 
 /// One logical statement: its physical lines plus what we need to sort it.

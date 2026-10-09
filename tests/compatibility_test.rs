@@ -6,9 +6,9 @@
 use std::fs;
 use std::io::{BufReader, Cursor};
 
+use fprettier::Config;
 use fprettier::format::case_convert::CaseMode;
 use fprettier::process::format_file;
-use fprettier::Config;
 
 /// Helper to run format and return result string
 fn run_format(input: &str, config: &Config) -> String {
@@ -2571,7 +2571,9 @@ fn test_operator_spacing() {
     ];
 
     for op in &ops {
-        let input = format!("module foo\n    public operator({op})\n    interface operator({op})\n    end interface\nend module foo\n");
+        let input = format!(
+            "module foo\n    public operator({op})\n    interface operator({op})\n    end interface\nend module foo\n"
+        );
         let result = run_format(&input, &config);
         assert_eq!(result, input, "Operator spacing mismatch"); // Result should be unchanged from input
     }

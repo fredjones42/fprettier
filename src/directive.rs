@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::format::case_convert::{CaseMode, CASE_FLAG_VALUES, CASE_KEYS};
+use crate::format::case_convert::{CASE_FLAG_VALUES, CASE_KEYS, CaseMode};
 
 /// Pattern to match fprettier directives
 static FPRETTIER_DIRECTIVE_RE: LazyLock<Regex> =

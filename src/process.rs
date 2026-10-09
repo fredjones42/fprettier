@@ -23,7 +23,7 @@ use std::io::{BufRead, BufReader, Cursor, Write};
 use anyhow::Result;
 
 use crate::config::{Config, MAX_LINE_LENGTH, MAX_STATEMENT_LENGTH};
-use crate::format::case_convert::{convert_case, CaseSettings};
+use crate::format::case_convert::{CaseSettings, convert_case};
 use crate::format::continuation::{
     get_manual_alignment, prepend_ampersands, remove_pre_ampersands, should_auto_align,
 };
@@ -34,9 +34,9 @@ use crate::format::sort_use::sort_use_statements;
 use crate::format::whitespace::{format_line, format_line_with_level};
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
-    is_fypp_directive, ASSOCIATE_RE, BLK_RE, CHANGETEAM_RE, CPP_LINE_RE, CRITICAL_RE, DO_RE,
-    ENUMTYPE_RE, ENUM_RE, FORALL_RE, IF_RE, INTERFACE_RE, MOD_RE, OMP_DIR_RE, PROG_RE, SELCASE_RE,
-    STATEMENT_LABEL_RE, TYPE_RE, WHERE_RE,
+    ASSOCIATE_RE, BLK_RE, CHANGETEAM_RE, CPP_LINE_RE, CRITICAL_RE, DO_RE, ENUM_RE, ENUMTYPE_RE,
+    FORALL_RE, IF_RE, INTERFACE_RE, MOD_RE, OMP_DIR_RE, PROG_RE, SELCASE_RE, STATEMENT_LABEL_RE,
+    TYPE_RE, WHERE_RE, is_fypp_directive,
 };
 use crate::parser::stream::{FortranLine, InputStream};
 use crate::scope::build_scope_parser;
@@ -1228,7 +1228,7 @@ fn compute_comment_indices(line_origins: &[usize]) -> (HashSet<usize>, HashSet<u
     // Origins where first != last are split origins
     let split: HashSet<usize> = first_for_origin
         .iter()
-        .filter(|(origin, &first)| last_for_origin.get(*origin) != Some(&first))
+        .filter(|&(origin, &first)| last_for_origin.get(origin) != Some(&first))
         .map(|(origin, _)| *origin)
         .collect();
 

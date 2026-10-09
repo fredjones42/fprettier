@@ -4,7 +4,7 @@
 //! inserting continuation markers (&) at appropriate positions.
 
 use crate::format::aligner::F90Aligner;
-use crate::parser::char_filter::{comment_start, CharFilter};
+use crate::parser::char_filter::{CharFilter, comment_start};
 
 /// Split a line into (code, comment) parts if it contains a detachable inline comment.
 /// Returns None if there's no inline comment or if the split isn't valid.

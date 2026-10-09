@@ -4,12 +4,12 @@
 
 use std::io::{BufReader, Cursor};
 
+use fprettier::Config;
 use fprettier::format::aligner::F90Aligner;
 use fprettier::format::case_convert::CaseMode;
 use fprettier::format::indenter::{F90Indenter, IndentParams};
 use fprettier::process::format_file;
 use fprettier::scope::build_scope_parser;
-use fprettier::Config;
 
 /// Helper to run format and return result string
 fn run_format(input: &str, config: &Config) -> String {

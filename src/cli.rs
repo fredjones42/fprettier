@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use clap::{Arg, ArgAction, Command};
 
 use crate::config::WS_FLAGS;
-use crate::format::case_convert::{CaseMode, CASE_FLAG_VALUES};
+use crate::format::case_convert::{CASE_FLAG_VALUES, CaseMode};
 
 /// CLI arguments parsed from command line
 #[derive(Debug, Clone)]

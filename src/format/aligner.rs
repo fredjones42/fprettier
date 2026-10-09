@@ -12,7 +12,7 @@ use regex::Regex;
 
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
-    is_fypp_directive, PRIVATE_RE, PUBLIC_RE, REL_OP_RE, USE_RE, VAR_DECL_RE,
+    PRIVATE_RE, PUBLIC_RE, REL_OP_RE, USE_RE, VAR_DECL_RE, is_fypp_directive,
 };
 
 // Regex for :: directly before line break (declaration alignment)

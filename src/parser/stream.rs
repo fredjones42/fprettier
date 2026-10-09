@@ -7,10 +7,10 @@
 /// - Multiline strings (tracking string state across lines)
 use std::io::{BufRead, BufReader};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
-use super::char_filter::{comment_start, CharFilter, StringDelimiter};
-use super::patterns::{is_fypp_directive, OMP_COND_RE};
+use super::char_filter::{CharFilter, StringDelimiter, comment_start};
+use super::patterns::{OMP_COND_RE, is_fypp_directive};
 use crate::config::MAX_STATEMENT_LENGTH;
 
 /// Maximum length of a single logical line, in characters, as a guard
