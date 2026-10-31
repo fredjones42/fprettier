@@ -1920,6 +1920,24 @@ fn test_scope_opener_after_semicolon() {
     );
 }
 
+#[test]
+fn test_continuation_after_semicolon_is_aligned() {
+    // Regression test: continuation lines of a statement that follows a
+    // semicolon used to be forced to column 1 (fprettify's behavior), so
+    // "case (1); t = x + &" left its continuation unindented.
+    let input = "select case (k)\ncase (1); t = x + &\ny\ncase (2); t = x\nend select\n";
+    let config = Config::default();
+
+    let result = run_format(input, &config);
+    let lines: Vec<&str> = result.lines().collect();
+
+    assert_eq!(lines[1], "case (1); t = x + &");
+    assert_eq!(
+        lines[2], "              y",
+        "continuation should align after `t = `"
+    );
+}
+
 // ============================================================================
 // Regression tests: content the formatter must not rewrite or drift
 // ============================================================================

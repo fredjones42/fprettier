@@ -2,6 +2,11 @@
 
 All notable changes to fprettier are recorded here.
 
+## Unreleased
+
+**Bug Fixes:**
+- Fixed continuation lines of a statement after a semicolon being forced to column 1 (as fprettify does), so `case (1); t = x + &` left its continuation unindented. They are now aligned like any other continuation
+
 ## Version 0.5.0
 
 **Fortran 2023 coverage:**

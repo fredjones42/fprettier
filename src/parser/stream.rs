@@ -34,9 +34,6 @@ pub struct FortranLine {
     pub lines: Vec<String>,
     /// OMP conditional prefix (e.g., "!$ ") that was stripped during parsing
     pub omp_prefix: String,
-    /// Index of the line containing a semicolon (if any) within continuations
-    /// Lines AFTER this index should use minimal indent (indent=1)
-    pub semicolon_line_index: Option<usize>,
     /// For each physical line, whether it starts inside a string (multiline string continuation)
     pub lines_in_string: Vec<bool>,
 }
@@ -244,23 +241,11 @@ impl<R: BufRead> InputStream<R> {
             result
         };
 
-        // Find if and where a semicolon appears in the continuation lines.
-        // This is used by the indenter to apply minimal indent only to lines AFTER the semicolon.
-        let semicolon_line_index = if line_parts.len() > 1 {
-            // Find the first line (except the last) that contains a semicolon
-            line_parts[..line_parts.len() - 1]
-                .iter()
-                .position(|part| has_semicolon_outside_strings(part))
-        } else {
-            None
-        };
-
         Ok(Some(FortranLine {
             joined_line,
             comments,
             lines,
             omp_prefix: first_omp_prefix,
-            semicolon_line_index,
             lines_in_string,
         }))
     }

@@ -239,7 +239,7 @@ program example_prog
                5/), &
           6] + &
          [1, 2, 3, 4, 5]; arr = [1, 2, &
- 3, 4, 5]
+                                 3, 4, 5]
 
 ! example 4.4
    endif = 3

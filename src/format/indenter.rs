@@ -18,8 +18,6 @@ pub struct IndentParams<'a> {
     pub indent_fypp: bool,
     /// Manual indent override from aligner
     pub manual_lines_indent: Option<&'a [usize]>,
-    /// If Some(idx), force minimal indent only for lines AFTER idx
-    pub semicolon_line_index: Option<usize>,
     /// Statement label of this line, stripped before matching ("" if none)
     pub label: &'a str,
 }
@@ -189,23 +187,8 @@ impl F90Indenter {
             };
 
             // Continuation lines: alignment returns relative offsets, add base
-            // When semicolon_line_index=Some(idx), force minimal indent only for lines AFTER idx
-            if let Some(semicolon_idx) = params.semicolon_line_index {
-                // Force indent=1 only for lines after the semicolon line
-                for (i, &align_offset) in continuation_indents.iter().skip(1).enumerate() {
-                    let line_idx = i + 1; // actual line index (0-based)
-                    if line_idx > semicolon_idx {
-                        // This line comes after the semicolon, use minimal indent
-                        self.line_indents.push(1);
-                    } else {
-                        // This line comes before/at the semicolon, use normal alignment
-                        self.line_indents.push(align_offset + base_indent);
-                    }
-                }
-            } else {
-                for &align_offset in continuation_indents.iter().skip(1) {
-                    self.line_indents.push(align_offset + base_indent);
-                }
+            for &align_offset in continuation_indents.iter().skip(1) {
+                self.line_indents.push(align_offset + base_indent);
             }
         } else {
             // Single line - just use the calculated indent
