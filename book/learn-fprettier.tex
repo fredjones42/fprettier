@@ -1,0 +1,3964 @@
+% Learn fprettier: A Guide for Developers
+%
+% Build with:   tectonic learn-fprettier.tex
+% or:           latexmk -pdf learn-fprettier.tex
+%
+% The book describes fprettier 0.5.0 (plus the unreleased fixes on main as of
+% October 2026). Every before/after example was produced by running that
+% build of fprettier on the input shown.
+
+\documentclass[11pt,a4paper,openany]{book}
+
+% ---------------------------------------------------------------------------
+% Engine-dependent fonts: tectonic is XeTeX-based, latexmk -pdf is pdfTeX
+% ---------------------------------------------------------------------------
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\else
+  \usepackage{fontspec}
+\fi
+
+\usepackage[margin=2.6cm,headheight=14pt]{geometry}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{upquote}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,backgrounds}
+\usepackage[hidelinks]{hyperref}
+
+% ---------------------------------------------------------------------------
+% Colours
+% ---------------------------------------------------------------------------
+\definecolor{ink}{HTML}{1F2933}
+\definecolor{accent}{HTML}{2B6CB0}
+\definecolor{accentlight}{HTML}{E6F0FA}
+\definecolor{codebg}{HTML}{F6F8FA}
+\definecolor{codeframe}{HTML}{D0D7DE}
+\definecolor{keywordc}{HTML}{8250DF}
+\definecolor{commentc}{HTML}{6E7781}
+\definecolor{stringc}{HTML}{0A3069}
+\definecolor{beforec}{HTML}{FFF5F5}
+\definecolor{afterc}{HTML}{F0FFF4}
+\definecolor{exframe}{HTML}{B7791F}
+\definecolor{exbg}{HTML}{FFFBEB}
+\definecolor{warnframe}{HTML}{C53030}
+\definecolor{warnbg}{HTML}{FFF5F5}
+
+% ---------------------------------------------------------------------------
+% Headings and page style
+% ---------------------------------------------------------------------------
+\titleformat{\chapter}[display]
+  {\normalfont\sffamily\huge\bfseries\color{ink}}
+  {\color{accent}\large\chaptertitlename\ \thechapter}{8pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{20pt}{24pt}
+\titleformat{\section}{\normalfont\sffamily\Large\bfseries\color{ink}}{\color{accent}\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\sffamily\large\bfseries\color{ink}}{\color{accent}\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\sffamily\normalsize\bfseries\color{ink}}{}{0em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\sffamily\small\thepage}
+\fancyhead[RE]{\sffamily\small\nouppercase{\leftmark}}
+\fancyhead[LO]{\sffamily\small\nouppercase{\rightmark}}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\sffamily\small\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{3em}
+\setlist{itemsep=0.2em,topsep=0.4em}
+
+% ---------------------------------------------------------------------------
+% Code listings
+% ---------------------------------------------------------------------------
+\lstdefinelanguage{Rust}{
+  morekeywords={as,break,const,continue,crate,else,enum,extern,false,fn,for,
+    if,impl,in,let,loop,match,mod,move,mut,pub,ref,return,self,Self,static,
+    struct,super,trait,true,type,unsafe,use,where,while,dyn,Some,None,Ok,Err,
+    Option,Result,Vec,String,usize,isize,u8,u64,bool,char,str},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+}
+\lstdefinelanguage{Toml}{
+  morecomment=[l]{\#},
+  morestring=[b]",
+  sensitive=true,
+}
+\lstdefinestyle{base}{
+  basicstyle=\ttfamily\small\color{ink},
+  keywordstyle=\color{keywordc}\bfseries,
+  commentstyle=\color{commentc}\itshape,
+  stringstyle=\color{stringc},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{commentc}{$\hookrightarrow$}\space},
+  tabsize=4,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  framesep=4pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  aboveskip=0.8em,
+  belowskip=0.8em,
+  upquote=true,
+}
+\lstdefinestyle{rust}{style=base,language=Rust}
+\lstdefinestyle{fortran}{style=base,language=[95]Fortran,morekeywords={contains,module,submodule,associate,block,critical,select,case,class,type,enumeration,procedure,pure,elemental,impure,abstract,interface,extends,only,use,implicit,none,intent,in,out,inout,parameter,allocatable,pointer,target,concurrent},keywordstyle=\color{keywordc}}
+\lstdefinestyle{shell}{style=base,language=bash,keywordstyle=\color{ink}}
+\lstdefinestyle{plain}{style=base,language={}}
+\lstdefinestyle{toml}{style=base,language=Toml}
+\lstdefinestyle{before}{style=fortran,backgroundcolor=\color{beforec}}
+\lstdefinestyle{after}{style=fortran,backgroundcolor=\color{afterc}}
+\lstset{style=base}
+
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\file}[1]{\texttt{\small\color{accent}#1}}
+\newcommand{\fn}[1]{\texttt{\small #1}}
+\newcommand{\flag}[1]{\texttt{\small -{}-#1}}
+
+% Side-by-side before/after. Use as
+%   \begin{beforeafter} ... input listing ... \splitafter ... output listing ... \end{beforeafter}
+% (implemented with two minipages, since listings cannot sit in macro arguments)
+\newenvironment{beforecol}{\noindent\begin{minipage}[t]{0.485\linewidth}\textsf{\footnotesize\color{commentc}Input}}{\end{minipage}\hfill}
+\newenvironment{aftercol}{\begin{minipage}[t]{0.485\linewidth}\textsf{\footnotesize\color{commentc}Output}}{\end{minipage}\par\medskip}
+
+% ---------------------------------------------------------------------------
+% Boxes
+% ---------------------------------------------------------------------------
+\newcounter{exercise}[chapter]
+\renewcommand{\theexercise}{\thechapter.\arabic{exercise}}
+\newtcolorbox{exercise}[1][]{enhanced,breakable,colback=exbg,colframe=exframe,
+  boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,
+  fonttitle=\sffamily\bfseries\small,coltitle=white,
+  title={Exercise \refstepcounter{exercise}\theexercise\ifx&#1&\else: #1\fi}}
+\newtcolorbox{keyidea}[1][Key idea]{enhanced,breakable,colback=accentlight,colframe=accent,
+  boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,
+  fonttitle=\sffamily\bfseries\small,title={#1}}
+\newtcolorbox{pitfall}[1][Watch out]{enhanced,breakable,colback=warnbg,colframe=warnframe,
+  boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,
+  fonttitle=\sffamily\bfseries\small,title={#1}}
+\newtcolorbox{sourcebox}[1]{enhanced,breakable,colback=white,colframe=codeframe,
+  boxrule=0.5pt,arc=1pt,left=6pt,right=6pt,top=3pt,bottom=3pt,
+  fonttitle=\ttfamily\small,coltitle=ink,colbacktitle=codebg,title={#1}}
+
+% TikZ styles
+\tikzset{
+  stage/.style={draw=accent,fill=accentlight,rounded corners=2pt,minimum height=8mm,
+    minimum width=30mm,align=center,font=\sffamily\small,inner sep=4pt},
+  data/.style={draw=codeframe,fill=codebg,minimum height=7mm,align=center,
+    font=\ttfamily\footnotesize,inner sep=3pt},
+  note/.style={font=\sffamily\scriptsize,color=commentc,align=left},
+  flow/.style={-{Stealth[length=2.2mm]},thick,color=ink!70},
+  decision/.style={diamond,draw=exframe,fill=exbg,aspect=2.2,align=center,
+    font=\sffamily\scriptsize,inner sep=1pt},
+}
+
+\hypersetup{pdftitle={Learn fprettier: A Guide for Developers},pdfauthor={Fred Jones}}
+
+\begin{document}
+
+% ---------------------------------------------------------------------------
+% Title page
+% ---------------------------------------------------------------------------
+\frontmatter
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\sffamily\color{accent}\large A Guide for Developers\par}
+\vspace{0.6cm}
+{\sffamily\bfseries\color{ink}\fontsize{42}{48}\selectfont Learn fprettier\par}
+\vspace{0.8cm}
+{\sffamily\large\color{ink}How a fast Fortran formatter works,\\ from the command line down to the last space\par}
+\vspace{2cm}
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \foreach \i/\w in {0/9,1/7,2/8,3/5,4/6,5/8,6/4}{
+    \fill[accent!\the\numexpr 25+\i*10\relax] (\i*0.25,-\i*0.45) rectangle ++(\w*0.6,0.28);
+  }
+  \foreach \i in {0,...,6}{\fill[codeframe] (-0.6,-\i*0.45) rectangle ++(0.3,0.28);}
+\end{tikzpicture}
+\vfill
+{\sffamily\large Fred Jones\par}
+\vspace{0.3cm}
+{\sffamily\small\color{commentc} Covers fprettier 0.5.0 \textperiodcentered{} October 2026\par}
+\end{titlepage}
+
+\thispagestyle{empty}
+\vspace*{\fill}
+{\small
+\textbf{Learn fprettier: A Guide for Developers}\par\medskip
+Copyright \copyright{} 2026 Fred Jones.\par\medskip
+fprettier is distributed under the terms of the MIT License or the Apache
+License 2.0, at your option. This book may be shared and adapted under the same
+terms.\par\medskip
+The source of this book is the single file \file{book/learn-fprettier.tex} in
+the fprettier repository, \url{https://github.com/fredjones42/fprettier}. Build it with
+\code{tectonic learn-fprettier.tex}.\par\medskip
+Every example showing fprettier output was produced by running fprettier 0.5.0
+on the input shown, with default settings unless the text says otherwise.
+Source excerpts are taken from the same version; some are abridged, which is
+marked where it matters. Function and file names are given so that you can find
+the code even after its line numbers have moved.\par}
+
+\tableofcontents
+
+% ---------------------------------------------------------------------------
+\chapter{Preface}
+% ---------------------------------------------------------------------------
+
+fprettier is an auto-formatter for free-form Fortran (Fortran 90 and later). Give it a
+messy source file and it gives back the same program with consistent
+indentation, consistent spacing around operators, continuation lines aligned
+under the brackets they continue, over-long lines broken, and, if you ask,
+keywords in the case you prefer and \code{use} statements in alphabetical order.
+
+It was inspired by \emph{fprettify}, the Python formatter that many Fortran
+projects already use, and it keeps fprettify's formatting
+conventions closely enough that switching is usually uneventful. It differs in
+two ways: it is written in Rust and formats large trees in parallel, and it is
+actively maintained, with a test suite of almost four hundred tests that pins
+down its behaviour.
+
+\section*{Who this book is for}
+
+The book has two parts, for two kinds of reader.
+
+\textbf{Part I, \emph{Using fprettier},} is for Fortran developers who run the
+tool. It explains what fprettier changes and why, how to configure it, how
+its indentation rules handle real-world code (including code that was never
+consistently indented), and how to keep it away from code you have formatted by
+hand. You do not need to know any Rust to read Part I.
+
+\textbf{Part II, \emph{Inside fprettier},} is for developers who want to understand
+the implementation, fix a bug in it, or add a feature. It follows a source file
+through the program: from the command line, through the character filter that
+tells code from strings and comments, the stream that reassembles continuation
+lines, the two formatting passes, the scope-tracking indenter, the continuation
+aligner, the whitespace engine and the line splitter, to the bytes written
+back to disk. It ends with the test suite and a set of recipes for common
+changes. Part II assumes you can read Rust; it does not assume you know
+Fortran well, and it explains the Fortran rules the code depends on as they come up.
+
+If you are in the second group, read at least Chapters~\ref{ch:tour}
+and~\ref{ch:indent-user} of Part I first: Part II explains \emph{how} the code
+produces the behaviour that Part I describes.
+
+\section*{How to read the examples}
+
+Most examples are side-by-side pairs, with the input on a pale red background
+and fprettier's output on a pale green one:
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+if(x>0)then
+y=x**2
+endif
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+if (x > 0) then
+    y = x**2
+end if
+\end{lstlisting}
+\end{aftercol}
+
+Every one of them was produced by running fprettier, so the output is exactly
+what the tool prints, quirks included. Where the output has a quirk, the text
+points it out and explains where it comes from, since tracing a quirk to its
+cause is a good way to learn how the formatter works.
+
+Rust excerpts carry the file they come from. Excerpts are sometimes shortened by
+dropping comments or unrelated branches; the code that is shown is real.
+
+Each chapter ends with exercises. Part I's exercises ask you to predict
+fprettier's output and then check your prediction; Part II's ask you to read,
+instrument or change the code. You need a checkout of the repository and a
+Rust toolchain (1.87 or later) for most of them:
+
+\begin{lstlisting}[style=shell]
+git clone https://github.com/fredjones42/fprettier
+cd fprettier
+cargo build --release
+cargo test
+\end{lstlisting}
+
+\mainmatter
+% ===========================================================================
+\part{Using fprettier}
+% ===========================================================================
+
+% ---------------------------------------------------------------------------
+\chapter{Getting Started}\label{ch:start}
+% ---------------------------------------------------------------------------
+
+\section{Installing}
+
+fprettier is a Rust program distributed on crates.io. With a Rust toolchain
+installed (see \url{https://rustup.rs}), install it with Cargo:
+
+\begin{lstlisting}[style=shell]
+cargo install fprettier
+\end{lstlisting}
+
+The crate needs Rust 1.87 or later. It builds one binary, \code{fprettier}, and
+also exposes its formatter as a library (the \code{fprettier} crate), which
+Part II uses for experiments.
+
+\section{A first run}
+
+Save this file as \file{geometry.f90}:
+
+\begin{lstlisting}[style=before]
+module geometry
+implicit none
+real,parameter::pi=3.14159
+contains
+subroutine area(r,a)
+real,intent(in)::r
+real,intent(out)::a
+if(r<0.0)then
+a=-1.0
+else
+a=pi*r**2
+endif
+end subroutine area
+end module geometry
+\end{lstlisting}
+
+and run
+
+\begin{lstlisting}[style=shell]
+fprettier geometry.f90
+\end{lstlisting}
+
+fprettier rewrites the file in place and prints \code{Formatted 1 files
+successfully.} on standard error. The file now reads:
+
+\begin{lstlisting}[style=after]
+module geometry
+    implicit none
+    real, parameter::pi = 3.14159
+contains
+    subroutine area(r, a)
+        real, intent(in)::r
+        real, intent(out)::a
+        if (r < 0.0) then
+            a = -1.0
+        else
+            a = pi*r**2
+        end if
+    end subroutine area
+end module geometry
+\end{lstlisting}
+
+Several rules are visible in this one example:
+
+\begin{itemize}
+  \item Every scope (\code{module}, \code{subroutine}, \code{if}) indents its
+    body by four spaces, the default indent.
+  \item \code{contains} and \code{else} sit at the level of the construct they
+    belong to, not of its body.
+  \item Commas are followed by one space; \code{=} and \code{<} get a space on
+    each side; \code{if} is separated from its parenthesis.
+  \item \code{endif} is spelled \code{end if}.
+  \item \code{pi*r**2} is left tight. At the default whitespace level, 2,
+    multiplication and division are not spaced; level 3 would write
+    \code{pi * r**2}. Exponentiation (\code{**}) is never spaced.
+  \item \code{real, parameter::pi} keeps its \code{::} tight, because
+    declarations are left as written unless you pass \flag{format-decl}.
+  \item \code{-1.0} stays \code{-1.0}: a unary minus is not spaced.
+\end{itemize}
+
+The chapters that follow explain each of these rules and how to change it.
+
+\section{Ways to run fprettier}
+
+\subsection{In place, on files and directories}
+
+Arguments are files or directories. A directory is searched for Fortran files
+one level deep; add \flag{recursive} (\code{-r}) to search its whole subtree:
+
+\begin{lstlisting}[style=shell]
+fprettier src/main.f90 src/util.f90
+fprettier -r src/
+\end{lstlisting}
+
+A file inside a directory is formatted when its extension, compared without
+regard to case, is one of \code{f90}, \code{f95}, \code{f03}, \code{f08},
+\code{f18}, \code{f}, \code{for}, \code{ftn} or \code{fpp}. Add more with
+\code{-f}/\flag{fortran}, which may be repeated (\code{-f inc -f F2018}). A
+file you name explicitly is always formatted, whatever its extension.
+
+Two more filters apply to what the directory walk finds:
+\code{-e}/\flag{exclude} takes a glob pattern (repeatable) that is matched
+against the whole path, the file name and each path component, so
+\code{-e build} skips everything under any directory called \file{build};
+and \code{-m}/\flag{exclude-max-lines}~\textit{N} skips files of more than
+\textit{N} lines. Files over 100\,MB are always skipped.
+
+When fprettier writes a file, it writes only if the formatted text differs
+from the original, and it writes atomically: the new text goes into a temporary
+file beside the original, which is then renamed over it. An interrupted run
+cannot leave a half-written source file, the file keeps its permissions, and a
+symbolic link keeps pointing at the file it pointed at before.
+
+\subsection{To standard output}
+
+\flag{stdout} (\code{-s}) prints the formatted text instead of writing it back.
+This is how every example in this book was produced. With no file arguments,
+or with the single argument \code{-}, fprettier reads standard input and
+writes standard output, which is what editor integrations use:
+
+\begin{lstlisting}[style=shell]
+fprettier < messy.f90 > tidy.f90
+\end{lstlisting}
+
+If standard input is a terminal and there are no arguments, fprettier prints
+its help instead of waiting for input.
+
+\subsection{In CI: \texttt{-{}-check} and \texttt{-{}-diff}}
+
+\flag{check} formats in memory, changes nothing, prints
+\code{Would reformat: \textit{path}} for every file whose formatting would
+change, and exits with status 1 if there were any. \flag{diff} (\code{-d}) prints a
+unified diff of the changes instead. They combine:
+
+\begin{lstlisting}[style=shell]
+$ fprettier --check --diff f.f90
+Would reformat: f.f90
+--- f.f90
++++ f.f90
+@@ -1,4 +1,4 @@
+ program p
+-integer::i
+-i=1
++    integer::i
++    i = 1
+ end program p
+$ echo $?
+1
+\end{lstlisting}
+
+A CI job needs only \code{fprettier --check -r src/}. Both modes are safe to
+pipe into \code{head} or \code{less}: when the reader closes the pipe early,
+fprettier exits quietly instead of reporting a broken pipe.
+
+\subsection{Exit status}
+
+fprettier exits with 0 on success and 1 if any file could not be formatted,
+if an input path does not exist (it reports \code{no such file or directory}
+rather than silently formatting nothing), if the configuration is invalid, or,
+under \flag{check}, if any file would change.
+
+\subsection{Parallelism}
+
+When it is writing files in place, fprettier formats them in parallel across
+all cores. \code{-j}/\flag{jobs}~\textit{N} sets the number of threads;
+\code{-j 1} formats one file at a time. \flag{stdout}, \flag{diff} and
+\flag{check} always run sequentially, so that their output comes out in a
+stable order.
+
+\subsection{Quiet and verbose}
+
+\code{-S}/\flag{silent} suppresses the summary line and the skip messages, for
+editor integrations. \code{-D}/\flag{debug} prints the configuration files
+found, the final configuration, and any in-file directive, which is the first
+thing to try when fprettier does not do what you expect
+(Section~\ref{sec:debug}).
+
+\begin{exercise}[Your own tree]
+Run \code{fprettier --check -r} on a Fortran project you work on, then run it
+again with \flag{diff} and page through the result. Which kinds of change are
+the most common? Keep the list: by the end of Part~I you should be able to say,
+for each kind of change, which setting controls it.
+\end{exercise}
+
+\begin{exercise}[Exit codes]
+Run \code{fprettier --check nosuchfile.f90; echo \$?}. Then create an empty
+directory and run \code{fprettier --check emptydir; echo \$?}. Explain the
+difference between the two results.
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{A Tour of What fprettier Changes}\label{ch:tour}
+% ---------------------------------------------------------------------------
+
+This chapter walks through each kind of change fprettier makes, with a small
+example of each. Later chapters give the full rules; the goal here is to know
+what to expect.
+
+\section{Indentation}
+
+Every construct that has a body indents it by one level: program units
+(\code{program}, \code{module}, \code{submodule}), procedures
+(\code{subroutine}, \code{function}), \code{interface} blocks, derived-type
+and \code{enum} definitions, and the block constructs \code{if}, \code{do},
+\code{select case}/\code{type}/\code{rank}, \code{where}, \code{forall},
+\code{associate}, \code{block}, \code{critical} and \code{change team}.
+Statements that divide a construct, such as \code{else}, \code{else if},
+\code{case}, \code{contains} and \code{elsewhere}, go at the level of the
+construct itself.
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+subroutine classify(n)
+integer::n
+select case(n)
+case(:-1)
+print*,"negative"
+case(0)
+print*,"zero"
+case default
+print*,"positive"
+end select
+end subroutine
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+subroutine classify(n)
+    integer::n
+    select case (n)
+    case (:-1)
+        print *, "negative"
+    case (0)
+        print *, "zero"
+    case default
+        print *, "positive"
+    end select
+end subroutine
+\end{lstlisting}
+\end{aftercol}
+
+Note that \code{case} lines are \emph{not} indented relative to
+\code{select case}. That is fprettify's convention, and fprettier keeps it.
+
+Indentation is the most subtle part of fprettier, because it also has to cope
+with code that was indented inconsistently, or deliberately left unindented, in
+the first place. Chapter~\ref{ch:indent-user} covers it in detail.
+
+\section{Whitespace}
+
+fprettier first removes the spacing a statement has, apart from single
+blanks between words, and then adds back spacing according to a set of eleven
+rules: after commas, around assignments, around relational and logical
+operators, and so on. A \emph{whitespace level} from 0 to 4 turns groups of rules
+on, and each rule can also be switched on or off on its own:
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+x  =  a( i , j )+b  *c
+if(x.gt.0.and.y/=1)call  foo (x)
+call s(n=1, m=2)
+y=-x+val_1d-2
+loop:do i=1,3
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+x = a(i, j) + b*c
+if (x .gt. 0 .and. y /= 1) call foo(x)
+call s(n=1, m=2)
+y = -x + val_1d - 2
+loop: do i = 1, 3
+\end{lstlisting}
+\end{aftercol}
+
+Note a few details. The \code{=} of a keyword argument (\code{n=1}) is not
+spaced, because it is inside parentheses. The \code{-2} after \code{val\_1d} is
+recognised as a binary minus even though \code{1d-2} looks like the start of a
+double-precision literal, because \code{val\_1d} begins with a letter. A
+construct name gets a space after its colon. Chapter~\ref{ch:whitespace-user}
+lists every rule.
+
+\section{Continuation alignment}
+
+A statement continued with \code{\&} has its continuation lines aligned to a
+column that depends on where the line was broken: just inside the innermost
+open bracket, after the \code{=} of an assignment, or after the \code{::} of a
+declaration. If none of these applies, the continuation is indented by one
+level.
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+call compute(alpha, beta, &
+gamma, delta)
+total = first_value + &
+second_value
+integer, dimension(3) :: a, &
+b
+call foo( &
+a, b)
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+call compute(alpha, beta, &
+             gamma, delta)
+total = first_value + &
+        second_value
+integer, dimension(3) :: a, &
+                         b
+call foo( &
+    a, b)
+\end{lstlisting}
+\end{aftercol}
+
+The last example shows an exception: a bracket that is the last thing on its
+line (\code{foo( \&}) does not set the alignment column, since aligning after
+it would waste the line; the continuation is indented by one level instead.
+
+\section{Long lines}
+
+Lines longer than the line-length limit (132 by default, \flag{line-length}
+or \code{-l} to change it) are broken at a space, or failing that after a comma,
+and the pieces are aligned by the rules above. An inline comment that no longer
+fits beside its code moves to a line of its own below it:
+
+\begin{lstlisting}[style=before]
+subroutine s
+    call long_procedure_name(argument_number_one, argument_number_two, argument_number_three, arg4)
+    x = 1 ! a fairly long trailing comment that pushes the line past sixty
+end subroutine
+\end{lstlisting}
+
+With \code{-l 60}:
+
+\begin{lstlisting}[style=after]
+subroutine s
+    call long_procedure_name(argument_number_one, &
+                             argument_number_two, &
+                             argument_number_three, arg4)
+    x = 1
+    ! a fairly long trailing comment that pushes the line past sixty
+end subroutine
+\end{lstlisting}
+
+fprettier does not break inside a string, and it does not make a break that
+would not help: if the only way to break a line leaves it as long as before, the
+line is left alone. Section~\ref{sec:linesplit} explains the details.
+
+\section{Case conversion}
+
+Off by default. \flag{case} takes four values, for keywords, intrinsic
+procedures, logical and relational operators, and named constants from
+\code{iso\_fortran\_env} and \code{iso\_c\_binding}; each is 0 (leave alone),
+1 (lowercase) or 2 (uppercase). \flag{case-types} sets a fifth category, kind
+values and exponent letters:
+
+\begin{lstlisting}[style=before]
+x=1.0e-3_dp
+real(kind=dp)::a=2.5e-8_real64
+if(a.EQ.b.AND.c)then
+n=size(a)
+size=3
+end if
+\end{lstlisting}
+
+With \code{-{}-case 1 1 1 1 -{}-case-types 2}:
+
+\begin{lstlisting}[style=after]
+x = 1.0E-3_DP
+real(kind=DP)::a = 2.5E-8_REAL64
+if (a .eq. b .and. c) then
+    n = size(a)
+    size = 3
+end if
+\end{lstlisting}
+
+Intrinsic procedure names are converted only where they are \emph{called}:
+\code{size(a)} is a call, but the variable called \code{size} on the next line
+is not touched. Your own identifiers are never touched.
+
+\section{Operator replacement}
+
+Off by default. \flag{enable-replacements} rewrites the relational operators to one
+spelling: Fortran-style (\code{.lt.}, \code{.eq.}, \ldots) by default, or
+C-style (\code{<}, \code{==}, \ldots) with \flag{c-relations}. With both flags,
+\code{y=x .lt. 3 .and. .not. flag} becomes \code{y = x < 3 .and. .not. flag}.
+Logical operators have no C-style spelling in Fortran and are left alone.
+
+\section{Sorting \texttt{use} statements}
+
+Off by default. \flag{sort-use} sorts each run of consecutive \code{use}
+statements by module name; \flag{sort-use-only} sorts the names in each
+\code{only:} list. A rename such as \code{a => q} sorts by its local name,
+\code{a}:
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+module m
+use zeta
+use alpha, only: z, b, a => q
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+module m
+    use alpha, only: a => q, b, z
+    use zeta
+\end{lstlisting}
+\end{aftercol}
+
+\section{Small normalisations}
+
+A few more changes happen without any option:
+
+\begin{itemize}
+  \item A run of blank lines collapses to a single blank line.
+  \item Trailing whitespace is removed.
+  \item Tabs are expanded to eight spaces, except inside character literals,
+    where a tab is part of the value.
+  \item \code{endif}, \code{enddo}, \code{endselect} and the other run-together
+    \code{end}s become \code{end if}, \code{end do}, \ldots{} (but a variable
+    called \code{endif}, as in \code{endif = 3}, is left alone).
+  \item A statement label is followed by exactly enough space to put the
+    statement at its indentation column.
+  \item Windows (CRLF) line endings are preserved.
+\end{itemize}
+
+fprettier also warns, on standard error, about input that is already over the
+limits the Fortran 2023 standard sets for free source form: 10\,000 characters
+per line and 1\,000\,000 characters per statement. It formats such a file
+anyway.
+
+\section{What fprettier will not do}
+
+fprettier is a formatter, not a compiler. It does not parse Fortran into a
+syntax tree; it recognises statements with regular expressions and tracks
+brackets, strings and comments with a small state machine. In practice this means:
+
+\begin{itemize}
+  \item It never changes what a program means. Strings, comments and
+    preprocessor lines are reproduced exactly; only blanks outside them are
+    changed, along with the case changes and operator spellings you ask for.
+  \item It does not reject invalid code. Unbalanced brackets or an \code{end
+    do} without a \code{do} are handled as well as possible, and the rest of the
+    file is still formatted.
+  \item It handles only free-form source. Fixed-form files (columns 1--6
+    reserved, \code{C} in column 1 for comments) are not supported, even though
+    \code{.f} and \code{.for} are in the default extension list.
+\end{itemize}
+
+\begin{keyidea}[Idempotence]
+Formatting a formatted file changes nothing. fprettier is designed and tested
+so that its output is a fixed point: \code{fprettier --check} passes on any file
+fprettier has just written. Several of the more intricate pieces of code in
+Part II exist only to make this true.
+\end{keyidea}
+
+\begin{exercise}[Predict, then check]
+Before running it, write down what fprettier will do to each line:
+\begin{lstlisting}[style=fortran]
+print*,'a'//'b'
+do while(i<10)
+x(1:n)=y(1:n)*2
+p=>t
+\end{lstlisting}
+Then check with \code{fprettier -s}. Which of your predictions were wrong?
+\end{exercise}
+
+\begin{exercise}[Case conversion boundaries]
+Format \code{integer :: size; size = size(arr)} with \code{-{}-case 2 2 2 2}.
+Which occurrences of \code{size} change case and which do not? Why can the
+formatter tell them apart?
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{Configuration}\label{ch:config}
+% ---------------------------------------------------------------------------
+
+\section{Three layers}
+
+fprettier takes its settings from three places. Each overrides the one before it:
+
+\begin{enumerate}
+  \item \file{fprettier.toml} configuration files;
+  \item command-line flags;
+  \item an \code{! fprettier:} directive comment in the file being formatted.
+\end{enumerate}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[node distance=3mm]
+  \node[data,minimum width=40mm] (def) {Config::default()};
+  \node[data,minimum width=40mm,below=of def] (home) {\textasciitilde/fprettier.toml};
+  \node[data,minimum width=40mm,below=of home] (root) {/fprettier.toml};
+  \node[data,minimum width=40mm,below=of root] (mid) {/work/fprettier.toml};
+  \node[data,minimum width=40mm,below=of mid] (leaf) {/work/src/fprettier.toml};
+  \node[data,minimum width=40mm,below=of leaf] (cli) {command-line flags};
+  \node[data,minimum width=40mm,below=of cli] (dir) {! fprettier: directive};
+  \node[stage,right=22mm of mid,minimum width=24mm] (cfg) {effective\\Config};
+  \foreach \n in {def,home,root,mid,leaf,cli,dir}{\draw[flow] (\n.east) -- ++(8mm,0) |- (cfg.west);}
+  \draw[-{Stealth[length=2.2mm]},thick,commentc] ([xshift=-8mm]def.west) -- node[note,sloped,above]{later overrides earlier} ([xshift=-8mm]dir.west);
+\end{tikzpicture}
+\caption{Configuration layers for a file in \file{/work/src}. Later layers
+override earlier ones, key by key.}
+\label{fig:config-layers}
+\end{figure}
+
+\section{Configuration files}
+
+\subsection{Where fprettier looks}
+
+For each file it formats, fprettier looks for \file{fprettier.toml} in your
+home directory, then in every directory from the filesystem root down to the
+directory holding the file. Files found later win, so a \file{fprettier.toml}
+beside the source overrides one at the top of the repository, which overrides
+your personal one. Only the keys a file actually sets are applied, and nested
+tables (\code{[whitespace\_dict]} and \code{[case\_dict]}) are merged key by
+key, so a subdirectory can change one whitespace rule without repeating the
+others.
+
+\code{-c}/\flag{config}~\textit{PATH} uses exactly that one file and skips the
+search. An empty file there is a convenient way to say ``defaults only'':
+
+\begin{lstlisting}[style=shell]
+touch /tmp/empty.toml
+fprettier --config /tmp/empty.toml -r src/
+\end{lstlisting}
+
+\subsection{Keys}
+
+Every key is optional. This file lists them all with their defaults:
+
+\begin{lstlisting}[style=toml]
+indent = 4                      # spaces per indent level
+line_length = 132               # maximum line length (0: no limit)
+whitespace = 2                  # whitespace level, 0-4
+impose_indent = true            # apply indentation
+impose_whitespace = true        # apply whitespace formatting
+strict_indent = false           # re-indent IF/DO even when already aligned
+indent_fypp = true              # indent fypp preprocessor blocks
+indent_mod = true               # indent module/program/submodule bodies
+format_decl = false             # normalise spacing around ::
+comment_spacing = 1             # spaces before an inline comment
+normalize_comment_spacing = false   # apply comment_spacing everywhere
+enable_replacements = false     # convert between .lt. and < style operators
+c_relations = false             # with enable_replacements, prefer < over .lt.
+sort_use = false                # sort use statements within a group
+sort_use_only = false           # sort the names in a use ... only: list
+
+[whitespace_dict]               # per-rule overrides of the level
+# comma = true, multdiv = true, ...   (see Chapter 4)
+
+[case_dict]                     # 0 = leave, 1 = lower, 2 = upper
+# keywords = 1, procedures = 1, operators = 1, constants = 1, types = 2
+\end{lstlisting}
+
+An unknown key is an error, reported against the file that contains it, as is a
+file that is not valid TOML. fprettier refuses to carry on with defaults in that
+case, because silently reformatting a whole tree with settings nobody chose is
+worse than stopping.
+
+\section{Command-line flags}
+
+Every setting has a flag; Appendix~\ref{app:cli} lists them. Three things about
+how flags combine with the configuration file are worth knowing.
+
+\textbf{Value flags replace.} \code{-i}, \code{-l}, \code{-w} and
+\flag{comment-spacing} replace the configured value.
+
+\textbf{Boolean flags only move one way.} A \flag{no-*} flag can only switch
+off a setting the configuration turned on (\flag{no-indent},
+\flag{no-whitespace}, \flag{no-indent-fypp}, \flag{no-indent-mod}), and the
+other boolean flags (\flag{strict-indent}, \flag{format-decl},
+\flag{sort-use}, \ldots) can only switch one on. There is no flag to switch
+\code{sort\_use} back off if a configuration file turned it on; use
+\flag{config} with a different file for that.
+
+\textbf{Whitespace rule flags take a value.} Each of the eleven rules has a
+flag \code{-{}-whitespace-\textit{rule}}, which takes an optional
+\code{=true} or \code{=false}; the bare flag means true:
+
+\begin{lstlisting}[style=shell]
+fprettier -w 2 --whitespace-multdiv --whitespace-plusminus=false file.f90
+\end{lstlisting}
+
+\section{In-file directives}
+
+A comment of the form \code{! fprettier: \textit{options}} anywhere in a file
+overrides everything else for that file:
+
+\begin{lstlisting}[style=fortran]
+! fprettier: --indent 2 --line-length 100 --case 1 1 1 1 --case-types 2
+\end{lstlisting}
+
+Directives accept a subset of the flags: \code{-i}/\flag{indent},
+\code{-l}/\flag{line-length}, \code{-w}/\flag{whitespace}, \flag{case},
+\flag{case-types}, \flag{no-indent}, \flag{enable-indent},\linebreak[2]
+\flag{no-whitespace} and \flag{enable-whitespace}. Anything else is ignored.
+Only the \emph{first} directive in a file is read; put every option on that
+one line. Unlike a command-line \flag{no-*} flag, a directive can switch
+indentation or whitespace formatting back on with \flag{enable-indent} or
+\flag{enable-whitespace}.
+
+The directive parser is lenient: an option it does not recognise, or a value it
+cannot parse, is skipped. The resulting settings are then validated like the
+command line's, so \code{! fprettier: -{}-indent 0} is an error.
+
+\section{Validation}
+
+Only two values are checked: \code{indent} must be at least 1, and
+\code{line\_length} must be at most 10\,000, the longest line free source form
+permits. Other values degrade harmlessly: a whitespace level above 4 behaves
+like level 2, and a line length below 40 effectively turns line splitting off.
+A \code{line\_length} of 0 means ``no limit''.
+
+\section{Seeing what fprettier decided}\label{sec:debug}
+
+\flag{debug} prints where the configuration came from and what it ended up as:
+
+\begin{lstlisting}[style=plain]
+$ fprettier -s -D --config /dev/null f.f90
+[DEBUG] Using explicit config file: /dev/null
+[DEBUG] Configuration: Config {
+    indent: 4,
+    line_length: 132,
+    whitespace: 2,
+    whitespace_dict: {},
+    impose_indent: true,
+    ...
+}
+[DEBUG] whitespace_flags array: [true, true, true, true, true, false,
+                                 true, false, true, true, false]
+\end{lstlisting}
+
+Without \flag{config} it lists every \file{fprettier.toml} it discovered, in
+order. The \code{whitespace\_flags} array is the resolved state of the eleven
+whitespace rules; Table~\ref{tab:ws-levels} on page~\pageref{tab:ws-levels}
+explains its positions.
+
+\begin{exercise}[Layering]
+Create \file{a/fprettier.toml} with \code{indent = 2} and
+\code{[whitespace\_dict] multdiv = true}, and \file{a/b/fprettier.toml} with
+\code{indent = 3}. Format a file in \file{a/b} with \flag{debug}. Which
+indent and which whitespace flags are used? Now add \code{-i 5} on the command
+line, and then \code{! fprettier: -i 6} inside the file.
+\end{exercise}
+
+\begin{exercise}[A directive that does nothing]
+Put \code{! fprettier: -{}-sort-use} in a file and format it. Was anything
+sorted? Explain using the list of options directives accept.
+\end{exercise}
+% ---------------------------------------------------------------------------
+\chapter{Whitespace Rules}\label{ch:whitespace-user}
+% ---------------------------------------------------------------------------
+
+\section{Levels and rules}
+
+Whitespace formatting is controlled by eleven independent rules. The
+\code{whitespace} setting (\code{-w}) picks a preset that switches groups of
+them on; \code{[whitespace\_dict]} in a configuration file, or the
+\code{-{}-whitespace-\textit{rule}} flags, then override single rules.
+Table~\ref{tab:ws-levels} shows which rules each level enables. The
+\emph{index} column is the rule's position in the \code{whitespace\_flags}
+array that \flag{debug} prints.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}c l X ccccc@{}}
+\toprule
+Index & Key & What it spaces & 0 & 1 & 2 & 3 & 4\\
+\midrule
+0 & \code{comma}       & after \code{,} and \code{;}; after \code{only:} in \code{use} & & \checkmark & \checkmark & \checkmark & \checkmark\\
+1 & \code{assignments} & around \code{=} and \code{=>} (outside brackets) & & \checkmark & \checkmark & \checkmark & \checkmark\\
+2 & \code{relational}  & around \code{<} \code{==} \code{/=} \code{.eq.} \ldots, and F2023 \code{?}/\code{:} & & \checkmark & \checkmark & \checkmark & \checkmark\\
+3 & \code{logical}     & around \code{.and.} \code{.or.} \code{.not.} \ldots{} and user-defined operators & & \checkmark & \checkmark & \checkmark & \checkmark\\
+4 & \code{plusminus}   & around binary \code{+} and \code{-} & & & \checkmark & \checkmark & \checkmark\\
+5 & \code{multdiv}     & around binary \code{*} and \code{/} & & & & \checkmark & \checkmark\\
+6 & \code{print}       & \code{print*} $\to$ \code{print *} & & \checkmark & \checkmark & \checkmark & \checkmark\\
+7 & \code{type}        & around the component selector \code{\%} & & & & & \checkmark\\
+8 & \code{intrinsics}   & before a statement keyword's \code{(}; \code{endif} $\to$ \code{end if}; \code{name:do} $\to$ \code{name: do} & & \checkmark & \checkmark & \checkmark & \checkmark\\
+9 & \code{decl}        & around \code{::} (only with \flag{format-decl}) & & \checkmark & \checkmark & \checkmark & \checkmark\\
+10 & \code{concat}     & around \code{//} & & & & & \checkmark\\
+\bottomrule
+\end{tabularx}
+\caption{Whitespace rules and the levels that enable them. Level 2 is the
+default; a level above 4 behaves like level 2.}
+\label{tab:ws-levels}
+\end{table}
+
+The same line at three levels:
+
+\begin{lstlisting}[style=plain]
+input    x  =  a( i , j )+b  *c
+-w 0     x=a(i,j) +b*c
+-w 2     x = a(i, j) + b*c
+-w 3     x = a(i, j) + b * c
+\end{lstlisting}
+
+The level-0 output is not simply the input: even with every rule off,
+fprettier removes runs of blanks and blanks before punctuation. The odd
+\code{) +b} is explained in Section~\ref{sec:ws-stages}; it is a good example
+of how the stages of the whitespace engine interact.
+
+\section{What each rule does, precisely}
+
+\paragraph{Commas and semicolons.} No space before, exactly one after. The
+\code{only:} of a \code{use} statement is also followed by one space.
+
+\paragraph{Assignments.} \code{=} gets one space on each side, but only at
+bracket depth zero, so keyword arguments (\code{call s(n=1)}), and
+\code{kind=dp} inside \code{real(\ldots)}, are left tight. A pointer
+assignment \code{=>} is spaced at any depth, which covers the
+associations of \code{associate (y => x)}. The \code{=} inside \code{==},
+\code{/=}, \code{<=} and \code{>=} is not an assignment and is left to the
+relational rule.
+
+\paragraph{Relational operators.} All twelve spellings are spaced on both
+sides. The \code{?} and \code{:} of a Fortran 2023 conditional expression,
+\code{(a > 0 ? 1 : 2)}, are spaced the same way. fprettier tells such a colon apart from an
+array section's (\code{a(1:n)}) or a \code{case (1:2)}: a colon is spaced only
+inside a bracket that already contains a \code{?}.
+
+\paragraph{Logical and user-defined operators.} \code{.and.}, \code{.or.},
+\code{.not.}, \code{.eqv.} and \code{.neqv.} are spaced, and so is any
+user-defined operator of the form \code{.\textit{name}.}, so
+\code{x = a.cross.b} becomes \code{x = a .cross. b}. The logical literals
+\code{.true.} and \code{.false.} have the same shape but are left alone,
+including any kind suffix (\code{.true.\_lk}).
+
+\paragraph{Plus and minus.} Only binary \code{+} and \code{-} are spaced. A
+sign is binary if what comes before it is a name, a number, \code{)} or
+\code{]}; otherwise it is unary and stays attached (\code{-1.0},
+\code{(-x)}, \code{a*(-b)}). The sign of an exponent (\code{1.0d-3},
+\code{2e+5}) is never spaced; fprettier checks that the text before the
+\code{d} or \code{e} really is a number, so in \code{val\_1d-2} the minus is
+binary. At the start of a continuation line, fprettier looks at the last
+character of the previous line to decide.
+
+\paragraph{Multiply and divide.} Binary \code{*} and \code{/} are spaced at
+level 3 and above. \code{**} is never spaced, and neither is the \code{/} of
+an array constructor's \code{(/} and \code{/)}.
+
+\paragraph{Print and read.} \code{print*,x} becomes \code{print *, x}.
+
+\paragraph{Component selector.} At level 4, \code{a\%b} becomes \code{a \% b}.
+At lower levels any blanks around \code{\%} are removed.
+
+\paragraph{Intrinsics.} Despite its name, this rule is about statement
+keywords. It puts one space between a statement keyword and its parenthesis:
+\code{if}, \code{else if}, \code{do while}, \code{select case}, \code{case},
+\code{select type}, \code{type is}, \code{class is}, \code{allocate},
+\code{deallocate}, \code{open}, \code{close}, \code{read}, \code{write},
+\code{inquire}, \code{forall}, \code{where}, \code{associate} and a few others.
+It does not apply to a procedure called \code{open} through a component
+(\code{obj\%open(3)}), or to \code{read}/\code{write} naming a defined-I/O generic
+(\code{generic :: read(formatted) => \ldots}). The same rule also separates run-together
+\code{end} keywords (\code{endif} $\to$ \code{end if}, including after a
+semicolon) and puts a space after a construct name's colon (\code{outer:do}
+$\to$ \code{outer: do}). Function calls are never separated from their
+parentheses: \code{sqrt (x)} becomes \code{sqrt(x)}.
+
+\paragraph{Declarations.} By default fprettier preserves the spacing around
+\code{::}, because many codebases align their declarations in columns by hand:
+
+\begin{lstlisting}[style=fortran]
+integer, intent(in)                                :: r, i, j, k
+integer                                            :: l
+\end{lstlisting}
+
+With \flag{format-decl}, \code{::} gets exactly one space on each side and
+such columns are collapsed. The \code{decl} rule has an effect only when
+\flag{format-decl} is given.
+
+\paragraph{Concatenation.} At level 4, \code{//} is spaced; below that, blanks
+around it are removed (\code{'a' // 'b'} $\to$ \code{'a'//'b'}).
+
+\section{Brackets}
+
+Blanks just inside brackets are removed: \code{a( i , j )} $\to$
+\code{a(i, j)}, \code{[ 1, 2 ]} $\to$ \code{[1, 2]}. A space is put before an
+opening bracket after a closing one or after a comma
+(\code{write(*,*)(merge(\ldots))} $\to$ \code{write (*, *) (merge(\ldots))}),
+after a top-level assignment (\code{arr =[1]} $\to$ \code{arr = [1]}), and
+before an array constructor that follows an operator.
+
+\section{What is never touched}
+
+The inside of a character literal, the text of a comment, a fypp inline
+expression (\code{\$\{\ldots\}\$}, \code{\#\{\ldots\}\#}, \code{@\{\ldots\}@}),
+a C preprocessor line (\code{\#ifdef}, \code{\#include}, \ldots) and a fypp
+directive line (\code{\#:if}, \code{\$:}, \ldots) are reproduced exactly.
+
+\begin{exercise}[Find the level]
+Your project's style puts spaces around \code{*} but not around \code{//},
+and never around \code{\%}. Which level and which overrides express that? Write
+it both as a \file{fprettier.toml} and as command-line flags.
+\end{exercise}
+
+\begin{exercise}[Unary or binary?]
+Predict the output of
+\code{y=a*-b+c(-1)-2e-3-x\%e-3} at level 3, then check. Which rule
+decided each sign?
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{How Indentation Works}\label{ch:indent-user}
+% ---------------------------------------------------------------------------
+
+\section{Scopes}
+
+fprettier indents by tracking \emph{scopes}. A statement such as
+\code{if (\ldots) then} or \code{subroutine s} \emph{opens} a scope; its body
+is indented one level deeper than the statement; and the matching \code{end}
+\emph{closes} the scope and returns to the statement's level. Some statements
+\emph{continue} a scope: \code{else}, \code{case}, \code{contains} and the
+like are written at the level of the opening statement, and the body after
+them is indented again.
+
+Appendix~\ref{app:scopes} lists every scope fprettier knows. Three details
+deserve mention here.
+
+\begin{itemize}
+  \item A bare \code{end} closes whatever scope is innermost, as in Fortran 77
+    style \code{end} for a subroutine.
+  \item \code{where (mask)} and \code{forall (\ldots)} open a scope only when
+    nothing follows the parenthesis. \code{where (x > 0) y = 1} is a single
+    statement and does not.
+  \item An \code{end} that closes nothing fprettier recognised (because the
+    opening statement used a form it does not match) is ignored for indentation
+    purposes, so one unrecognised construct costs one mis-indented block, not
+    the rest of the file.
+\end{itemize}
+
+\section{Program units: \texttt{indent\_mod}}
+
+By default, the bodies of \code{program}, \code{module} and \code{submodule}
+are indented like any other scope. Many projects prefer to leave them at column
+0; \flag{no-indent-mod} (or \code{indent\_mod = false}) does that:
+
+\begin{beforecol}
+\begin{lstlisting}[style=after]
+program p
+    implicit none
+    do i = 1, n
+        x = x + i
+    end do
+end program
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+program p
+implicit none
+do i = 1, n
+    x = x + i
+end do
+end program
+\end{lstlisting}
+\end{aftercol}
+
+(Here both sides are fprettier output: on the left with the default, on the
+right with \flag{no-indent-mod}.) Procedures, interfaces and type definitions
+are always indented.
+
+\section{Respecting existing style: stacked IF and DO}\label{sec:stacking}
+
+A popular way to write tightly nested loops is to keep them in one column:
+
+\begin{lstlisting}[style=fortran]
+    do i = 1, n
+    do j = 1, m
+        a(i,j) = 0
+    end do
+    end do
+\end{lstlisting}
+
+fprettier, like fprettify, preserves this. Its rule is:
+
+\begin{keyidea}[The stacking rule]
+When the first statement in a scope's body is an \code{if \ldots{} then} or a
+\code{do}, and it was written in the \emph{same column} as the statement that
+opened the scope, then the body of that scope is not indented. The two
+statements stay \emph{stacked}.
+\end{keyidea}
+
+Three conditions switch stacking off, and the body is indented as usual:
+
+\begin{enumerate}
+  \item The column is not a multiple of the indent width. Code indented with
+    three spaces, formatted with the default four, is re-indented throughout;
+    stacking is only kept where it is consistent with the new indent.
+  \item The opening statement is a construct whose body is always indented:
+    \code{associate}, \code{select}, \code{block}, \code{critical},
+    \code{change team}, \code{where}, \code{forall}, \code{interface}, a type
+    or \code{enum} definition. An \code{if} written flush against an
+    \code{associate} is a new level, not a stack.
+  \item \flag{strict-indent} is given. It switches the rule off everywhere.
+\end{enumerate}
+
+The opening statement \emph{can} be a program unit or procedure header. This
+has an effect that surprises people the first time they see it. Take a file
+that was never indented at all:
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+program p
+do i=1,n
+if(a(i)>0)then
+b(i)=1
+end if
+end do
+y=x
+end program
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+program p
+do i = 1, n
+if (a(i) > 0) then
+    b(i) = 1
+end if
+end do
+y = x
+end program
+\end{lstlisting}
+\end{aftercol}
+
+The \code{do} is the first statement of the program and is in the program's
+column, so the program body is stacked; the \code{if} is the first statement of
+the loop and in its column, so the loop body is stacked; only \code{b(i) = 1},
+which is not an \code{if} or \code{do}, gets indented. Formatting with
+\flag{strict-indent} gives the fully indented layout:
+
+\begin{lstlisting}[style=after]
+program p
+    do i = 1, n
+        if (a(i) > 0) then
+            b(i) = 1
+        end if
+    end do
+    y = x
+end program
+\end{lstlisting}
+
+\begin{pitfall}[Formatting unindented code]
+If you are formatting a codebase for the first time and some of it has no
+indentation at all, run fprettier once with \flag{strict-indent}. The
+stacking rule is there to \emph{preserve} a style someone chose; it cannot tell
+that choice from no choice. After the first run, the default rule keeps
+the result stable.
+\end{pitfall}
+
+\section{Statement labels}
+
+A numeric statement label is written in column 1, and the statement after it is
+placed at its proper indentation column, padded with as many blanks as needed
+(at least one):
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+subroutine s
+x=1
+  100   format(a, &
+      i3)
+end subroutine
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+subroutine s
+    x = 1
+100 format(a, &
+           i3)
+end subroutine
+\end{lstlisting}
+\end{aftercol}
+
+A labelled \code{do 100 i = 1, 10} loop is closed by the statement that carries
+label 100, the way the Fortran standard defines it, including when several
+loops share one terminating statement.
+
+\section{Preprocessors}
+
+\subsection{C preprocessor}
+
+Lines starting with \code{\#} followed by anything but \code{!}, \code{:},
+\code{\{} or \code{\}} are C preprocessor directives (\code{\#ifdef},
+\code{\#include}, \code{\#define}, \ldots). They are moved to column 0, which
+is where most C preprocessors require them, and otherwise left exactly as they
+are. They do not affect scope tracking: an \code{\#ifdef} does not indent the
+code inside it.
+
+\subsection{fypp}
+
+fypp is a Python-based preprocessor popular in Fortran projects. Its block
+directives (\code{\#:if}/\code{\#:elif}/\code{\#:else}/\code{\#:endif},
+\code{\#:for}, \code{\#:def}, \code{\#:block}, \code{\#:call},
+\code{\#:mute}) open and close scopes just like Fortran constructs, and the
+directive lines themselves are indented with the code:
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+subroutine s(x)
+real :: x
+#:for k in [4, 8]
+x = x + ${k}$
+#:endfor
+end subroutine
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+subroutine s(x)
+    real :: x
+    #:for k in [4, 8]
+        x = x + ${k}$
+    #:endfor
+end subroutine
+\end{lstlisting}
+\end{aftercol}
+
+\flag{no-indent-fypp} turns this off: directive lines keep the indentation they
+had, and do not open scopes. Inline fypp expressions
+(\code{\$\{k\}\$}) are copied verbatim wherever they appear, and fypp lines are
+never case-converted, because fypp recognises its own keywords only in lower
+case.
+
+\subsection{OpenMP}
+
+OpenMP directives (\code{!\$omp parallel do} and friends) are comments as far as
+Fortran is concerned, and fprettier leaves them in column 0. OpenMP
+\emph{conditional compilation} lines, which start with \code{!\$} followed by a space,
+contain code that is compiled only with OpenMP enabled. fprettier formats that
+code like any other, keeps the \code{!\$} sentinel in column 0, and pads after it
+so that the code lands at its indentation column:
+
+\begin{lstlisting}[style=after]
+!$  nthreads = omp_get_num_threads()
+!$OMP PARALLEL DO
+    do i = 1, n
+\end{lstlisting}
+
+\section{Comments}
+
+A comment on a line of its own is indented with the code around it. A comment
+after code (an \emph{inline} comment) keeps the gap that separated it from the
+code, unless \flag{normalize-comment-spacing} is given, in which case the gap
+becomes \flag{comment-spacing} spaces (default 1). If an inline comment would
+push its line past the length limit, the comment moves to its own line below the
+code.
+
+Comments that begin with \code{!!}, the convention of the FORD documentation
+generator, keep the indentation they were written with, because FORD comments
+are often aligned with the declarations they document.
+
+\begin{exercise}[Stacking]
+Format the stacked double loop at the start of Section~\ref{sec:stacking},
+indented by four spaces inside a subroutine. Then indent it by three spaces
+instead and format it again. Explain the difference using the three
+conditions.
+\end{exercise}
+
+\begin{exercise}[A blank line between]
+Does a blank line between \code{program p} and a following \code{do} change
+whether they stack? Form a hypothesis, then test it. (Part II,
+Section~\ref{sec:inspect}, explains the answer.)
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{Escape Hatches}\label{ch:escape}
+% ---------------------------------------------------------------------------
+
+No formatter gets everything right. fprettier gives you three ways to keep it
+away from code you have laid out by hand.
+
+\section{Deactivating formatting: \texttt{!\&}, \texttt{!\&<}, \texttt{!\&>}}
+
+A comment that starts with \code{!\&} at the end of a statement leaves that
+statement (all of its continuation lines) exactly as written. \code{!\&<} and
+\code{!\&>} mark a block to leave alone; both of the lines that carry the
+markers are part of the block:
+
+\begin{lstlisting}[style=after]
+  subroutine s()
+matrix = [1, 0, &   !&<
+          0, 1]     !&>
+y=1;z=2  !&
+    x = [1, 2, 3, &
+        & 4, 5, 6]
+\end{lstlisting}
+
+The two deactivated statements are not even re-indented. This is fprettier
+output: the input had the same first three lines.
+
+\section{Manual alignment with a leading \texttt{\&}}
+
+Fortran allows a continuation line to start with \code{\&} as well as ending
+the previous line with one. fprettier treats a leading \code{\&} as a request
+for \emph{manual alignment}: it keeps the column offsets the continuation lines
+had relative to the first line, rather than aligning them itself. Whitespace
+formatting still applies to the content of each line.
+
+\begin{beforecol}
+\begin{lstlisting}[style=before]
+x = [ 1, 2, 3, &
+    & 4, 5, 6 ]
+\end{lstlisting}
+\end{beforecol}
+\begin{aftercol}
+\begin{lstlisting}[style=after]
+x = [1, 2, 3, &
+    & 4, 5, 6]
+\end{lstlisting}
+\end{aftercol}
+
+This is the right tool for tables of numbers, where the columns carry meaning.
+
+\section{Turning whole features off}
+
+\flag{no-indent} and \flag{no-whitespace} turn off the two main passes.
+Case conversion, line splitting and comment spacing still run if enabled. In a
+file that should never be reformatted, a directive does the same for just that
+file:
+
+\begin{lstlisting}[style=fortran]
+! fprettier: --no-indent --no-whitespace
+\end{lstlisting}
+
+To skip a file altogether, exclude it with \flag{exclude}, or set
+\flag{exclude-max-lines} to skip huge generated files.
+
+\begin{exercise}[Which hatch?]
+For each situation, pick the most appropriate mechanism: (a) a 30-line
+\code{data} statement laid out as a matrix; (b) a vendored third-party module
+you never want touched; (c) one \code{if} statement that you want on one line
+even though it is 140 characters long; (d) a generated file of 200\,000 lines.
+\end{exercise}
+% ===========================================================================
+\part{Inside fprettier}
+% ===========================================================================
+
+% ---------------------------------------------------------------------------
+\chapter{Architecture}\label{ch:arch}
+% ---------------------------------------------------------------------------
+
+\section{The crate at a glance}
+
+fprettier is a single Cargo package with a library target and a binary target.
+The binary, \file{src/main.rs}, is a thin driver: it parses arguments, builds
+configurations, finds files and runs the library's formatter on each one. All
+the formatting logic lives in the library, whose public entry point is one
+function:
+
+\begin{lstlisting}[style=rust]
+// src/process.rs
+pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Config) -> Result<()>
+\end{lstlisting}
+
+It reads Fortran from any buffered reader and writes the formatted text to any
+writer. Table~\ref{tab:modules} maps the modules.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}l r X@{}}
+\toprule
+File & Lines & Responsibility\\
+\midrule
+\file{main.rs} & 650 & Driver: config per file, file discovery, parallelism, output modes, atomic writes\\
+\file{cli.rs} & 730 & \code{clap} command definition and \code{CliArgs}\\
+\file{config.rs} & 520 & \code{Config}, TOML discovery and merging, whitespace flag resolution\\
+\file{directive.rs} & 260 & \code{! fprettier:} comment parsing\\
+\file{process.rs} & 1710 & The pipeline: \code{format\_file}, \code{inspect\_file}, \code{format\_pass}\\
+\file{scope.rs} & 270 & The \code{SCOPES} table of constructs that open a scope\\
+\midrule
+\file{parser/char\_filter.rs} & 380 & \code{CharFilter}: which characters are code, string, comment or fypp\\
+\file{parser/stream.rs} & 560 & \code{InputStream}: physical lines to logical lines (\code{FortranLine})\\
+\file{parser/patterns.rs} & 620 & About 75 compiled regular expressions for Fortran statements\\
+\midrule
+\file{format/indenter.rs} & 860 & \code{F90Indenter}: scope stack and indentation\\
+\file{format/aligner.rs} & 400 & \code{F90Aligner}: continuation-line columns\\
+\file{format/continuation.rs} & 230 & Manual alignment (leading \code{\&}) helpers\\
+\file{format/whitespace.rs} & 1590 & The three-stage whitespace engine\\
+\file{format/line\_split.rs} & 570 & Breaking long lines, detaching comments\\
+\file{format/case\_convert.rs} & 1010 & Keyword tables and case conversion\\
+\file{format/replacements.rs} & 170 & \code{.lt.} $\leftrightarrow$ \code{<}\\
+\file{format/sort\_use.rs} & 460 & Sorting \code{use} statements and \code{only:} lists\\
+\bottomrule
+\end{tabularx}
+\caption{Source files and what they do. Line counts include each file's unit
+tests.}
+\label{tab:modules}
+\end{table}
+
+The dependencies are deliberately few: \code{clap} for arguments,
+\code{serde} and \code{toml} for configuration, \code{regex} for statement
+recognition, \code{rayon} for parallelism, \code{walkdir} and \code{glob} for
+finding files, \code{similar} for \flag{diff}, \code{anyhow} for errors, and
+\code{mimalloc} as the global allocator.
+
+\section{The flow of one file}
+
+Figure~\ref{fig:pipeline} shows what happens to a file from the command line
+to the disk. The rest of Part II takes the boxes one at a time.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[node distance=5mm and 6mm]
+  \node[stage] (cli) {\code{parse\_args}\\\file{cli.rs}};
+  \node[stage,right=of cli] (collect) {\code{collect\_files}\\\file{main.rs}};
+  \node[stage,right=of collect] (cfg) {\code{build\_config}\\per directory};
+  \node[stage,below=10mm of cfg] (single) {\code{process\_single\_file}\\size, lines, directive};
+  \node[stage,left=of single] (ff) {\code{format\_file}\\\file{process.rs}};
+  \node[stage,left=of ff] (out) {write back /\\stdout / diff / check};
+
+  \draw[flow] (cli) -- (collect);
+  \draw[flow] (collect) -- (cfg);
+  \draw[flow] (cfg) -- node[note,right]{rayon, one task per file} (single);
+  \draw[flow] (single) -- (ff);
+  \draw[flow] (ff) -- (out);
+
+  % format_file internals
+  \node[data,below=14mm of ff,minimum width=26mm] (buf) {bytes in memory};
+  \node[stage,below=5mm of buf] (sort) {\code{sort\_use\_statements}\\(optional)};
+  \node[stage,below=5mm of sort] (p1) {pass 1: \code{format\_pass}\\whitespace, no indent};
+  \node[stage,right=12mm of p1] (insp) {\code{inspect\_file}\\requested indents};
+  \node[stage,below=5mm of p1] (p2) {pass 2: \code{format\_pass}\\indent, no whitespace};
+  \node[stage,below=5mm of p2] (crlf) {\code{write\_lines}\\restore CRLF};
+  \draw[flow] (buf) -- (sort);
+  \draw[flow] (sort) -- (p1);
+  \draw[flow] (p1) -- (p2);
+  \draw[flow] (p1.east) -- (insp.west);
+  \draw[flow] (insp.south) |- (p2.east);
+  \draw[flow] (p2) -- (crlf);
+  \begin{scope}[on background layer]
+    \node[draw=accent,dashed,rounded corners,fit=(buf)(sort)(p1)(insp)(p2)(crlf),inner sep=6pt,label={[note]north east:inside \code{format\_file}}] (box) {};
+  \end{scope}
+  \draw[densely dotted,thick,accent] (ff.south) -- (box.north -| ff.south);
+\end{tikzpicture}
+\caption{The life of a file. The lower box expands \code{format\_file}.}
+\label{fig:pipeline}
+\end{figure}
+
+\section{Five ideas that explain the design}
+
+\paragraph{1. Lines, not trees.} fprettier never builds a syntax tree. The
+unit of work is the \emph{logical line}: one Fortran statement (or several
+separated by semicolons), with its continuation lines and comments. Statements
+are recognised by regular expressions anchored at the start of the logical
+line; everything else is character-level work guided by bracket depth. This
+keeps fprettier fast and makes it tolerant of code it does not fully
+understand, at the price of a great many careful special cases.
+
+\paragraph{2. A filter decides what is code.} Almost every component needs to
+skip string literals, comments and fypp expressions. Rather than parse them
+again and again, they all use one iterator adapter, \code{CharFilter}, which
+yields only the characters of a line that are code (Chapter~\ref{ch:reading}).
+
+\paragraph{3. Two passes.} Whitespace formatting and indentation run as two
+separate passes over the whole file, the second reading the output of the
+first. This separation keeps each pass simple, and it means the indentation pass
+sees statements whose spacing is already final, which the continuation
+aligner depends on (Chapter~\ref{ch:pipeline}).
+
+\paragraph{4. A pre-pass reads the author's intent.} Before the indentation
+pass, \code{inspect\_file} reads the existing indentation and records, for each
+statement, how much indent its scope should get. This is how the stacking rule
+of Section~\ref{sec:stacking} is implemented.
+
+\paragraph{5. Output must be a fixed point.} Formatting fprettier's output
+must change nothing. Any rule that measures the input (an original gap before a
+comment, a manual alignment offset, a label's padding) must measure something
+that its own output reproduces. Many of the comments in the source explain how
+a piece of code keeps this property.
+
+\section{Library use}
+
+Because \code{format\_file} is generic over \code{BufRead} and \code{Write},
+using fprettier from Rust takes a few lines. This program is the starting
+point for many of the exercises in Part II:
+
+\begin{lstlisting}[style=rust]
+// examples/play.rs  (create it; run with `cargo run --example play`)
+use fprettier::Config;
+use fprettier::process::format_file;
+
+fn main() {
+    let src = "program p\ninteger::i\ni=1\nend program p\n";
+    let config = Config { indent: 2, ..Config::default() };
+    let mut out = Vec::new();
+    format_file(src.as_bytes(), &mut out, &config).unwrap();
+    print!("{}", String::from_utf8(out).unwrap());
+}
+\end{lstlisting}
+
+A \code{\&[u8]} implements \code{BufRead}, so a byte string can be passed
+directly. The crate also exports its components, such as \code{CharFilter}
+from \code{fprettier::parser::char\_filter} and \code{F90Indenter} from
+\code{fprettier::format::indenter}, which the integration tests drive one at a
+time.
+
+\begin{exercise}[Orientation]
+Create \file{examples/play.rs} as above and run it. Then change it to read a
+file named on its command line and format it with \code{indent: 3}. Compare the
+result with \code{fprettier -s -i 3} on the same file.
+\end{exercise}
+
+\begin{exercise}[Reading the map]
+Using Table~\ref{tab:modules} and \code{grep}, find the function that turns
+\code{endif} into \code{end if}. Which file is it in, which configuration rule
+switches it off, and which regular expression stops it from changing
+\code{endif = 3}?
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{Reading Fortran: CharFilter and InputStream}\label{ch:reading}
+% ---------------------------------------------------------------------------
+
+\section{The problem}
+
+Consider this line:
+
+\begin{lstlisting}[style=fortran]
+write(*,*) 'Done! (100%)', n ! report ' progress
+\end{lstlisting}
+
+The first \code{!} is inside a string, so it does not start a comment; the
+second does. The \code{(} inside the string is not a bracket, the \code{\%} is not a
+component selector, and the quote inside the comment does not open a string. A
+formatter that got any of these wrong would corrupt the program. Fortran's
+lexical rules are simple enough that a small state machine gets them right,
+and fprettier has exactly one: \code{CharFilter}.
+
+\section{CharFilter}
+
+\code{CharFilter} wraps a \code{CharIndices} iterator over a line and yields
+\code{(byte\_position, char)} pairs, skipping characters according to three
+switches:
+
+\begin{lstlisting}[style=rust]
+// src/parser/char_filter.rs
+pub struct CharFilter<'a> {
+    chars: std::iter::Peekable<std::str::CharIndices<'a>>,
+    state: FilterState,
+    filter_comments: bool,
+    filter_strings: bool,
+    filter_fypp: bool,
+}
+
+#[derive(Debug)]
+struct FilterState {
+    instring: StringDelimiter,
+    infypp: bool,
+    incomment: bool,
+}
+
+pub enum StringDelimiter {
+    None,
+    Single,     // '...'
+    Double,     // "..."
+    FyppHash,   // #{...}#
+    FyppDollar, // ${...}$
+    FyppAt,     // @{...}@
+}
+\end{lstlisting}
+
+Two constructors cover nearly every use:
+
+\begin{lstlisting}[style=rust]
+/// Iterate the line's code: string literals, comments and fypp inline
+/// blocks are all masked out
+pub fn code(content: &'a str) -> Self { Self::new(content, true, true, true) }
+
+/// Iterate the line's code and its comment, masking only string literals
+/// and fypp inline blocks
+pub fn code_and_comments(content: &'a str) -> Self { Self::new(content, false, true, true) }
+\end{lstlisting}
+
+The byte positions it yields are positions in the \emph{original} string, so a
+caller can find a character with the filter and then slice the original line
+around it. This is the pattern you will see everywhere in fprettier:
+
+\begin{lstlisting}[style=rust]
+/// Find the byte position of the first `!` that starts a comment,
+/// i.e. outside strings and fypp expressions.
+pub fn comment_start(line: &str) -> Option<usize> {
+    CharFilter::code_and_comments(line).find_map(|(pos, c)| (c == '!').then_some(pos))
+}
+\end{lstlisting}
+
+\subsection{The state machine}
+
+Figure~\ref{fig:charfilter} shows the states. A \code{!} outside a string
+enters the comment state, which lasts to the end of the line. A quote enters
+the matching string state, and only the same quote leaves it. Fortran escapes
+a quote inside a string by doubling it (\code{'it''s'}); the filter does not
+special-case this, because closing and immediately reopening the string yields
+the same classification of every character. A fypp opener
+(\code{\#\{}, \code{\$\{}, \code{@\{}) enters a fypp state that only the matching
+\code{\}\#}, \code{\}\$} or \code{\}@} leaves; quotes inside a fypp expression do not
+open strings.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  st/.style={rectangle,rounded corners=6pt,draw=accent,fill=accentlight,minimum width=24mm,minimum height=9mm,align=center,font=\sffamily\small},
+  lab/.style={font=\sffamily\scriptsize,inner sep=2pt}]
+  \node[st] (code) {code};
+  \node[st,right=40mm of code] (dq) {in \texttt{"..."}};
+  \node[st,above=9mm of dq] (sq) {in \texttt{'...'}};
+  \node[st,below=9mm of dq] (fy) {in fypp \texttt{\$\{...\}\$}};
+  \node[st,left=24mm of code] (cm) {comment};
+  \draw[{Stealth[length=2.2mm]}-{Stealth[length=2.2mm]},thick,ink!70] (code.east) -- node[lab,above,sloped]{\texttt{\textquotesingle} \ldots{} \texttt{\textquotesingle}} (sq.west);
+  \draw[{Stealth[length=2.2mm]}-{Stealth[length=2.2mm]},thick,ink!70] (code.east) -- node[lab,above]{\texttt{\textquotedbl} \ldots{} \texttt{\textquotedbl}} (dq.west);
+  \draw[{Stealth[length=2.2mm]}-{Stealth[length=2.2mm]},thick,ink!70] (code.east) -- node[lab,below,sloped]{\texttt{\$\{} \ldots{} \texttt{\}\$} (also \texttt{\#}, \texttt{@})} (fy.west);
+  \draw[flow] (code) -- node[lab,above]{!} (cm);
+  \node[note,below=1mm of cm] {until end of line};
+\end{tikzpicture}
+\caption{CharFilter's states. A filtered state's characters (including the
+delimiters) are skipped when the corresponding switch is on.}
+\label{fig:charfilter}
+\end{figure}
+
+\subsection{Carrying state across lines}
+
+A character literal may be continued onto the next line:
+
+\begin{lstlisting}[style=fortran]
+msg = 'this is a long message &
+      &that continues here'
+\end{lstlisting}
+
+The second line begins \emph{inside} a string. \code{with\_string\_state}
+creates a filter that starts in a given state, and \code{get\_string\_state}
+reports the state at the end, so the stream reader can thread the state from
+one physical line to the next.
+
+\subsection{An iterative loop, on purpose}
+
+The \code{next} method is a \code{loop} with \code{continue} for every skipped
+character, not a recursive call. The comment in the source records why:
+
+\begin{lstlisting}[style=rust]
+fn next(&mut self) -> Option<Self::Item> {
+    // Loops rather than recursing: a filtered run is as long as the string
+    // or comment it covers, and one stack frame per skipped character
+    // overflows the stack on a megabyte-long literal.
+    loop {
+        let (pos, c) = self.chars.next()?;
+        // ...
+\end{lstlisting}
+
+\subsection{Splitting a line into masked regions}
+
+Several rewriting passes (the context stage of the whitespace engine, case
+conversion) need to transform the code of a line while leaving strings and
+comments alone. \code{split\_masked\_regions} turns a line and a filter into a
+list of alternating parts: even indices hold code, odd indices the masked text
+verbatim, and concatenating the list reproduces the line exactly. A pass
+rewrites the even parts and joins.
+
+\begin{lstlisting}[style=plain]
+line:    x = 'a, b' // y   ! note
+parts:   ["x = ", "'a, b'", " // y   ", "! note"]     (with CharFilter::code)
+\end{lstlisting}
+
+\section{InputStream: from physical to logical lines}
+
+\code{InputStream} reads a file one \emph{logical} line at a time. Its output
+type is the single most important data structure in fprettier:
+
+\begin{lstlisting}[style=rust]
+// src/parser/stream.rs
+pub struct FortranLine {
+    /// The logical Fortran line (continuations joined, before semicolons split it)
+    pub joined_line: String,
+    /// Comments from each physical line
+    pub comments: Vec<String>,
+    /// The original physical lines
+    pub lines: Vec<String>,
+    /// OMP conditional prefix (e.g., "!$ ") that was stripped during parsing
+    pub omp_prefix: String,
+    /// For each physical line, whether it starts inside a string
+    pub lines_in_string: Vec<bool>,
+}
+\end{lstlisting}
+
+For this input
+
+\begin{lstlisting}[style=fortran]
+call compute(alpha, beta, &   ! first two
+             gamma, delta)
+\end{lstlisting}
+
+\code{next\_fortran\_line} returns
+
+\begin{lstlisting}[style=plain]
+joined_line     = "call compute(alpha, beta, gamma, delta)"
+lines           = ["call compute(alpha, beta, &   ", "             gamma, delta)"]
+comments        = ["! first two", ""]
+omp_prefix      = ""
+lines_in_string = [false, false]
+\end{lstlisting}
+
+The \code{joined\_line} is what the scope tracker matches its regular
+expressions against; the \code{lines} are what the formatter rewrites and
+writes back. Note that \code{lines} keep their code only (the comment is in
+\code{comments}), but keep their trailing blanks, which is how the gap before
+an inline comment survives.
+
+\subsection{Reading a physical line}
+
+\code{read\_physical\_line} normalises one line of input:
+
+\begin{enumerate}
+  \item Tabs are expanded to eight spaces, but not inside a character
+    context, where a tab is part of the constant's value (Fortran 2023,
+    6.3.2.2). The string state from the previous physical line is passed in, so
+    a tab in a continued literal is preserved too.
+  \item The line ending, \code{\textbackslash n} or \code{\textbackslash r\textbackslash n}, is removed. (\code{format\_file}
+    puts CRLF back at the very end; Section~\ref{sec:crlf}.)
+  \item If the line starts inside a string and does not begin with \code{\&},
+    an \code{\&} is prepended, so that the rest of the pipeline sees an
+    ordinary continuation.
+  \item An OpenMP conditional sentinel, \code{!\$} followed by a space, is
+    split off into \code{omp\_prefix}. Without this, the sentinel would look
+    like a comment and the code after it would be lost.
+\end{enumerate}
+
+\subsection{Assembling a logical line}
+
+\code{next\_fortran\_line} then loops over physical lines:
+
+\begin{enumerate}
+  \item It splits the comment off with \code{comment\_start}.
+  \item It runs a \code{CharFilter} over the code part to update the string
+    state for the next line.
+  \item A comment-only line in the middle of a continuation is kept (in
+    \code{lines} and \code{comments}) but contributes no code, and reading
+    continues.
+  \item A fypp directive line in the middle of a continuation is treated the
+    same way: preserved, but not part of the Fortran statement.
+  \item A line that does not end with \code{\&} ends the logical line.
+    Otherwise the trailing \code{\&} is removed and reading continues.
+\end{enumerate}
+
+Finally the code parts are joined with single spaces. Continuation parts are
+trimmed, so the leading \code{\&} of a manually aligned line does not survive
+into \code{joined\_line}.
+
+\begin{pitfall}[Semicolons are not split]
+The module documentation of \file{parser/mod.rs} says that \code{InputStream}
+splits semicolon-separated statements. It does not, and a comment in
+\code{next\_fortran\_line} explains why: splitting would turn one formatted
+line into several. A logical line may therefore contain several statements,
+and every consumer that matches statements (the indenter, the sort-use pass)
+has to look for semicolons itself.
+\end{pitfall}
+
+\subsection{Guarding against pathological input}
+
+Fortran 2023 removed the limit on the number of continuation lines, so
+\code{InputStream} cannot reject a statement for having too many; the
+standard bounds the statement's length instead, at one million characters.
+\code{InputStream} allows ten times that, to leave room for indentation and
+ampersands, and returns an error beyond it, so a corrupt or adversarial file
+cannot exhaust memory.
+
+\section{The pattern library}
+
+\file{parser/patterns.rs} holds the regular expressions that recognise
+statements. They are \code{static LazyLock<Regex>} values, compiled on first
+use, built by a helper that makes them case-insensitive:
+
+\begin{lstlisting}[style=rust]
+fn build_re(pattern: &str) -> Regex {
+    RegexBuilder::new(pattern)
+        .case_insensitive(true)
+        .unicode(true)
+        .build()
+        .unwrap_or_else(|_| panic!("invalid regex pattern: {pattern}"))
+}
+
+const EOL_STR: &str = r"\s*;?\s*$"; // End of line
+const SOL_STR: &str = r"^\s*"; // Start of line
+
+pub static IF_RE: LazyLock<Regex> = LazyLock::new(|| {
+    build_re(&format!(r"{SOL_STR}(\w+\s*:)?\s*IF\s*\(.*\)\s*THEN(\s*$|\s*;)"))
+});
+pub static ENDIF_RE: LazyLock<Regex> =
+    LazyLock::new(|| build_re(&format!(r"{SOL_STR}END\s*IF(\s+\w+)?{EOL_STR}")));
+\end{lstlisting}
+
+The patterns share a shape: start of line, an optional construct name
+(\code{(\textbackslash w+\textbackslash s*:)?}), the keyword with
+\code{\textbackslash s*} wherever Fortran allows the blank to be omitted
+(\code{END\textbackslash s*IF} matches both \code{endif} and \code{end if}),
+and an end anchor that allows a trailing semicolon. They are matched against
+\code{CharFilter::code} output, so strings and comments cannot confuse them;
+\code{IF\_RE}'s greedy \code{\textbackslash(.*\textbackslash)} is safe because
+the line holds only code.
+
+Some patterns are deliberately loose. \code{SUBR\_RE} accepts any prefix without
+quotes before \code{SUBROUTINE}, which covers \code{recursive},
+\code{pure}, \code{elemental}, \code{module} and their combinations without
+listing them. The cost is that it also matches \code{end subroutine}, which
+is why the indenter checks for \code{end} statements before it checks for
+openers (Section~\ref{sec:indenter-order}).
+
+\begin{keyidea}[Why pre-warm?]
+There are about a hundred \code{LazyLock<Regex>} values across the crate. When
+formatting in parallel, \file{main.rs} first formats a two-line program on the
+main thread, so that all of them are compiled before the worker threads start
+and race to initialise them. The comment there records the measured benefit
+(10--40\,ms on a 3000-file run).
+\end{keyidea}
+
+\begin{exercise}[CharFilter by hand]
+Write a unit test in \file{src/parser/char\_filter.rs} that collects
+\code{CharFilter::code(line)} into a \code{String} for the line at the start of
+this chapter. What does it contain? Now do the same with
+\code{code\_and\_comments}.
+\end{exercise}
+
+\begin{exercise}[Doubled quotes]
+Convince yourself that \code{'it''s'} is handled correctly by tracing the
+state machine character by character. Then find the code in
+\file{format/whitespace.rs} that handles doubled quotes explicitly. Why does
+the whitespace engine need to, when \code{CharFilter} does not?
+\end{exercise}
+
+\begin{exercise}[Logical lines]
+Use \code{InputStream::from\_string} in a test to print the
+\code{FortranLine} for a statement with a comment-only line in the middle of
+its continuation. Which vectors have three entries, and what does
+\code{joined\_line} contain?
+\end{exercise}
+% ---------------------------------------------------------------------------
+\chapter{The Formatting Pipeline}\label{ch:pipeline}
+% ---------------------------------------------------------------------------
+
+This chapter follows \code{format\_file} in \file{src/process.rs} from top to
+bottom. It is the longest file in the crate because it is where every other
+component is wired together, and where most of the special cases that tie them
+together live.
+
+\section{\texttt{format\_file}}
+
+\begin{lstlisting}[style=rust]
+pub fn format_file<R: BufRead, W: Write>(input: R, output: &mut W, config: &Config) -> Result<()> {
+    let case_settings = CaseSettings::from_dict(&config.case_dict);
+    let case_enabled = case_settings.is_enabled();
+    let line_split_needed = config.line_length > 0 && config.line_length < LINE_SPLIT_THRESHOLD;
+    let normalize_comment_spacing_needed = config.normalize_comment_spacing;
+
+    let mut input_buffer = Vec::new();
+    let mut reader = input;
+    reader.read_to_end(&mut input_buffer)?;
+    let crlf_input = input_buffer.windows(2).any(|pair| pair == b"\r\n");
+
+    if input_buffer.len() > MAX_LINE_LENGTH {
+        for warning in over_limit_warnings(&String::from_utf8_lossy(&input_buffer)) {
+            eprintln!("Warning: {warning}");
+        }
+    }
+
+    if config.sort_use || config.sort_use_only {
+        if let Ok(src) = std::str::from_utf8(&input_buffer) {
+            let sorted = sort_use_statements(src, config.sort_use, config.sort_use_only);
+            input_buffer = sorted.into_bytes();
+        }
+    }
+    // ... pass 1, inspection, pass 2 (below)
+    write_lines(output, &formatted, crlf_input)?;
+    Ok(())
+}
+\end{lstlisting}
+
+The whole input is read into memory first, for three reasons: the CRLF check
+needs to see it all, the \code{use} sorter rearranges whole lines, and the
+inspection pre-pass reads the text a second time. (The driver has already read
+the file into memory to look for a directive, so this costs a copy, not a
+second read from disk.)
+
+Notice that \code{sort\_use\_statements} runs \emph{first}, on raw text. A
+collapsed \code{only:} list may come out longer than the line limit; running the
+sorter first means the normal passes see the final line order and re-break
+anything it left too long.
+
+\subsection{The passes}
+
+\begin{lstlisting}[style=rust]
+    // Pass 1: Whitespace formatting
+    let intermediate = if config.impose_whitespace {
+        let mut pass1_output = Vec::new();
+        format_pass(BufReader::new(Cursor::new(&input_buffer)), &mut pass1_output, config,
+                    false, // Don't impose indent in pass 1
+                    true,  // Do impose whitespace in pass 1
+                    None)?;
+        pass1_output
+    } else {
+        input_buffer
+    };
+
+    let inspect_result = if config.impose_indent && !config.strict_indent {
+        Some(inspect_file(BufReader::new(Cursor::new(&intermediate)),
+                          config.indent, config.strict_indent)?)
+    } else {
+        None
+    };
+
+    // Pass 2: Indentation
+    let mut formatted = Vec::with_capacity(intermediate.len());
+    if config.impose_indent {
+        format_pass(BufReader::new(Cursor::new(intermediate)), &mut formatted, config,
+                    true, false, inspect_result.as_ref())?;
+    } else if !config.impose_whitespace
+        && (case_enabled || line_split_needed || normalize_comment_spacing_needed)
+    {
+        format_pass(/* ... */ false, false, None)?;
+    } else {
+        formatted = intermediate;
+    }
+\end{lstlisting}
+
+There is one function, \code{format\_pass}, that does both jobs, controlled by
+two booleans. Pass 1 imposes whitespace, pass 2 imposes indentation. Features
+that are not one or the other (case conversion, operator replacement, line
+splitting and comment placement) run in \emph{every} pass that runs, which is
+safe because each is idempotent. If both main passes are switched off but one
+of those features is on, a single pass with both booleans false runs just
+those features.
+
+\begin{keyidea}[Inspect what pass 2 will read]
+\code{inspect\_file} reads \code{intermediate}, pass 1's output, not the
+original input. The comment in the source explains why: pass 1 collapses runs
+of blank lines and can move a comment to its own line, so the original has a
+different number of statements, and its requested indents would be paired with
+the wrong lines. Pass 1 preserves each line's leading whitespace, which is all
+the inspection reads.
+\end{keyidea}
+
+\subsection{Line endings}\label{sec:crlf}
+
+\code{InputStream} strips \code{\textbackslash r} along with
+\code{\textbackslash n}, so every formatted line ends with a bare
+\code{\textbackslash n}. \code{write\_lines} puts \code{\textbackslash r\textbackslash n} back if the
+input contained one anywhere. A file with mixed endings comes out entirely
+CRLF.
+
+\section{\texttt{inspect\_file}: reading the author's intent}\label{sec:inspect}
+
+\code{inspect\_file} implements the stacking rule of
+Section~\ref{sec:stacking}. It produces one number per non-blank logical line,
+the \emph{requested indent}, plus the column of the first statement:
+
+\begin{lstlisting}[style=rust]
+struct InspectResult {
+    /// Requested indents for each Fortran line
+    required_indents: Vec<usize>,
+    /// Indent level of first non-empty line
+    first_indent: usize,
+}
+\end{lstlisting}
+
+The heart of it:
+
+\begin{lstlisting}[style=rust]
+let offset = indent_of(first_line);
+let mut required_indent = offset.saturating_sub(prev_offset);
+
+if IF_RE.is_match(joined_trimmed) || DO_RE.is_match(joined_trimmed) {
+    // The `indent_size > 0` guard is load-bearing: is_multiple_of(0)
+    // is true only for 0 ...
+    let indent_misaligned = indent_size > 0 && !offset.is_multiple_of(indent_size);
+    if prev_offset != offset || strict_indent || indent_misaligned || prev_was_scope_opener {
+        required_indent = indent_size;
+    }
+    // Otherwise keep required_indent as delta (usually 0 if same offset)
+} else {
+    required_indent = indent_size;
+}
+
+prev_was_scope_opener = opens_indented_scope(joined_trimmed);
+required_indents.push(required_indent);
+prev_offset = offset;
+\end{lstlisting}
+
+So every line requests a full indent, except an \code{if}/\code{do} line in
+the same, aligned, column as the line before it (where the line before is not
+one of the always-indented scope openers), which requests 0.
+
+Blank lines are \emph{transparent}: they get no entry and do not update
+\code{prev\_offset}. That answers Exercise~5.2: a blank line between
+\code{program p} and \code{do} does not stop them from stacking.
+
+\subsection{The off-by-one that is not a bug}
+
+How is the requested indent used? In \code{format\_pass}, the line number used
+to index \code{required\_indents} is incremented \emph{before} it is used, so
+it starts at 1 and indexes a vector that starts at 0:
+
+\begin{lstlisting}[style=rust]
+// Count lines with content only, exactly as `inspect_file` records
+// them. Note this leaves fortran_line_number 1-indexed against a
+// 0-indexed vector, which shifts all values by 1: the alignment
+// preservation logic depends on using the NEXT line's required_indent
+// for scope-opening statements (IF/DO).
+if !is_blank {
+    fortran_line_number += 1;
+}
+\end{lstlisting}
+
+and the value it reads is passed to the indenter as \code{relative\_indent},
+the amount by which a \emph{scope opened on this line} indents its body. Put
+together: the indent a scope gives its body is the requested indent of the
+\emph{first statement of the body}. If that statement is a stacked
+\code{do}, the scope's body indent is 0. That is the stacking rule.
+
+\begin{figure}[ht]
+\centering
+\small
+\begin{tabular}{@{}r l c c l@{}}
+\toprule
+$n$ & statement (column) & own entry & \code{relative\_indent} read & effect\\
+\midrule
+1 & \code{program p} (0)      & 4 & \code{[1]} = 0 & program body indent 0\\
+2 & \code{do i=1,n} (0)       & 0 & \code{[2]} = 0 & loop body indent 0\\
+3 & \code{if(\ldots)then} (0) & 0 & \code{[3]} = 4 & if body indent 4\\
+4 & \code{b(i)=1} (0)         & 4 & \code{[4]} = 4 & (opens nothing)\\
+5 & \code{end if} (0)         & 4 & \ldots & \\
+\bottomrule
+\end{tabular}
+\caption{How the example of Section~\ref{sec:stacking} gets its
+indentation. \emph{Own entry} is the line's \code{required\_indents[$n-1$]};
+each line reads \code{required\_indents[$n$]}, the entry of the line after it.}
+\label{fig:offbyone}
+\end{figure}
+
+\begin{pitfall}[Two loops that must agree]
+\code{inspect\_file} and \code{format\_pass} each read the text with an
+\code{InputStream} and each skip blank lines. If they ever disagreed about
+which lines count, every requested indent after the first disagreement would be
+paired with the wrong statement. Both therefore use the same predicate,
+\code{is\_blank\_line}, and the comment on it says so.
+\end{pitfall}
+
+\section{\texttt{format\_pass}, step by step}
+
+\code{format\_pass} creates an \code{InputStream} and, in the indentation pass,
+an \code{F90Indenter}. Then, for each \code{FortranLine}, it runs the steps of
+Figure~\ref{fig:format-pass}.
+
+\begin{figure}[p]
+\centering
+\begin{tikzpicture}[node distance=3.2mm,
+  st/.style={stage,minimum width=62mm,minimum height=6.5mm,font=\sffamily\scriptsize},
+  side/.style={note,text width=52mm}]
+  \node[st] (s1) {read \code{FortranLine}; skip repeated blank lines};
+  \node[st,below=of s1] (s2) {copy \code{lines} $\to$ \code{output\_lines}; record \code{lines\_were\_indented}};
+  \node[st,below=of s2] (s3) {\code{blank\_out\_omp\_prefix}};
+  \node[st,below=of s3] (s4) {\code{split\_off\_label}};
+  \node[st,below=of s4] (s5) {compute \code{FormattingFlags}};
+  \node[st,below=of s5] (s6) {\code{extract\_and\_format\_pre\_ampersands}};
+  \node[st,below=of s6] (s7) {\code{apply\_whitespace\_to\_lines}};
+  \node[st,below=of s7] (s8) {\code{replace\_relational\_operators} (opt.)};
+  \node[st,below=of s8] (s9) {\code{convert\_case} (opt.)};
+  \node[st,below=of s9] (s10) {indentation: \code{compute\_and\_apply\_indentation}\\ or pin CPP line to column 0};
+  \node[st,below=of s10] (s11) {\code{apply\_pre\_ampersand\_indentation}};
+  \node[st,below=of s11] (s12) {\code{split\_lines\_if\_needed}};
+  \node[st,below=of s12] (s13) {\code{compute\_comment\_indices}};
+  \node[st,below=of s13] (s14) {\code{write\_output\_line} for each line};
+  \foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8,s8/s9,s9/s10,s10/s11,s11/s12,s12/s13,s13/s14}{\draw[flow] (\a)--(\b);}
+  \node[side,right=4mm of s3] {\code{!\$ } sentinel replaced by blanks};
+  \node[side,right=4mm of s4] {numeric label removed, padding normalised (pass 2)};
+  \node[side,right=4mm of s5] {fypp? CPP? \code{!\&} skip? auto-align?};
+  \node[side,right=4mm of s6] {pass 2, manual alignment only};
+  \node[side,right=4mm of s7] {pass 1 only; Chapter~\ref{ch:ws-engine}};
+  \node[side,right=4mm of s10] {pass 2 only; Chapters \ref{ch:indenter}, \ref{ch:aligner}};
+  \node[side,right=4mm of s12] {Section~\ref{sec:linesplit}};
+  \node[side,right=4mm of s14] {label, comment placement, newline};
+  \draw[flow] (s14.west) -- ++(-6mm,0) |- node[note,pos=0.25,left]{next line} (s1.west);
+\end{tikzpicture}
+\caption{What \code{format\_pass} does with each logical line.}
+\label{fig:format-pass}
+\end{figure}
+
+\subsection{Steps 1--3: preparation}
+
+Blank lines are dropped if the previous line was blank too, which is how runs of
+blank lines collapse to one. (A labelled blank line does not count as blank
+for this purpose: \code{skip\_blank = is\_blank \&\& labels.label.is\_empty()}.)
+
+\code{lines\_were\_indented} records whether each physical line started with
+whitespace \emph{before} anything rewrote it. It is needed at the very end, to
+decide whether a comment-only line should be indented, and by then the lines
+have been rewritten.
+
+\code{blank\_out\_omp\_prefix} replaces the \code{!\$ } sentinel with three
+spaces on every line, so that the formatting steps see plain Fortran in the
+same columns. The indentation step writes the sentinel back
+(\code{restore\_omp\_prefix} does it when indentation is off).
+
+\subsection{Step 4: labels}
+
+\code{split\_off\_label} removes a numeric statement label from the joined line and
+from the first physical line, replacing it with blanks so that columns do not
+move. It returns a \code{LineLabels}:
+
+\begin{lstlisting}[style=rust]
+struct LineLabels {
+    joined_no_label: String,   // the joined logical line with label removed
+    first_no_label: String,    // the first physical line with label removed
+    first_label: String,       // the label extracted from first physical line
+    label: String,             // the label extracted from joined line
+    label_shift: usize,        // indentation shift due to label normalization
+}
+\end{lstlisting}
+
+In the indentation pass it also normalises the run of blanks after the label,
+and records in \code{label\_shift} how far that moved the statement, because
+manually aligned continuation lines have to move by the same amount. It does
+this only in pass 2, because pass 1's output is pass 2's input, and normalising
+earlier would erase the original spacing that the shift is measured from. When
+the line is finally written, \code{write\_output\_line} prints the label and
+pads it to the statement's indentation column.
+
+\subsection{Step 5: flags}
+
+\begin{lstlisting}[style=rust]
+let flags = FormattingFlags {
+    is_fypp_line: is_fypp_directive(&fortran_line.joined_line),
+    is_cpp_line: CPP_LINE_RE.is_match(&fortran_line.joined_line),
+    skip_format: detect_skip_format(&fortran_line.comments, &mut in_deactivation_block),
+    auto_align: should_auto_align(&output_lines),
+};
+\end{lstlisting}
+
+\code{detect\_skip\_format} implements the \code{!\&} markers of
+Chapter~\ref{ch:escape}, carrying the \code{!\&<} \ldots{} \code{!\&>} block
+state in \code{in\_deactivation\_block} from line to line.
+\code{should\_auto\_align} is false if any physical line starts with
+\code{\&} followed by content: that is the request for manual alignment.
+The helper \code{is\_rewritable\_code()} combines the first three flags: a
+line may be rewritten only if it is neither a preprocessor line nor
+deactivated.
+
+\subsection{Steps 6--9: rewriting content}
+
+Step 7, \code{apply\_whitespace\_to\_lines}, runs only in pass 1. For a
+single-line statement it formats the label-free joined line. For a statement
+with continuations it formats each physical line separately, removing the trailing
+\code{\&} first and restoring it afterwards, and carries two pieces of state
+from line to line: the bracket depth, so that \code{n=1} on the second line of
+a call is still known to be a keyword argument, and the last significant
+character, so that a \code{-} at the start of a continuation line can be
+classified as unary or binary.
+
+Manually aligned continuation lines cannot be formatted in pass 1, because
+their leading \code{\&} is still attached. Step 6,
+\code{extract\_and\_format\_pre\_ampersands}, runs in pass 2: it records each
+line's manual offset, strips the leading \code{\&} with
+\code{remove\_pre\_ampersands}, and then applies whitespace formatting to the
+continuation lines. Chapter~\ref{ch:aligner} covers this.
+
+Steps 8 and 9 apply operator replacement and case conversion to each physical
+line, through \code{map\_code\_lines}, which skips lines that begin inside a
+multi-line string.
+
+\subsection{Steps 10--11: indentation}
+
+In pass 2, a C preprocessor line is pinned to column 0 and the indenter is
+\emph{not} called, since a directive does not affect Fortran scope. Every other line
+goes to \code{compute\_and\_apply\_indentation}, which calls
+\code{F90Indenter::process\_logical\_line} and applies the resulting
+per-line indents. It is full of special cases, each documented in place:
+
+\begin{itemize}
+  \item a labelled first line keeps its leading blanks, which encode the
+    label's column for \code{write\_output\_line};
+  \item continuation lines of a multi-line fypp directive keep their offset
+    relative to the directive's first line (\code{rebase\_fypp\_continuation});
+    using their absolute indent instead made such blocks drift right on every
+    run, a bug fixed in 0.4.0;
+  \item a continuation line starting with \code{\&} is indented one column less, so
+    that the content after the \code{\&} lands on the alignment column;
+  \item an OpenMP conditional line gets its sentinel back at column 0, with
+    padding after it.
+\end{itemize}
+
+Step 11 handles manually aligned lines, putting their leading \code{\&} back with
+\code{prepend\_ampersands} and indenting them.
+
+\subsection{Steps 12--14: splitting and writing}
+
+\code{split\_lines\_if\_needed} breaks over-long lines (never preprocessor
+lines, whose continuation syntax differs), returning for each output line the
+index of the input line it came from. \code{compute\_comment\_indices} uses that
+mapping to decide which output line carries each comment: the last fragment of
+its origin line. Finally \code{write\_output\_line} writes each line with its
+label and comment. Chapter~\ref{ch:lines} covers both.
+
+\section{Context structs}
+
+\code{format\_pass} passes a lot of state to its helpers. Rather than ten-argument
+functions, it bundles it:
+
+\begin{description}[font=\ttfamily\small]
+  \item[PassContext] per pass: the config, the resolved
+    \code{whitespace\_flags: [bool; 11]}, which pass this is, and the
+    \code{InspectResult};
+  \item[FormattingFlags] per logical line: the four flags above, and
+    \code{Copy};
+  \item[LineLabels] per logical line: the label strings;
+  \item[LineWriteContext] per logical line, for writing: computed indents,
+    \code{lines\_were\_indented}, comment indices, split origins and the line
+    length.
+\end{description}
+
+\begin{exercise}[Watch the passes]
+In a scratch copy of \file{process.rs}, make \code{format\_file} print
+\code{intermediate} to standard error between the passes. Format
+\file{examples/in/example.f90}. Which changes happened in pass 1, and which in
+pass 2? Find a line that pass 2 changed in a way you did not expect.
+\end{exercise}
+
+\begin{exercise}[Requested indents]
+Add an \code{eprintln!} of \code{inspect\_result} and format the stacking example
+of Section~\ref{sec:stacking}. Check your output against
+Figure~\ref{fig:offbyone}.
+\end{exercise}
+
+\begin{exercise}[Inspect the wrong buffer]
+Change \code{format\_file} so that \code{inspect\_file} reads the original input
+instead of \code{intermediate} (you will need to clone \code{input\_buffer}
+before pass 1 consumes it), and run \code{cargo test}. At the time of writing,
+every test still passes: the test suite does not pin this down. Find an input
+for which the change matters, and turn it into a regression test in
+\file{tests/integration\_test.rs}. (Hint: pass 1 turns a long inline comment
+into a line of its own, which adds a logical line. Put such a comment, with
+\code{-l 40}, just before a pair of stacked \code{do} loops.)
+\end{exercise}
+% ---------------------------------------------------------------------------
+\chapter{Scopes and the Indenter}\label{ch:indenter}
+% ---------------------------------------------------------------------------
+
+\section{The scope table}
+
+Every construct that opens an indented scope is one row of a static table in
+\file{src/scope.rs}:
+
+\begin{lstlisting}[style=rust]
+pub struct Scope {
+    pub group: Group,
+    /// Statement that opens the scope
+    pub open: Option<&'static Re>,
+    /// Statement that continues it at the parent indent (ELSE, CASE, CONTAINS)
+    pub cont: Option<&'static Re>,
+    /// Statement that closes it
+    pub close: Option<&'static Re>,
+    /// Whether a close must match this scope exactly; a bare END matches any
+    pub spec: bool,
+    /// WHERE/FORALL, which open a block only when nothing follows the `)`
+    pub conditional: bool,
+}
+
+pub static SCOPES: &[Scope] = {
+    use Group::{Core, Fypp, Module};
+    &[
+        // 0: IF/THEN/ELSE/ENDIF
+        Scope::new(Core, Some(&IF_RE), Some(&ELSE_RE), Some(&ENDIF_RE)),
+        // 1: DO/ENDDO
+        Scope::new(Core, Some(&DO_RE), None, Some(&ENDDO_RE)),
+        // 2: SELECT CASE/RANK/TYPE
+        Scope::new(Core, Some(&SELCASE_RE), Some(&CASE_RE), Some(&ENDSEL_RE)),
+        // ... 25 rows in all; Appendix C lists them
+    ]
+};
+\end{lstlisting}
+
+A scope's identity is its \emph{index} in this table, which is what the
+indenter pushes on its stack, so rows may be appended but never reordered.
+Row 9 is special: it has no opener and its closer is \code{ENDANY\_RE}, a bare
+\code{end}, with \code{spec: false}, meaning that it may close any scope.
+
+Each row belongs to a \code{Group}. \code{Core} rows are always active;
+\code{Module} rows (\code{module}, \code{submodule}, \code{program}) only with
+\code{indent\_mod}; \code{Fypp} rows only with \code{indent\_fypp} in the
+indentation pass. A \code{ScopeParser} is nothing more than those two
+booleans, with an iterator over the enabled rows:
+
+\begin{lstlisting}[style=rust]
+impl ScopeParser {
+    fn enabled(self, idx: usize) -> bool {
+        match SCOPES.get(idx).map(|s| s.group) {
+            Some(Group::Core) => true,
+            Some(Group::Module) => self.indent_mod,
+            Some(Group::Fypp) => self.indent_fypp,
+            None => false,
+        }
+    }
+    pub fn iter(self) -> impl Iterator<Item = (usize, &'static Scope)> {
+        SCOPES.iter().enumerate().filter(move |(idx, _)| self.enabled(*idx))
+    }
+}
+\end{lstlisting}
+
+The table is the single source of truth for which constructs open scopes.
+Before it existed, \code{inspect\_file} kept its own hand-written copy of the
+openers, and missed some; \code{opens\_indented\_scope} now derives its list
+from the same patterns.
+
+\section{\texttt{F90Indenter}'s state}
+
+\begin{lstlisting}[style=rust]
+pub struct F90Indenter {
+    /// Stack of open scopes, as indices into SCOPES
+    scope_storage: Vec<usize>,
+    /// Stack of absolute indent levels
+    indent_storage: Vec<usize>,
+    /// Output: indent for each physical line in current logical_line
+    line_indents: Vec<usize>,
+    parser: ScopeParser,
+    aligner: F90Aligner,
+    initial: bool,
+    /// Open labeled DO constructs, as (scope_storage depth after the push,
+    /// terminating statement label)
+    do_labels: Vec<(usize, String)>,
+}
+\end{lstlisting}
+
+The two stacks move together. \code{indent\_storage} starts with one entry,
+the column of the file's first statement (\code{first\_indent} from
+\code{inspect\_file}), so it always has one entry more than
+\code{scope\_storage}. Its top is the indent of the current scope's body;
+the entry below it is the indent of the statement that opened the scope.
+
+Table~\ref{tab:stacks} traces both stacks through the \file{geometry.f90}
+example of Chapter~\ref{ch:start}.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{@{}l c l l@{}}
+\toprule
+statement & indent & \code{scope\_storage} after & \code{indent\_storage} after\\
+\midrule
+\code{module geometry}  & 0  & [13]          & [0, 4]\\
+\code{implicit none}    & 4  & [13]          & [0, 4]\\
+\code{contains}         & 0  & [13]          & [0, 4]\\
+\code{subroutine area}  & 4  & [13, 3]       & [0, 4, 8]\\
+\code{real, \ldots}     & 8  & [13, 3]       & [0, 4, 8]\\
+\code{if (r < 0.0) then}& 8  & [13, 3, 0]    & [0, 4, 8, 12]\\
+\code{a = -1.0}         & 12 & [13, 3, 0]    & [0, 4, 8, 12]\\
+\code{else}             & 8  & [13, 3, 0]    & [0, 4, 8, 12]\\
+\code{a = pi*r**2}      & 12 & [13, 3, 0]    & [0, 4, 8, 12]\\
+\code{end if}           & 8  & [13, 3]       & [0, 4, 8]\\
+\code{end subroutine}   & 4  & [13]          & [0, 4]\\
+\code{end module}       & 0  & []            & [0]\\
+\bottomrule
+\end{tabular}
+\caption{The indenter's stacks, line by line. Scope 13 is \code{MODULE}, 3 is
+\code{SUBROUTINE}, 0 is \code{IF}.}
+\label{tab:stacks}
+\end{table}
+
+Three rules produce the \emph{indent} column:
+
+\begin{itemize}
+  \item an ordinary statement, or one that opens a scope, is written at the top of
+    \code{indent\_storage};
+  \item a statement that continues a scope (\code{contains}, \code{else})
+    is written one entry down, at the indent of the scope's opener;
+  \item a valid \code{end} is written one entry down too, and then the scope is
+    popped.
+\end{itemize}
+
+\section{\texttt{process\_logical\_line}}
+
+This method is called once per logical line. Its outline:
+
+\begin{lstlisting}[style=rust]
+pub fn process_logical_line(&mut self, logical_line: &str, lines: &[String],
+                            params: &IndentParams<'_>) {
+    self.line_indents.clear();
+    let filtered_line: String = CharFilter::code(logical_line).map(|(_, c)| c).collect();
+    let parts: Vec<&str> = filtered_line.split(';').collect();
+
+    let end = self.detect_end_statements(&parts, &filtered_line, params.indent_fypp);
+    let (is_continue, fypp_continue_pop_to) = self.detect_continuation(&filtered_line);
+    let (new_scope, additional_scopes) = if end.is_any || is_continue {
+        (None, Vec::new())
+    } else {
+        self.detect_new_scopes(&parts, &filtered_line)
+    };
+
+    let line_indent = self.calculate_indent(is_continue, end.is_any,
+                                            end.valid || end.valid_after_semicolon);
+    // ... continuation lines: aligner or manual offsets, added to a base indent
+    // ... pop indent_storage for ENDs, push for new scopes
+    self.close_labeled_do(&filtered_line, params.label, new_scope.is_some());
+    self.initial = false;
+}
+\end{lstlisting}
+
+The statement is matched with strings and comments removed, and split on
+semicolons, so that each statement of \code{x = 1; if (y) then} is examined.
+
+\subsection{Order matters}\label{sec:indenter-order}
+
+The three detections run in a fixed order: \code{end}, then continuation, then
+new scope, and a line that matched an earlier one is not tested for a new scope.
+Two comments in the source give the reasons. First, \code{SUBR\_RE} and
+\code{FCT\_RE} match \code{end subroutine} and \code{end function}, because
+they accept any prefix. Second, some continuations look like openers:
+\code{type is (t)} matches \code{TYPE\_RE} as a derived-type definition with a
+type-parameter list. Since no Fortran statement both continues a construct and
+opens a new one, testing for a new scope last, and only if nothing else matched,
+avoids both traps.
+
+\subsection{Detecting ends}
+
+\code{detect\_end\_statements} tries every enabled closer against every
+semicolon-separated part. For the first part, it pops \code{scope\_storage}
+and checks the popped scope against the closer:
+
+\begin{lstlisting}[style=rust]
+let popped_scope = self.scope_storage.pop().expect("...");
+let popped_fypp_scope = SCOPES[popped_scope].is_fypp();
+if !scope.spec || popped_scope == scope_idx || (indent_fypp && popped_fypp_scope) {
+    end.valid = true;
+} else {
+    // The END closes a construct we never opened (an opener pattern we don't
+    // recognize). Put the scope back: dropping it would desync
+    // scope_storage from indent_storage and dedent the rest of the file.
+    self.scope_storage.push(popped_scope);
+}
+\end{lstlisting}
+
+An \code{end} is valid if it is a bare \code{end} (\code{spec} false), if it
+matches the innermost scope, or if the innermost scope is a fypp block (so that
+Fortran code closing a construct opened in a fypp branch does not wreck the
+stacks). An \code{end} that matches nothing is not valid, and the scope goes
+back. This is the fix described in the 0.5.0 changelog: before it, an
+unrecognised \code{end} popped anyway, and everything after it was
+under-indented.
+
+For later parts (after a semicolon), an \code{end} is counted in
+\code{additional\_count}, unless the same line also contains its opener
+(\code{do i=1,n; x=x+i; end do} is balanced and changes nothing).
+
+\subsection{Detecting continuations}
+
+A Fortran continuation (\code{else}, \code{case}, \code{contains},
+\code{elsewhere}) counts only if the scope it continues is on \emph{top} of the
+stack: \code{else} inside a \code{do} inside an \code{if} is not the
+\code{if}'s \code{else}. A fypp continuation (\code{\#:else}, \code{\#:elif}) is
+different: fypp directives may enclose Fortran constructs, so
+\code{detect\_continuation} searches the whole stack for the matching fypp
+scope, and returns the depth to pop to after the line's indent is computed.
+Only \code{scope\_storage} is popped, not \code{indent\_storage}, so the body
+of the \code{\#:else} branch is indented like the body of the \code{\#:if}
+branch.
+
+\subsection{Detecting new scopes}
+
+\code{detect\_new\_scopes} takes the first enabled row whose opener matches
+(table order breaks ties), with one twist for \code{where} and \code{forall}:
+
+\begin{lstlisting}[style=rust]
+if open.is_match(filtered_line) {
+    // WHERE/FORALL only open a scope if nothing follows the
+    // closing parenthesis: "WHERE (x > 0)" opens one, but
+    // "WHERE (x > 0) y = 1" is a single statement.
+    if !scope.conditional || Self::is_where_forall_block(filtered_line) {
+        new_scope = Some(scope_idx);
+    }
+    break;
+}
+\end{lstlisting}
+
+\code{is\_where\_forall\_block} walks the line with bracket counting to find the
+parenthesis that closes the mask and checks what follows it. It is the one
+caller that builds a \code{CharFilter} with fypp filtering \emph{off}, because a
+\code{\$\{\ldots\}\$} after the parenthesis is content, which makes the statement
+a one-liner.
+
+Openers after semicolons are collected separately into
+\code{additional\_scopes}, each pushed with a full indent.
+
+\subsection{Pushing}
+
+A new scope is pushed with the line's own indent plus \code{relative\_indent}:
+
+\begin{lstlisting}[style=rust]
+fn push_scope(&mut self, scope: usize, current_indent: usize, relative_indent: usize) {
+    self.scope_storage.push(scope);
+    self.indent_storage.push(current_indent + relative_indent);
+}
+\end{lstlisting}
+
+\code{relative\_indent} is the requested indent from \code{inspect\_file}
+(Section~\ref{sec:inspect}), which is normally the indent width and 0 for a
+stacked scope.
+
+\subsection{Labelled DO loops}
+
+\code{do 100 i = 1, 10} has no \code{end do}; it ends at the statement labelled
+100. When such a \code{do} opens a scope, \code{close\_labeled\_do} records the
+label and the stack depth in \code{do\_labels}. When a later line carries a
+label, every recorded loop with that label is closed, innermost first, which
+handles several loops sharing one terminator. Because the terminating statement
+belongs to the loop body, this happens \emph{after} the line's own indent has
+been computed.
+
+\section{Continuation lines}
+
+When a logical line has more than one physical line, the indenter computes one
+indent per physical line. The first line gets \code{line\_indent}. The rest get
+an offset relative to the start of the statement, from either the manual
+offsets (lines with a leading \code{\&}, Section~\ref{sec:manual}) or the
+aligner (Chapter~\ref{ch:aligner}), plus a base:
+
+\begin{lstlisting}[style=rust]
+let base_indent = if (end.is_any && end.valid) || is_continue {
+    // For valid END and CONTINUE, use grandparent indent
+    if self.indent_storage.len() >= 2 {
+        self.indent_storage[self.indent_storage.len() - 2]
+    } else {
+        *self.indent_storage.last().unwrap_or(&0)
+    }
+} else if new_scope.is_some() && params.manual_lines_indent.is_some() {
+    line_indent
+} else {
+    *self.indent_storage.last().unwrap_or(&0)
+};
+for &align_offset in continuation_indents.iter().skip(1) {
+    self.line_indents.push(align_offset + base_indent);
+}
+\end{lstlisting}
+
+The base is computed before the stacks are updated, so a continued
+\code{end} or \code{else} line aligns its continuations relative to its own
+column.
+
+\begin{exercise}[Trace the stacks]
+Write a unit test in \file{src/format/indenter.rs} that feeds the statements of
+the \code{select case} example from Chapter~\ref{ch:tour} to an indenter, as
+\code{test\_simple\_if} does, and asserts the indents. Add a temporary
+\code{eprintln!} of both stacks at the end of \code{process\_logical\_line}
+and compare with Table~\ref{tab:stacks}.
+\end{exercise}
+
+\begin{exercise}[An end that closes nothing]
+Predict the indentation of this fragment inside a subroutine, where an
+\code{end associate} has lost its \code{associate}:
+\begin{lstlisting}[style=fortran]
+do i = 1, n
+x = 1
+end associate
+y = 2
+end do
+z = 3
+\end{lstlisting}
+Check your prediction. Which statement in \code{detect\_end\_statements} keeps
+\code{y = 2} inside the loop and \code{z = 3} at the subroutine's level? What
+would happen to the rest of the file without it?
+\end{exercise}
+
+\begin{exercise}[A new scope]
+Add a scope for a hypothetical \code{begin foo} \ldots{} \code{end foo} construct:
+two patterns in \file{parser/patterns.rs}, one row appended to \code{SCOPES},
+and a test. Should it also go into \code{opens\_indented\_scope}? (See
+Chapter~\ref{ch:recipes} for the full recipe.)
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{Aligning Continuation Lines}\label{ch:aligner}
+% ---------------------------------------------------------------------------
+
+\section{The aligner's model}
+
+\code{F90Aligner} answers one question: for each physical line after the first,
+at which column, relative to the start of the statement, should it start? It
+walks the physical lines of a logical line, character by character through
+\code{CharFilter::code}, maintaining a stack of candidate columns:
+
+\begin{lstlisting}[style=rust]
+pub struct F90Aligner {
+    line_indents: Vec<usize>,
+    level: usize,                     // Bracket nesting level
+    bracket_indent_stack: Vec<usize>, // Stack of alignment positions
+    /// Whether an assignment in this logical line has set the alignment
+    assign_aligned: bool,
+}
+\end{lstlisting}
+
+At the end of each physical line, the top of \code{bracket\_indent\_stack}
+becomes the indent of the next line. The stack is pushed and popped by these
+events:
+
+\begin{description}[font=\sffamily\small\bfseries]
+  \item[Opening bracket] \code{(}, \code{(/} or \code{[} at position $p$
+    pushes $p + \mathrm{len} + r$, the column just inside it, where $r$ is the
+    current top (so positions on continuation lines are made relative to the
+    statement start).
+  \item[Closing bracket] pops.
+  \item[Assignment] An \code{=} (or \code{=>}) at depth zero, not part of a
+    relational operator, pushes the column after it and its following space.
+    Only the first one in a statement counts (\code{assign\_aligned}); before
+    0.5.0, every continuation line's \code{=} pushed another column and each
+    added to the last, so the indentation ran away.
+  \item[Top-level comma] after an assignment pops the assignment's column
+    again, so the second item of \code{a = 1, b = 2} is not aligned to the
+    first \code{=}.
+  \item[Declaration] In a declaration (detected with \code{VAR\_DECL\_RE},
+    \code{PUBLIC\_RE} or \code{PRIVATE\_RE}), \code{::} pushes the column after
+    \code{:: }.
+  \item[\texttt{use}] In a \code{use} statement, a single colon (the one after
+    \code{only}) pushes the column after \code{: }.
+\end{description}
+
+Two rules then adjust the result at the end of each line. If the line ends with an
+opening bracket followed by \code{\&} (\code{call foo( \&}), the bracket's
+column is replaced by the enclosing one, since aligning to a column at the very
+end of the line would waste it; the same goes for an \code{=}, \code{::} or
+\code{:} directly before the break, which are simply not pushed. And if the
+top of the stack is 0, meaning there is nothing to align to, it is replaced by
+the indent width.
+
+\section{Worked examples}
+
+The alignment columns for the examples of Chapter~\ref{ch:tour}, inside a
+program whose body is at column 4:
+
+\begin{center}
+\small
+\begin{tabular}{@{}l l r r@{}}
+\toprule
+first line & event & relative & absolute\\
+\midrule
+\code{call compute(alpha, beta, \&} & \code{(} at 12 & 13 & 17\\
+\code{total = first\_value + \&} & \code{=} at 6 & 8 & 12\\
+\code{integer, dimension(3) :: a, \&} & \code{::} at 22 & 25 & 29\\
+\code{x = [1, 2, \&} & \code{[} at 4 & 5 & 9\\
+\code{call foo( \&} & \code{(} before break & 4 (default) & 8\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+In the \code{x = [1, 2, \&} case the assignment pushes 4 first, and the bracket
+then pushes 5 on top of it; the innermost open bracket wins.
+
+\begin{keyidea}[Measure the final text]
+The aligner measures columns in the lines it is given, so it must be given
+lines whose spacing is final: had it seen \code{call  compute( alpha,}, it would
+put the continuation two columns too far right, and the whitespace engine would
+then shrink the first line without moving the continuation. The ordering
+guarantees it: the indentation pass reads pass 1's output, and even within one
+\code{format\_pass}, whitespace (step 7 of Figure~\ref{fig:format-pass}) runs
+before indentation (step 10).
+\end{keyidea}
+
+\section{Manual alignment}\label{sec:manual}
+
+When any continuation line starts with \code{\&} followed by content,
+\code{should\_auto\_align} returns false and the aligner is not used.
+Instead, \file{format/continuation.rs} provides three functions, used in
+pass 2 by \code{process.rs}:
+
+\begin{description}[font=\ttfamily\small]
+  \item[get\_manual\_alignment] computes each line's indent (blanks plus
+    \code{\&}) relative to the first line. These offsets replace the aligner's.
+    A special case normalises ``simple'' continuations, where the first
+    continuation line has no leading \code{\&}: their offsets are shifted so the
+    first one equals the continuation indent.
+  \item[remove\_pre\_ampersands] strips the leading \code{\&} and blanks from
+    each line, remembering the stripped prefix (\code{"\& "}, \code{"\&   "})
+    and how many blanks the previous line had before its trailing \code{\&}.
+    Lines that are fypp directives or begin inside a string are left alone,
+    since a leading \code{\&} there is content.
+  \item[prepend\_ampersands] puts the prefixes back after indentation,
+    reducing the computed indent by one for the \code{\&} itself.
+\end{description}
+
+Between removing and putting back the prefixes, pass 2 runs the whitespace engine
+over the continuation lines, which pass 1 had to skip. It reproduces the
+bracket-depth and last-character tracking of pass 1, and restores each trailing
+\code{\&} with the spacing recorded in \code{ampersand\_sep}.
+
+\begin{exercise}[Columns by hand]
+Compute, by hand, the continuation column fprettier will choose for
+\begin{lstlisting}[style=fortran]
+    ptr => make_node(left=build(a, &
+    b), right=c)
+\end{lstlisting}
+then check. Which pushes and pops happen on the first line?
+\end{exercise}
+
+\begin{exercise}[Comma resets]
+Find the code that pops the assignment column on a top-level comma, and
+comment it out, and format \code{a = 1, \&} / \code{b = 2}. What changes?
+Then think of a real Fortran statement with a top-level \code{=} followed by a
+top-level comma (hint: \code{do}). Is the rule right for it?
+\end{exercise}
+% ---------------------------------------------------------------------------
+\chapter{The Whitespace Engine}\label{ch:ws-engine}
+% ---------------------------------------------------------------------------
+
+\section{Three stages}\label{sec:ws-stages}
+
+\file{src/format/whitespace.rs} formats one line in three stages:
+
+\begin{lstlisting}[style=rust]
+pub fn format_line_with_level(
+    logical_line: &str,
+    whitespace_flags: &[bool; 11],
+    format_decl: bool,
+    initial_level: usize,
+    prev_line_last_char: Option<char>,
+) -> (String, usize, Option<char>) {
+    let mut line = logical_line.to_string();
+    // Stage 1: Remove extra whitespace
+    line = rm_extra_whitespace(&line, format_decl);
+    // Stage 2: Add whitespace character-wise (with bracket level tracking)
+    let (formatted, final_level, last_char) = add_whitespace_charwise_with_level(
+        &line, whitespace_flags, format_decl, initial_level, prev_line_last_char);
+    line = formatted;
+    // Stage 3: Add whitespace context-aware
+    line = add_whitespace_context(&line, whitespace_flags);
+    (line, final_level, last_char)
+}
+\end{lstlisting}
+
+The extra parameters and results exist for continuation lines: the bracket
+depth at the start of the line and at its end, and the last significant
+character of the previous line and of this one.
+
+Figure~\ref{fig:ws-stages} follows one line through the stages at the default
+level.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[node distance=4mm]
+  \node[data,minimum width=70mm] (in) {x\ \ =\ \ a( i , j )+b\ \ *c};
+  \node[data,minimum width=70mm,below=7mm of in] (s1) {x=a(i,j)+b*c};
+  \node[data,minimum width=70mm,below=7mm of s1] (s2) {x = a(i, j) + b*c};
+  \node[data,minimum width=70mm,below=7mm of s2] (s3) {x = a(i, j) + b*c};
+  \draw[flow] (in) -- node[note,right=2mm]{stage 1: \code{rm\_extra\_whitespace}} (s1);
+  \draw[flow] (s1) -- node[note,right=2mm]{stage 2: \code{Charwise} handlers} (s2);
+  \draw[flow] (s2) -- node[note,right=2mm]{stage 3: regex-driven context rules} (s3);
+\end{tikzpicture}
+\caption{One line through the three stages at level 2.}
+\label{fig:ws-stages}
+\end{figure}
+
+\subsection{Stage 1: remove}
+
+\code{rm\_extra\_whitespace} walks the code characters (via \code{CharFilter},
+copying skipped strings and comments through verbatim) and keeps a blank only
+where it separates two words: after an alphanumeric character, and not before a
+non-word character. It preserves leading whitespace, which the aligner and the
+inspection pass need. It also keeps blanks in a few places where removing them
+would change a token's meaning or a deliberate layout:
+
+\begin{itemize}
+  \item around \code{::} when \code{format\_decl} is off, so hand-aligned
+    declaration columns survive;
+  \item before a string literal (\code{print *, 'x'});
+  \item next to fypp inline expressions, whose content is opaque.
+\end{itemize}
+
+\subsection{Stage 2: the \texttt{Charwise} handlers}
+
+Stage 2 is a small hand-written scanner. Its state is a struct, and its main
+loop offers each character to a sequence of handlers; the first that recognises
+it writes output, advances the cursor, and returns true:
+
+\begin{lstlisting}[style=rust]
+while f.i < f.chars.len() {
+    let handled = f.try_verbatim_regions()
+        || f.try_open_delimiter()
+        || f.try_close_delimiter()
+        || f.try_comma_semicolon()
+        || f.try_type_component()
+        || f.try_assignment()
+        || f.try_declaration()
+        || f.try_concat()
+        || f.try_plus_minus()
+        || f.try_mult_div();
+    if !handled {
+        f.out.push(f.chars[f.i]);
+        f.i += 1;
+    }
+}
+\end{lstlisting}
+
+The order matters. \code{try\_verbatim\_regions} must come first, so that
+nothing inside a string or a fypp expression is reformatted.
+\code{try\_concat} must come before \code{try\_mult\_div}, or \code{//} would be
+read as two divisions. Each handler follows the same pattern: it removes
+trailing blanks from the output with \code{pop\_trailing\_spaces}, writes the
+token with the spacing it wants, and skips any blanks in the input after it.
+A handler that does not apply returns false without touching the cursor.
+
+Several handlers depend on the bracket \code{level}: \code{try\_assignment}
+spaces \code{=} only at level 0 (pointer assignment at any level), and
+\code{needs\_space\_before\_delimiter} uses it to put a space after a
+top-level assignment. The level starts at \code{initial\_level}, which is
+how a keyword argument on a continuation line is still recognised as being
+inside brackets.
+
+\paragraph{Unary or binary?} \code{try\_plus\_minus} has the most interesting
+decision:
+
+\begin{lstlisting}[style=rust]
+let prev_char = self.prev_non_space();
+let is_exponent = match prev_char {
+    Some(c) if c == 'd' || c == 'D' || c == 'e' || c == 'E' => {
+        let trimmed = self.out.trim_end();
+        SCI_NOTATION_RE.is_match(trimmed)
+    }
+    _ => false,
+};
+let is_binary = match prev_char {
+    Some(c) => (c.is_alphanumeric() || c == ')' || c == ']') && !is_exponent,
+    None => {
+        if self.out.trim().is_empty() {
+            match self.prev_line_last_char {
+                Some(c) => c.is_alphanumeric() || c == ')' || c == ']',
+                None => false,
+            }
+        } else {
+            false
+        }
+    }
+};
+\end{lstlisting}
+
+A sign is binary when it follows an operand. The exponent check uses
+\code{SCI\_NOTATION\_RE}, \code{(?:\^{}|[\^{}a-z\_])(\textbackslash
+d+\textbackslash.?\textbackslash d*|\textbackslash d*\textbackslash.?\textbackslash
+d+)[ed]\$}, which requires the \code{e} or \code{d} to end a number that is not
+the tail of a name: \code{1.0d-3} is an exponent, \code{val\_1d-2} is not.
+
+\subsection{Stage 3: context rules}
+
+\code{add\_whitespace\_context} splits the line into code and masked parts with
+\code{split\_masked\_regions} and applies regular-expression rewrites to the
+code parts: relational operators, then the \code{?}/\code{:} of conditional
+expressions (with a per-bracket stack of ``seen a \code{?}'' flags, carried
+across masked parts), logical operators, user-defined operators (skipping
+\code{.true.} and \code{.false.}), binary plus and minus, and \code{print *}.
+A pointer assignment's \code{ => } is swapped for a placeholder during the
+relational rewrite, so that its \code{>} is not mistaken for greater-than.
+
+Finally \code{space\_out\_keywords} applies rules that span code and string parts,
+so run on the rejoined line: \code{namelist} groups, \code{endif} $\to$
+\code{end if} (guarded by \code{END\_WITH\_EQ\_RE} against \code{endif = 3}),
+the same after a semicolon, \code{only: }, and construct names.
+
+\section{Explaining a quirk}
+
+Chapter~\ref{ch:whitespace-user} showed that at level 0 the line
+\code{x  =  a( i , j )+b  *c} comes out as \code{x=a(i,j) +b*c}. Now we can
+see why. Stage 1 produces \code{x=a(i,j)+b*c}. In stage 2, the closing
+parenthesis goes to \code{try\_close\_delimiter}, which writes \code{)} and then
+decides what spacing follows:
+
+\begin{lstlisting}[style=rust]
+let skip_space = next_ch == ')' || next_ch == ']' || next_ch == ','
+    || next_ch == '%' || next_ch == ':' || next_ch == '/' || next_ch == '*'
+    || next_ch == ';' || (next_ch == '/' && self.peek(1) == Some(')'));
+if !skip_space {
+    self.out.push(' ');
+}
+\end{lstlisting}
+
+\code{+} is not in the list, so a blank is written. At level 2,
+\code{try\_plus\_minus} then sees the \code{+}, pops that trailing blank, and
+writes \code{ + } symmetrically. At level 0 (or with
+\code{-{}-whitespace-plusminus=false}), that handler returns false at once, the
+\code{+} is copied as-is, and the lone blank stays. The close-delimiter
+handler relies on a later handler to tidy up after it.
+
+\begin{exercise}[Fix the quirk]
+Make \code{x=a(i,j)+b} come out unchanged at level 0 and with
+\code{plusminus} off, without changing any output at the default level. Where
+is the right place for the fix: \code{try\_close\_delimiter}, or
+\code{try\_plus\_minus}? Run the whole test suite. Does any expected output in
+\file{examples/out} change? Should it?
+\end{exercise}
+
+\begin{exercise}[A new rule]
+Add a twelfth whitespace rule, \code{power}, that spaces \code{**} at level 4
+only. Chapter~\ref{ch:recipes} lists every place a new rule has to be
+registered; follow it, and check that \code{--whitespace-power} appears in
+\code{--help} without touching \file{cli.rs}. Why does that work?
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{Long Lines and Comments}\label{ch:lines}
+% ---------------------------------------------------------------------------
+
+\section{Splitting long lines}\label{sec:linesplit}
+
+Line splitting runs at step 12 of \code{format\_pass}, after indentation, on the
+physical lines of one logical line. Its entry point, in
+\file{format/line\_split.rs}, is
+
+\begin{lstlisting}[style=rust]
+pub fn split_long_lines(lines: &[String], indents: &[usize], max_line_length: usize,
+                        indent_size: usize) -> (Vec<String>, Vec<usize>, Vec<usize>)
+\end{lstlisting}
+
+It returns the new lines, their indents, and for each new line the index of
+the input line it came from, the \emph{origin}, which the comment logic needs.
+
+For each line longer than the limit:
+
+\begin{enumerate}
+  \item If it has an inline comment, the comment is detached first
+    (\code{split\_inline\_comment}). That may be enough on its own; if the code is
+    still too long, it is split, and the comment goes on a line of its own
+    after the fragments.
+  \item Otherwise the line is split with \code{split\_with\_alignment}. If it
+    cannot be split usefully, it is left as it is, over-length.
+\end{enumerate}
+
+\subsection{Where to break}
+
+\code{find\_split\_position} finds a break within a given width. It collects
+the positions of blanks and commas in code (never inside strings) and
+prefers, from the right, a blank that leaves at least 12 characters for the
+next line; failing that, a position after a comma that leaves more than 4.
+\code{auto\_split\_line} uses it repeatedly: the first fragment must fit in
+the limit minus the indent minus 2 (for the \code{ \&}), and each later
+fragment in the limit minus the continuation indent. It gives up if the limit is
+under 40, if the line already starts with \code{\&}, or if the line has a
+comment.
+
+Two decisions keep the result sensible:
+
+\begin{itemize}
+  \item If the tail of a statement cannot be broken (a long string, a long
+    \code{a\%b\%c} path), the breaks already found are kept and the tail is
+    emitted over-length. Before 0.5.0, the whole split was discarded.
+  \item If, even so, some fragment is still over the limit, the split is only
+    made if it actually saves width: if the widest fragment plus the
+    continuation indent is at least as wide as the original line, the
+    original is kept. Otherwise \code{call \&} in front of a 200-character
+    call would buy a line and save one character.
+\end{itemize}
+
+\subsection{Splitting where the next pass would align}
+
+A freshly split line must not move when it is formatted again, so its
+continuation fragments have to go exactly where the aligner would put a
+hand-written continuation. \code{split\_with\_alignment} asks the aligner:
+
+\begin{lstlisting}[style=rust]
+let guess = indent + indent_size;
+let probe = auto_split_line(line, indent, max_line_length, guess)?;
+let follow = indent + aligned_continuation_offset(line, &probe[0], indent_size);
+if follow == guess {
+    return Some((probe, guess));
+}
+auto_split_line(line, indent, max_line_length, follow)
+    .map_or(Some((probe, guess)), |split| Some((split, follow)))
+\end{lstlisting}
+
+It splits once with a guessed continuation column (one indent deeper), asks
+\code{F90Aligner} where it would put a continuation of that first fragment,
+and, if that differs, splits again with the aligner's column, since a different
+column changes how much fits on each fragment. If the statement already had
+continuation lines, their column is known and used directly
+(\code{follow\_indent}).
+
+\code{LINE\_SPLIT\_THRESHOLD} (1024) caps the whole mechanism: with
+\code{line\_length = 0}, or any limit of 1024 or more, nothing is split.
+
+\section{Writing lines and placing comments}
+
+\code{write\_output\_line} in \file{process.rs} writes one output line: the
+label if it is the first line of a labelled statement, the code, and the
+comment if this output line carries one. Its rules for comments are the most
+intricate in fprettier, because they must be stable across the two passes.
+
+\paragraph{Which line gets the comment.} \code{compute\_comment\_indices}
+finds, for each origin, its last output line, and that line carries the
+origin's comment. It also records which origins were split into several lines.
+
+\paragraph{Detaching.} A comment moves to a new line when the code was split, or
+when the code, the gap and the comment together exceed the limit:
+
+\begin{lstlisting}[style=rust]
+let inline_gap = if pass_ctx.config.normalize_comment_spacing {
+    pass_ctx.config.comment_spacing
+} else {
+    original_gap.max(1)
+};
+let should_detach_comment = has_comment
+    && !is_comment_only
+    && !comment_trimmed.is_empty()
+    && write_ctx.effective_line_length < LINE_SPLIT_THRESHOLD
+    && (write_ctx.split_origins.contains(&origin)
+        || line_to_write.trim_end().len() + inline_gap + comment_trimmed.len()
+            > write_ctx.effective_line_length);
+\end{lstlisting}
+
+The detached comment is indented at the line's computed indent.
+
+\paragraph{The gap.} An inline comment that stays keeps \code{original\_gap},
+the blanks at the end of the code part in \code{FortranLine::lines}
+(Chapter~\ref{ch:reading}), unless spacing is normalised.
+
+\paragraph{FORD comments.} A comment-only line beginning with \code{!!} is
+written at its original indentation.
+
+\paragraph{The one-space marker.} The subtlest piece is a one-character
+string:
+
+\begin{lstlisting}[style=rust]
+// If the line is now empty (comment-only) but was originally indented,
+// preserve one space as a marker so that Pass 2 of two-pass formatting
+// can detect the original indentation. Only when an indent pass is
+// actually coming: with indentation off nothing consumes the marker
+// and the comment gains a space on every run.
+if trimmed.is_empty()
+    && pass_ctx.config.impose_indent
+    && origin < write_ctx.lines_were_indented.len()
+    && write_ctx.lines_were_indented[origin]
+{
+    " "
+} else {
+    trimmed
+}
+\end{lstlisting}
+
+Pass 2 decides whether to indent a comment-only line by whether it was
+indented in \emph{its} input, which is pass 1's output. Pass 1 must therefore
+leave some trace of the original indentation; it leaves one blank. The
+condition on \code{impose\_indent} is what keeps the result a fixed point: if
+no indentation pass follows, nothing removes the marker, and every run would add
+a blank.
+
+\begin{pitfall}[Detached comments in unindented code]
+A detached comment takes the computed indent of its line. In pass 1, which
+computes no indents, that is the column the code started in. So a long inline
+comment on an \emph{unindented} line, detached in pass 1, starts at column 0,
+and pass 2 then sees an unindented comment-only line and leaves it there:
+\begin{lstlisting}[style=after]
+subroutine s
+    x = 1
+! a fairly long trailing comment that pushes the line past the limit of sixty
+end subroutine
+\end{lstlisting}
+The same input, already indented, places the comment at column 4. This is the
+kind of interaction between passes that the next chapter's tests are designed
+to catch.
+\end{pitfall}
+
+\begin{exercise}[Splitting limits]
+With \code{-l 50}, format a \code{call} with a single 60-character string
+argument. Is the line split? Now add three short arguments before the string.
+Explain both results using the ``saves width'' rule.
+\end{exercise}
+
+\begin{exercise}[Fix the detached comment]
+Make the pitfall above come out with the comment at column 4. One approach:
+when pass 1 detaches a comment from an unindented line, give the new
+comment-only line the one-space marker, so pass 2 treats it as indented. Write
+the test first, and check that formatting the output again changes nothing.
+\end{exercise}
+% ---------------------------------------------------------------------------
+\chapter{Optional Rewrites: Case, Operators, \texttt{use}}\label{ch:rewrites}
+% ---------------------------------------------------------------------------
+
+The three features of this chapter are off by default and independent of the
+main passes. Each is a self-contained module with a single entry point.
+
+\section{Case conversion}
+
+\subsection{Settings}
+
+\file{format/case\_convert.rs} defines the mode and the five categories:
+
+\begin{lstlisting}[style=rust]
+pub const CASE_KEYS: [&str; 5] = ["keywords", "procedures", "operators", "constants", "types"];
+
+pub enum CaseMode {
+    #[default]
+    NoChange = 0,
+    Lower = 1,
+    Upper = 2,
+}
+\end{lstlisting}
+
+\code{CaseMode} has a hand-written \code{Deserialize} implementation that
+accepts exactly 0, 1 and 2, so a configuration file with \code{keywords = 3}
+fails at the parse boundary. \code{CASE\_KEYS} fixes the order of
+\flag{case}'s values, the directive's values and the \code{[case\_dict]} keys
+in one place. \code{CASE\_FLAG\_VALUES} is \code{CASE\_KEYS.len() - 1}: the
+\flag{case} flag takes only four values, because clap would take a fifth
+value as a file name; \code{types} has its own flag.
+
+\subsection{Token tables}
+
+Five case-insensitive, word-bounded alternations of names classify tokens:
+135 keywords, 207 intrinsic procedures, the five intrinsic modules, the
+dotted operators, and 65 named constants from \code{iso\_fortran\_env} and
+\code{iso\_c\_binding}. The lists are commented by the standard that
+introduced each name, up to Fortran 2023. A test, \code{test\_tables\_reach\_f2023},
+checks that names from each revision are present.
+
+\subsection{The algorithm}
+
+\code{convert\_case} splits the line into masked regions with
+\code{CharFilter::code\_and\_comments} (so that a \code{!} inside a string is
+not mistaken for a comment), leaves string parts alone, and splits each code part
+into tokens: runs of alphanumerics, underscores and dots, and single other
+characters. A post-processing step, \code{rejoin\_signed\_exponents}, glues
+\code{1.0e}, \code{-}, \code{3} back into one token; without it, the signed
+branch of the numeric patterns was unreachable and \code{1.0e-3} was not
+converted while \code{1.0e3} was, a bug fixed in 0.4.0.
+
+Each token is then classified by \code{convert\_token\_with\_context}, in this
+order:
+
+\begin{enumerate}
+  \item a numeric literal: its exponent letter and kind suffix get the
+    \code{types} mode (\code{2.e3\_real64} $\to$ \code{2.E3\_REAL64});
+  \item a dotted operator or logical literal: \code{operators};
+  \item a keyword: \code{keywords};
+  \item an intrinsic module name: \code{procedures};
+  \item an intrinsic procedure, but only if the next non-blank token is
+    \code{(}: \code{procedures};
+  \item a named constant: \code{constants};
+  \item anything else: unchanged.
+\end{enumerate}
+
+A small piece of context tracking in \code{convert\_case} handles
+\code{kind=\textit{name}}: the token after \code{kind =} gets the \code{types}
+mode. That is why \code{real(kind=dp)} becomes \code{real(kind=DP)} but
+\code{real(dp)} does not change.
+
+\begin{pitfall}[Keywords are words, not statements]
+The keyword test is purely lexical. A variable called \code{count} is not
+converted (\code{count} is an intrinsic, and it is not followed by
+\code{(}), but a variable called \code{result} or \code{value} is a
+keyword to the table and is converted. Keep that in mind before enabling
+\code{keywords} on a codebase with such names.
+\end{pitfall}
+
+\section{Relational operator replacement}
+
+\code{replace\_relational\_operators} in \file{format/replacements.rs} is a
+short, careful scanner. It first marks which byte positions are code, using
+\code{CharFilter::code}, and then walks the line, trying the six pairs at each
+code position:
+
+\begin{lstlisting}[style=rust]
+const OPERATORS: [(&str, &str); 6] = [
+    (".le.", "<="),
+    (".ge.", ">="),
+    (".eq.", "=="),
+    (".ne.", "/="),
+    (".lt.", "<"),
+    (".gt.", ">"),
+];
+\end{lstlisting}
+
+The order puts \code{<=} before \code{<}; otherwise \code{a <= b} would become
+\code{a .lt.= b}. When converting to Fortran style it skips \code{=>}, which
+would otherwise become \code{=.gt.}.
+
+\section{Sorting \texttt{use} statements}
+
+\file{format/sort\_use.rs} is the only component that works on the raw text
+of the whole file rather than on \code{FortranLine}s. It runs before both passes.
+
+\subsection{Units and groups}
+
+\code{split\_into\_units} groups physical lines into \code{Unit}s, one per
+statement, following continuations (and comment-only or preprocessor lines inside
+them):
+
+\begin{lstlisting}[style=rust]
+struct Unit {
+    lines: Vec<String>,
+    is_use: bool,
+    /// Never moved and never rewritten (deactivation markers, preprocessor
+    /// directives inside the statement, semicolons, unparseable module name).
+    frozen: bool,
+    /// Lowercased module name, empty unless `is_use`.
+    key: String,
+}
+\end{lstlisting}
+
+A unit is \emph{frozen} if it carries a \code{!\&} marker or is inside a
+\code{!\&<}\ldots\code{!\&>} block, contains a preprocessor line, contains a
+semicolon (a second statement), or is a \code{use} whose module name cannot be
+parsed. \code{sort\_groups} then stable-sorts each maximal run of sortable units
+by key. Anything that is not a sortable \code{use}, including a blank line,
+ends a group, so \code{use} statements are never moved across a comment, a
+blank line or a preprocessor branch.
+
+Because units are whole physical lines, reordering is just moving line blocks:
+indentation, line endings and trailing comments travel with their
+statement.
+
+\subsection{Sorting \texttt{only:} lists}
+
+\code{sort\_only\_list} joins a unit's code into one line, finds the
+\code{only:} list by walking the grammar (\code{only} is not a reserved word,
+so a module called \code{only} must not confuse it), splits the list on
+top-level commas (\code{operator(+)} contains none), sorts by the local name of
+each item, and writes the statement back as \emph{one} line. If that line is
+too long, the normal line splitter breaks it later. A unit with a comment on any
+line but its last is left alone, because the comment would have nowhere to go.
+
+\begin{exercise}[Keyword collisions]
+Write a variable declaration and assignment using a variable called
+\code{result}, and format it with \code{--case 2 0 0 0}. Then propose a rule
+that would avoid converting it, and say what it would cost.
+\end{exercise}
+
+\begin{exercise}[Frozen units]
+Construct a group of four \code{use} statements in which the third is frozen.
+How many sorted groups does \code{sort\_groups} see? Check your answer with a
+unit test.
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{The Driver: \texttt{main.rs} and the CLI}\label{ch:driver}
+% ---------------------------------------------------------------------------
+
+\section{Arguments}
+
+\file{cli.rs} builds the \code{clap} command with the builder API and converts
+the matches into a plain struct, \code{CliArgs}, so that the rest of the
+program never touches clap. Most of it is one \code{.arg(...)} call per flag.
+The eleven whitespace flags are generated from the same table that defines the
+rules:
+
+\begin{lstlisting}[style=rust]
+for (key, _, help) in WS_FLAGS {
+    let name = ws_flag_name(key);   // "whitespace-" + key
+    let mut arg = Arg::new(name.clone())
+        .long(name)
+        .help(help)
+        .value_name("BOOL")
+        .num_args(0..=1)
+        .require_equals(true)
+        .default_missing_value("true")
+        .value_parser(clap::value_parser!(bool));
+    // This flag was --whitespace-assignment before it was made to match
+    // its config key; the old spelling still works, undocumented.
+    if key == "assignments" {
+        arg = arg.alias("whitespace-assignment");
+    }
+    cmd = cmd.arg(arg);
+}
+\end{lstlisting}
+
+\code{WS\_FLAGS} in \file{config.rs} pairs each rule's \code{whitespace\_dict}
+key with its index in the flags array and its help text, so that a flag, its
+configuration key and the behaviour it controls cannot drift apart.
+\code{require\_equals(true)} is what lets \code{-{}-whitespace-comma} be followed
+by a file name without clap taking the file name as the flag's value.
+
+\section{Building a configuration}
+
+\code{build\_config} in \file{main.rs} starts from an explicit
+\flag{config} file, or from the discovered files
+(\code{Config::from\_discovered\_files}), then applies
+the flags as Chapter~\ref{ch:config} describes. The one-way booleans are a
+pair of operators:
+
+\begin{lstlisting}[style=rust]
+// Every boolean flag is one-way: a --no-* flag can only clear a setting the
+// config file turned on, and the rest can only turn one on.
+config.impose_indent &= !args.no_indent;
+config.impose_whitespace &= !args.no_whitespace;
+config.indent_fypp &= !args.no_indent_fypp;
+config.indent_mod &= !args.no_indent_mod;
+config.strict_indent |= args.strict_indent;
+config.format_decl |= args.format_decl;
+config.sort_use |= args.sort_use;
+// ...
+\end{lstlisting}
+
+Discovery and merging live in \file{config.rs}.
+\code{discover\_config\_files} returns the home file and the ancestors' files,
+least specific first. \code{from\_discovered\_files} merges their TOML tables
+recursively with \code{merge\_tables} and deserialises after \emph{each} file,
+not just at the end, so that an unknown key or a bad value is reported against
+the file that introduced it. \code{Config} itself is deserialised with
+\code{\#[serde(default, deny\_unknown\_fields)]}, which is what makes every key
+optional and every unknown key an error.
+
+\section{Processing files}
+
+\code{main} decides between standard input and files, then:
+
+\begin{enumerate}
+  \item reports each input path that does not exist (and remembers to fail);
+  \item collects files with \code{collect\_files} (\code{walkdir} with
+    \code{follow\_links(true)}, a depth limit of 256 when recursive and 1
+    otherwise, and the extension and exclusion filters);
+  \item decides whether to run sequentially: for \flag{stdout}, \flag{diff},
+    \flag{check} and \code{-j 1};
+  \item if parallel, pre-warms the regular expressions;
+  \item calls \code{process\_files}.
+\end{enumerate}
+
+\subsection{A configuration per directory}
+
+Without \flag{config}, each file may have its own configuration, since
+\file{fprettier.toml} files can sit at any level. Discovering it costs a
+\code{stat} per ancestor directory, so \code{process\_files} builds one
+configuration per distinct parent directory before starting the parallel work:
+
+\begin{lstlisting}[style=rust]
+let dir_configs: HashMap<PathBuf, Config> = if base_config.is_none() {
+    let mut dirs: Vec<PathBuf> = files.iter()
+        .filter_map(|f| f.parent().map(Path::to_path_buf)).collect();
+    dirs.sort();
+    dirs.dedup();
+    dirs.into_iter()
+        .filter_map(|dir| build_config(args, Some(&dir)).ok().map(|c| (dir, c)))
+        .collect()
+} else {
+    HashMap::new()
+};
+\end{lstlisting}
+
+A directory whose configuration failed to build has no entry; when a file from
+it is processed, \code{build\_config} is called again for that file, so the
+error is reported against the file. Each file is then processed by a closure
+run with \code{files.par\_iter().for\_each(run)} or, sequentially,
+\code{files.iter().for\_each(run)}; two \code{AtomicUsize} counters
+collect the number of changed files and errors.
+
+\subsection{One file}
+
+\code{process\_single\_file} checks the size (100\,MB) before reading, reads the
+file, checks \flag{exclude-max-lines}, and looks for a directive with
+\code{find\_directive}. Only when a directive is found is the configuration
+cloned and overridden; most files have none, and cloning a \code{Config} with
+its maps for every file of a large tree is measurable. It then calls
+\code{format\_file}, compares the output with the input, and acts on the
+output mode.
+
+\subsection{Writing safely}
+
+\code{write\_in\_place} implements the atomic write promised in
+Chapter~\ref{ch:start}:
+
+\begin{lstlisting}[style=rust]
+let target = std::fs::canonicalize(path)?;
+let temp = target.with_file_name(format!(
+    ".{}.fprettier{}-{}",
+    name.to_string_lossy(),
+    std::process::id(),
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+));
+let write_and_rename = || -> std::io::Result<()> {
+    std::fs::write(&temp, contents)?;
+    // rename() does not carry the target's mode over, so copy it across
+    std::fs::set_permissions(&temp, std::fs::metadata(&target)?.permissions())?;
+    std::fs::rename(&temp, &target)
+};
+write_and_rename().inspect_err(|_| {
+    let _ = std::fs::remove_file(&temp);
+})?;
+\end{lstlisting}
+
+\code{canonicalize} resolves symbolic links, so the rename replaces the file
+the link points to rather than the link. The process ID and a counter make the
+temporary name unique across threads and concurrent runs.
+
+\subsection{Writing to a closed pipe}
+
+Rust ignores \code{SIGPIPE}, so writing to a pipe whose reader has exited
+returns a \code{BrokenPipe} error, and \code{print!} panics on it. All of
+fprettier's standard output goes through \code{write\_stdout}, which exits
+quietly instead:
+
+\begin{lstlisting}[style=rust]
+fn write_stdout(bytes: &[u8]) -> Result<()> {
+    match io::stdout().write_all(bytes) {
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => std::process::exit(0),
+        result => Ok(result?),
+    }
+}
+\end{lstlisting}
+
+\section{Performance}
+
+Three measured decisions are recorded in comments in \file{main.rs}, each with
+its benchmark:
+
+\begin{itemize}
+  \item \textbf{mimalloc} as the global allocator is 5.5--9.5\% faster than the
+    system allocator at every thread count on a 3000-file tree. The gain is
+    largest single-threaded, so it comes from cheaper small allocations
+    (formatting creates many short-lived \code{String}s), not from less lock
+    contention.
+  \item \textbf{Pre-warming} the regular expressions saves 10--40\,ms on such
+    a run.
+  \item \textbf{Per-directory configuration} avoids about ten \code{stat}
+    calls per file.
+\end{itemize}
+
+Where the time goes inside \code{format\_file} has not been recorded in the
+source; finding out is the next exercise.
+
+\begin{exercise}[Measure]
+Run \code{cargo bench}. The \code{cli/tree 480 files} benchmark copies
+\file{examples/in} into a temporary tree and formats it. Then replace mimalloc
+with the system allocator (delete the \code{\#[global\_allocator]} static), run
+it again, and compare with the table in \file{main.rs}.
+\end{exercise}
+
+\begin{exercise}[Profile]
+Profile \code{format\_file} on a large input (concatenate
+\file{examples/in/*.f90} a few hundred times), for example with
+\code{cargo flamegraph -{}-bench bench}. Which functions dominate? A good
+guess beforehand: the indenter tries every enabled scope's patterns against
+every statement. Was the guess right?
+\end{exercise}
+
+\begin{exercise}[Parallel output]
+Why must \flag{diff} run sequentially, when \flag{check} only prints one line per
+file? Make \flag{check} run in parallel, collecting the names and printing them
+sorted at the end. Is the result still deterministic?
+\end{exercise}
+% ---------------------------------------------------------------------------
+\chapter{Testing fprettier}\label{ch:testing}
+% ---------------------------------------------------------------------------
+
+\section{The four kinds of test}
+
+\code{cargo test} runs 385 tests in four groups:
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l r X@{}}
+\toprule
+Where & Tests & What they check\\
+\midrule
+\code{\#[cfg(test)]} modules in \file{src/} & 222 & One function at a time: a regex, a \code{CharFilter} state, an aligner column, a whitespace handler\\
+\file{tests/integration\_test.rs} & 70 & Components together through the public API: the indenter fed statement by statement, \code{format\_file} on small programs\\
+\file{tests/compatibility\_test.rs} & 90 & Whole files and focused snippets against expected output, including the \file{examples/in} $\to$ \file{examples/out} pairs\\
+\file{tests/cli\_test.rs} & 3 & The binary itself: \flag{check} and \flag{diff} exit codes, output and the promise not to touch files\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Golden files}
+
+\file{examples/in} and \file{examples/out} hold eight pairs of real-world-sized
+files: a general example, fypp, \code{associate}, \code{where}/\code{forall},
+\code{namelist}/\code{block}/\code{select}, invalid code, case conversion
+and \code{use} sorting. Each has a test that formats the input with a specific
+configuration and compares with the output:
+
+\begin{lstlisting}[style=rust]
+#[test]
+fn test_example_compatibility() {
+    let input = get_example_path("in", "example.f90");
+    let expected = get_example_path("out", "example.f90");
+    // Default settings - format_decl=false preserves existing :: alignment
+    let config = Config {
+        impose_whitespace: true,
+        impose_indent: true,
+        indent: 3,
+        whitespace: 2,
+        format_decl: false,
+        ..Default::default()
+    };
+    test_compatibility(&input, &expected, &config);
+}
+\end{lstlisting}
+
+\code{test\_compatibility} does not \code{assert\_eq!} two whole files, which
+would print two walls of text; it reports the first line that differs,
+then a line-count difference, and finally the case where only the trailing
+newline differs.
+
+\begin{pitfall}[Do not regenerate expected output blindly]
+When a change makes a golden-file test fail, it is tempting to overwrite
+\file{examples/out} with the new output. Do that only after reading every
+changed line and convincing yourself that each one is an improvement. The
+golden files encode years of decisions, many of them about compatibility with
+fprettify; a diff in them is a behaviour change for every user.
+\end{pitfall}
+
+\subsection{Testing idempotence}
+
+The fixed-point property of Chapter~\ref{ch:tour} is tested directly in places
+where it once failed: format, format the result, and compare.
+
+\begin{lstlisting}[style=rust]
+let result1 = run_format(input, &config);
+let result2 = run_format(&result1, &config);
+assert_eq!(result1, result2, "OMP conditional continuation should be idempotent");
+\end{lstlisting}
+
+It is also implied by the golden files: every \file{examples/out} file is a
+fixed point under its test's configuration. You can check this from the shell;
+for example, \code{fprettier -{}-check -i 3 examples/out/example.f90} passes.
+
+\section{Continuous integration}
+
+\file{.github/workflows/ci.yml} runs three jobs on every push to \code{main}
+and every pull request:
+
+\begin{description}[font=\sffamily\small\bfseries]
+  \item[Test] \code{cargo test -{}-all-features} on stable.
+  \item[Lint] \code{cargo +nightly fmt -{}-check} (nightly, because
+    \file{rustfmt.toml} uses \code{group\_imports} and
+    \code{imports\_granularity}, which stable rustfmt ignores);
+    \code{cargo +stable clippy -{}-all-targets -{}-all-features -{}- -D warnings},
+    with \code{clippy::pedantic} enabled in \file{Cargo.toml}; and
+    \code{cargo doc} with warnings as errors.
+  \item[MSRV] \code{cargo check} on Rust 1.87.0, the \code{rust-version}
+    declared in \file{Cargo.toml}. The comment there names the feature that sets
+    the floor: \code{is\_multiple\_of} on unsigned integers, used by the
+    indentation check in \code{inspect\_file}.
+\end{description}
+
+Run the same checks locally before you push:
+
+\begin{lstlisting}[style=shell]
+cargo test
+cargo +nightly fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+\end{lstlisting}
+
+\section{Benchmarks}
+
+\file{benches/bench.rs} has two Criterion benchmarks: \code{format\_file} on
+\file{examples/in/example.f90}, which measures the formatter alone, and the CLI on
+a temporary tree of 480 files, which measures discovery, parallelism and I/O
+too. The tree benchmark passes an empty \flag{config} so that a
+\file{fprettier.toml} in your home directory cannot skew it.
+
+\begin{exercise}[A test that should exist]
+Chapter~\ref{ch:pipeline} found that no test fails if \code{inspect\_file} reads
+the wrong buffer. Choose another invariant that this book has described (for
+example: blank lines are transparent to stacking; \code{--check} never writes
+files; a labelled \code{do} closes at its label when two loops share it) and
+find out whether a test pins it down. If none does, write one.
+\end{exercise}
+
+\begin{exercise}[An idempotence sweep]
+Write a test that formats every file in \file{examples/in} with the default
+configuration, formats the result again, and asserts that the second pass
+changes nothing. Does it pass? Try it with \code{-l 60} and with
+\code{whitespace: 4} too.
+\end{exercise}
+
+% ---------------------------------------------------------------------------
+\chapter{Recipes for Contributors}\label{ch:recipes}
+% ---------------------------------------------------------------------------
+
+This chapter collects step-by-step instructions for the changes contributors
+most often make. Each lists every place that needs touching; the compiler will
+catch some omissions, but not all.
+
+\section{Fixing a formatting bug}
+
+\begin{enumerate}
+  \item \textbf{Reproduce} with \code{fprettier -s} and the reporter's
+    configuration. Use \flag{config} with an empty file, plus explicit flags,
+    so your own \file{fprettier.toml} does not interfere.
+  \item \textbf{Minimise.} Delete lines until the bug disappears, then put the
+    last one back. Most bugs reproduce in three to five lines.
+  \item \textbf{Locate.} Run with \flag{no-indent} and then with
+    \flag{no-whitespace}, to learn which pass is responsible. If the bug
+    involves continuations, check whether the lines have a leading \code{\&}
+    (manual alignment, Section~\ref{sec:manual}).
+  \item \textbf{Write the failing test first}, in
+    \file{tests/compatibility\_test.rs} if it is about output, or as a unit
+    test next to the function you suspect.
+  \item \textbf{Fix} the narrowest piece of code that explains the bug, and
+    leave a comment saying \emph{why} the code is the way it is. The existing
+    comments in fprettier are mostly of this kind; follow their example.
+  \item \textbf{Check idempotence}: format the test's output again.
+  \item \textbf{Run the full suite} and the lint checks of
+    Chapter~\ref{ch:testing}, and read any change in \file{examples/out}.
+  \item \textbf{Record it} under \emph{Unreleased} in \file{CHANGELOG.md},
+    describing the behaviour users saw, not the code you changed.
+\end{enumerate}
+
+\section{Adding a whitespace rule}
+
+\begin{enumerate}
+  \item In \file{config.rs}, add a \code{WS\_*} index constant and a row in
+    \code{WS\_FLAGS} (key, index, help text). The \flag{whitespace-\textit{key}}
+    flag and the \code{[whitespace\_dict]} key come from that row
+    automatically.
+  \item Grow the flags array from \code{[bool; 11]} to \code{[bool; 12]}.
+    The type appears in \file{config.rs}, \file{process.rs} and
+    \file{format/whitespace.rs}; the compiler finds every occurrence.
+  \item Add the rule's value to each level preset in
+    \code{get\_whitespace\_flags}.
+  \item Implement the rule: a new \code{try\_*} handler in \code{Charwise}
+    (mind its position in the chain), or a step in
+    \code{add\_whitespace\_context}.
+  \item Test it: a unit test in \file{whitespace.rs}, and check the flags-array
+    tests in \file{config.rs}, which list each level's array literally.
+  \item Document it in the README's \code{[whitespace\_dict]} block and in
+    \file{CHANGELOG.md}.
+\end{enumerate}
+
+\section{Adding a scope}
+
+\begin{enumerate}
+  \item In \file{parser/patterns.rs}, add the opener and closer patterns, and a
+    continuation pattern if the construct has one. Follow the existing shape:
+    \code{SOL\_STR}, an optional construct name, \code{\textbackslash s*}
+    between keywords that may be run together, \code{EOL\_STR}.
+  \item Append a row to \code{SCOPES} in \file{scope.rs}. Never insert in the
+    middle: the indices are the scopes' identity.
+  \item Decide whether the construct belongs in \code{opens\_indented\_scope}
+    in \file{process.rs}, that is, whether an \code{if} written flush with it
+    should be indented rather than stacked. For a block construct the answer is
+    usually yes.
+  \item If its \code{end} can be written run together (\code{endfoo}), add the
+    keyword to \code{END\_RE} and the two \code{END\_*} patterns in
+    \file{whitespace.rs}, and to the keyword table in \file{case\_convert.rs}.
+  \item Test the patterns in \file{patterns.rs}, the indentation in
+    \file{tests/integration\_test.rs} (the \code{indents\_for} helper makes
+    this one line), and a whole construct in \file{compatibility\_test.rs}.
+\end{enumerate}
+
+\section{Adding a configuration option}
+
+\begin{enumerate}
+  \item Add the field to \code{Config} and its default to
+    \code{impl Default for Config}. Because of \code{\#[serde(default)]}, the
+    TOML key exists from then on.
+  \item Add a field to \code{CliArgs}, an \code{Arg} in \code{build\_cli}, and
+    the conversion in \code{args\_from\_matches}.
+  \item Apply it in \code{build\_config} in \file{main.rs}, respecting the
+    one-way convention for booleans.
+  \item If directives should accept it, extend \code{DirectiveOverrides},
+    \code{parse\_directive\_args} and \code{apply\_directive\_overrides}.
+  \item If it has invalid values, check them in \code{Config::validate}.
+  \item Use it, document it in the README's key list, and add it to the CHANGELOG.
+\end{enumerate}
+
+\section{Style}
+
+The code base follows a few conventions worth keeping:
+
+\begin{itemize}
+  \item \code{clippy::pedantic} is on; allow a lint locally with a reason
+    rather than globally.
+  \item Comments explain why, often with the bug that made the code necessary.
+    When you remove a special case, find out first which test it serves.
+  \item References to the Fortran standard use clause numbers of Fortran 2023
+    (\emph{6.3.2.1}) or rule numbers (\emph{R1002}), so they can be checked.
+  \item Numbers that drove a decision (benchmark results, limits) are written
+    next to the code they justify, with the date they were measured.
+\end{itemize}
+
+\begin{exercise}[Your first contribution]
+Pick one of the exercises from Part II that asked you to fix something: the
+level-0 \code{) +b} quirk (Exercise~\ref{ch:ws-engine}.1), the unindented
+detached comment (Chapter~\ref{ch:lines}), or the missing
+\code{inspect\_file} test (Chapter~\ref{ch:pipeline}). Follow the bug-fixing recipe
+from start to finish, including the CHANGELOG entry.
+\end{exercise}
+
+% ===========================================================================
+\appendix
+% ===========================================================================
+
+\chapter{Configuration Reference}\label{app:config}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l l l X@{}}
+\toprule
+Key & Type & Default & Meaning\\
+\midrule
+\code{indent} & integer & 4 & Spaces per indent level; at least 1\\
+\code{line\_length} & integer & 132 & Maximum line length; at most 10\,000; 0 for none\\
+\code{whitespace} & 0--4 & 2 & Whitespace level (Table~\ref{tab:ws-levels})\\
+\code{impose\_indent} & bool & true & Run the indentation pass\\
+\code{impose\_whitespace} & bool & true & Run the whitespace pass\\
+\code{strict\_indent} & bool & false & Disable the stacking rule\\
+\code{indent\_fypp} & bool & true & fypp blocks open scopes and are indented\\
+\code{indent\_mod} & bool & true & Indent program, module and submodule bodies\\
+\code{format\_decl} & bool & false & Normalise spacing around \code{::}\\
+\code{comment\_spacing} & integer & 1 & Gap before inline comments when normalised\\
+\code{normalize\_comment\_spacing} & bool & false & Apply \code{comment\_spacing} to every inline comment\\
+\code{enable\_replacements} & bool & false & Rewrite relational operators\\
+\code{c\_relations} & bool & false & With replacements: C style, not Fortran style\\
+\code{sort\_use} & bool & false & Sort \code{use} statements within a group\\
+\code{sort\_use\_only} & bool & false & Sort \code{only:} lists\\
+\code{[whitespace\_dict]} & table & empty & Per-rule overrides: \code{comma}, \code{assignments}, \code{relational}, \code{logical}, \code{plusminus}, \code{multdiv}, \code{print}, \code{type}, \code{intrinsics}, \code{decl}, \code{concat}\\
+\code{[case\_dict]} & table & empty & 0/1/2 for \code{keywords}, \code{procedures}, \code{operators}, \code{constants}, \code{types}\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\chapter{Command-Line Reference}\label{app:cli}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+Flag & Effect\\
+\midrule
+\code{-i}, \flag{indent} \textit{N} & Spaces per indent level\\
+\code{-l}, \flag{line-length} \textit{N} & Maximum line length\\
+\code{-w}, \flag{whitespace} \textit{N} & Whitespace level 0--4\\
+\flag{whitespace-\textit{rule}}[\code{=}\textit{BOOL}] & Override one whitespace rule\\
+\flag{no-indent}, \flag{no-whitespace} & Skip a main pass\\
+\flag{strict-indent} & Disable the stacking rule\\
+\flag{no-indent-fypp}, \flag{no-indent-mod} & See \code{indent\_fypp}, \code{indent\_mod}\\
+\flag{format-decl} & Normalise \code{::} spacing\\
+\flag{normalize-comment-spacing}, \flag{comment-spacing} \textit{N} & Inline comment gap\\
+\flag{case} \textit{K P O C} & Case of keywords, procedures, operators, constants (0/1/2)\\
+\flag{case-types} \textit{N} & Case of kind values, kind suffixes, exponent letters\\
+\flag{enable-replacements}, \flag{c-relations} & Relational operator spelling\\
+\flag{sort-use}, \flag{sort-use-only} & Sort \code{use} statements, \code{only:} lists\\
+\code{-s}, \flag{stdout} & Print instead of writing files\\
+\code{-d}, \flag{diff} & Print a unified diff\\
+\flag{check} & List files that would change; exit 1 if any\\
+\code{-c}, \flag{config} \textit{FILE} & Use this configuration file only\\
+\code{-r}, \flag{recursive} & Recurse into directories\\
+\code{-e}, \flag{exclude} \textit{GLOB} & Exclude matching paths (repeatable)\\
+\code{-f}, \flag{fortran} \textit{EXT} & Extra Fortran extension (repeatable)\\
+\code{-m}, \flag{exclude-max-lines} \textit{N} & Skip files longer than \textit{N} lines\\
+\code{-j}, \flag{jobs} \textit{N} & Worker threads (1: sequential)\\
+\code{-D}, \flag{debug} & Print configuration diagnostics\\
+\code{-S}, \flag{silent} & No summary or skip messages\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Inputs are files or directories; none, or \code{-}, reads standard input.
+
+\chapter{The Scope Table}\label{app:scopes}
+
+\begin{center}
+\small
+\footnotesize
+\begin{tabular}{@{}r l l l l@{}}
+\toprule
+\# & Group & Opens & Continues & Closes\\
+\midrule
+0 & Core & \code{if (\ldots) then} & \code{else}, \code{else if} & \code{end if}\\
+1 & Core & \code{do}, \code{do while}, \code{do concurrent} & & \code{end do}\\
+2 & Core & \code{select case/rank/type} & \code{case}, \code{rank}, \code{type is}, \ldots & \code{end select}\\
+3 & Core & \code{subroutine} & \code{contains} & \code{end subroutine}\\
+4 & Core & \code{function} & \code{contains} & \code{end function}\\
+5 & Core & \code{interface} & & \code{end interface}\\
+6 & Core & \code{type} definition & \code{contains} & \code{end type}\\
+7 & Core & \code{enum} & & \code{end enum}\\
+8 & Core & \code{associate} & & \code{end associate}\\
+9 & Core & (none) & & bare \code{end}, closes any\\
+10 & Core & \code{block}, \code{block data} & & \code{end block}\\
+11 & Core & \code{where (\ldots)} block & \code{elsewhere} & \code{end where}\\
+12 & Core & \code{forall (\ldots)} block & & \code{end forall}\\
+13 & Module & \code{module} & \code{contains} & \code{end module}\\
+14 & Module & \code{submodule} & \code{contains} & \code{end submodule}\\
+15 & Module & \code{program} & \code{contains} & \code{end program}\\
+16 & Fypp & \code{\#:def} & & \code{\#:enddef}\\
+17 & Fypp & \code{\#:if} & \code{\#:elif}, \code{\#:else} & \code{\#:endif}\\
+18 & Fypp & \code{\#:for} & & \code{\#:endfor}\\
+19 & Fypp & \code{\#:block} & & \code{\#:endblock}\\
+20 & Fypp & \code{\#:call} & & \code{\#:endcall}\\
+21 & Fypp & \code{\#:mute} & & \code{\#:endmute}\\
+22 & Core & \code{critical} & & \code{end critical}\\
+23 & Core & \code{change team} & & \code{end team}\\
+24 & Core & \code{enumeration type} & & \code{end enumeration type}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\chapter{Hints for Selected Exercises}
+
+\paragraph{1.2} A missing path is an error (exit 1). An empty directory is not:
+fprettier prints \code{No Fortran files found to format.} and exits 0.
+
+\paragraph{2.1} \code{print *, 'a'//'b'}, \code{do while (i < 10)},
+\code{x(1:n) = y(1:n)*2}, \code{p => t}. The concatenation stays tight below
+level 4, and the colon of an array section is never spaced.
+
+\paragraph{2.2} Only \code{SIZE(arr)} changes. The declared variable and the
+assignment target are not followed by \code{(}, so they are not procedure
+calls.
+
+\paragraph{3.2} Nothing is sorted: directives do not accept \flag{sort-use}, and
+unknown directive options are ignored.
+
+\paragraph{4.2} At level 3 the output is \code{y = a * -b + c(-1) - 2e-3 - x\%e - 3}.
+The \code{-b} and \code{(-1)} signs follow an operator and an open bracket, so
+they are unary; \code{2e-3} is an exponent; and \code{x\%e-3} is not, because
+\code{e} is a component name.
+
+\paragraph{5.1} Indented by four, the loops are kept stacked. Indented by
+three, column 3 is not a multiple of 4, so stacking is off and each loop is
+indented.
+
+\paragraph{5.2} No. Blank lines are transparent to \code{inspect\_file}
+(Section~\ref{sec:inspect}).
+
+\paragraph{6.1} (a) \code{!\&<} \ldots{} \code{!\&>}, or a leading \code{\&}
+on each continuation line; (b) \flag{exclude}; (c) a trailing \code{!\&}; (d)
+\flag{exclude-max-lines}.
+
+\paragraph{10.2} \code{end associate} is written at the loop body's level
+and changes nothing: \code{ENDASSOCIATE\_RE} matches, the popped scope is the
+\code{do}, not an \code{associate}, so the \code{else} branch pushes it back
+and the \code{end} is marked invalid, which \code{calculate\_indent} treats
+like an ordinary statement. Without the push-back, the \code{do} would be gone
+from \code{scope\_storage} while its indent stayed on \code{indent\_storage}, and
+the stacks would be out of step for the rest of the file.
+
+\paragraph{11.1} The \code{(} of \code{build} is at relative column 27, so the
+continuation starts at $4 + 28 = 32$. The pushes are: the \code{=>} (column 7),
+\code{make\_node(} (17), \code{build(} (28).
+
+\paragraph{13.1} The single-string call is not split: breaking after
+\code{call} would save almost nothing, and the string cannot be broken. With
+three arguments before it, breaking after \code{c,} saves enough to be worth
+it, even though the string line is still over 50 characters.
+
+\backmatter
+\chapter*{Afterword}
+\addcontentsline{toc}{chapter}{Afterword}
+
+A formatter is judged by what it leaves alone as much as by what it changes. The
+reader who has come this far has seen how much of fprettier exists for that
+purpose: a character filter so that strings and comments are never touched,
+a pre-pass that reads how the author laid out loops, a single blank kept as a
+marker so that a comment's indentation survives two passes, a split that asks
+the aligner where the next run would put it. None of these is complicated on
+its own. Together they make a tool that can run over a million lines of
+someone else's Fortran and leave every one of them better, or exactly as it
+was.
+
+Contributions are welcome at \url{https://github.com/fredjones42/fprettier}.
+
+\end{document}
