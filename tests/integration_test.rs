@@ -2090,3 +2090,92 @@ fn a_megabyte_long_string_literal_does_not_exhaust_the_stack() {
     );
     run_format(&input, &regression_config());
 }
+
+/// Format `input` twice and check the second run changes nothing
+fn assert_fixed_point(input: &str, config: &Config) -> String {
+    let once = run_format(input, config);
+    assert_eq!(
+        run_format(&once, config),
+        once,
+        "second run changed:\n{once}"
+    );
+    once
+}
+
+/// The indentation pre-pass reads pass 1's output, not the input: pass 1 can
+/// add a logical line (here, by detaching a comment), and inspecting the input
+/// would pair every requested indent below it with the wrong statement,
+/// un-stacking the loops.
+#[test]
+fn test_stacking_survives_a_detached_comment_above() {
+    let input = format!(
+        "subroutine s\n    x = 1 ! {}\n    do i = 1, n\n    do j = 1, n\n        y = 0\n    end do\n    end do\nend subroutine\n",
+        "c".repeat(60)
+    );
+    let config = Config {
+        line_length: 40,
+        ..Default::default()
+    };
+    let result = assert_fixed_point(&input, &config);
+    assert!(
+        result.contains("\n    do i = 1, n\n    do j = 1, n\n        y = 0\n"),
+        "{result}"
+    );
+}
+
+/// A comment detached from unindented code is indented with the code, rather
+/// than left at column 0 where pass 2 reads it as deliberately unindented
+#[test]
+fn test_detached_comment_from_unindented_code_is_indented() {
+    let input = "subroutine s\nx = 1 ! a fairly long trailing comment that pushes the line past sixty\nend subroutine\n";
+    let config = Config {
+        line_length: 60,
+        ..Default::default()
+    };
+    let result = assert_fixed_point(input, &config);
+    assert!(
+        result.contains("\n    x = 1\n    ! a fairly long"),
+        "{result}"
+    );
+}
+
+/// A preprocessor line keeps its comment however long: detaching fypp's `#!`
+/// would leave a bare `#` and turn the rest into a Fortran comment
+#[test]
+fn test_preprocessor_comment_is_never_detached() {
+    let fypp =
+        "#:if defined('DEBUG')  #! a comment long enough to pass the sixty column limit\n#:endif\n";
+    let cpp = "#define X 1 ! a comment long enough to pass the sixty column limit too\n";
+    let config = Config {
+        line_length: 60,
+        ..Default::default()
+    };
+    assert_eq!(assert_fixed_point(fypp, &config), fypp);
+    assert_eq!(assert_fixed_point(cpp, &config), cpp);
+}
+
+/// With an operator's own spacing rule off, the blank a closing delimiter
+/// leaves before it must not survive on one side only (`a(i) +b`)
+#[test]
+fn test_no_lopsided_space_with_operator_rule_off() {
+    let input = "x=a(i,j)+b\nif(a(1)==b)y=f(x)-1\nz=g(1).and.h(2)\narr=[1,2]+[3,4]\n";
+    let config = Config {
+        whitespace: 0,
+        impose_indent: false,
+        ..Default::default()
+    };
+    assert_eq!(
+        assert_fixed_point(input, &config),
+        "x=a(i,j)+b\nif(a(1)==b) y=f(x)-1\nz=g(1).and.h(2)\narr=[1,2]+[3,4]\n"
+    );
+
+    // Level 2 output is unaffected
+    let config = Config {
+        impose_indent: false,
+        ..Default::default()
+    };
+    assert_eq!(
+        run_format(input, &config),
+        "x = a(i, j) + b\nif (a(1) == b) y = f(x) - 1\nz = g(1) .and. h(2)\narr = [1, 2] + [3, 4]\n"
+    );
+}

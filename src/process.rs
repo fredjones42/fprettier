@@ -180,6 +180,10 @@ struct LineWriteContext<'a> {
     split_origins: &'a HashSet<usize>,
     /// Effective line length for wrapping decisions
     effective_line_length: usize,
+    /// The line is a preprocessor directive, whose comment must stay on it:
+    /// detaching fypp's `#!` leaves a bare `#` and turns the rest into a
+    /// Fortran comment
+    is_preprocessor: bool,
 }
 
 /// Apply an adjustment to indent values, clamping to non-negative
@@ -1115,6 +1119,7 @@ fn write_output_line<W: Write>(
         original_gap.max(1)
     };
     let should_detach_comment = has_comment
+        && !write_ctx.is_preprocessor
         && !is_comment_only
         && !comment_trimmed.is_empty()
         && write_ctx.effective_line_length < LINE_SPLIT_THRESHOLD
@@ -1165,7 +1170,15 @@ fn write_output_line<W: Write>(
 
         if should_detach_comment {
             output.write_all(b"\n")?;
-            let indent = comment_indent(write_ctx, indenter, origin, indent_of(line_to_write));
+            let mut indent = comment_indent(write_ctx, indenter, origin, indent_of(line_to_write));
+            // The comment came off a line of code, so it belongs with the code.
+            // When an indent pass is still to come, a comment at column 0 would
+            // read to it as one the author put there and be left alone; one
+            // space marks it as indented, the same marker comment-only lines get
+            // above.
+            if indent == 0 && pass_ctx.config.impose_indent && !pass_ctx.impose_indent {
+                indent = 1;
+            }
             write_spaces(output, indent)?;
         } else if is_comment_only
             && pass_ctx.impose_indent
@@ -1558,6 +1571,7 @@ fn format_pass<R: BufRead, W: Write>(
             comment_line_indices: &comment_line_indices,
             split_origins: &split_origins,
             effective_line_length,
+            is_preprocessor: flags.is_cpp_line || flags.is_fypp_line,
         };
 
         for (i, line) in output_lines.iter().enumerate() {

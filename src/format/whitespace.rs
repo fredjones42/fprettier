@@ -438,10 +438,10 @@ impl Charwise<'_> {
             ')' | ']' | ',' => true,
             // An assignment: `big_arr =[1` -> `big_arr = [1`. Only at the top
             // level, so a keyword argument inside a call keeps its `=`.
-            '=' | '>' if self.level == 1 => true,
+            '=' | '>' if self.level == 1 => self.whitespace_flags[WS_ASSIGNMENT],
             // An array constructor after `+`/`-` takes a space; a `(` after an
             // operator does not, being a function call: `3*(x)`, `-(x)`
-            '+' | '-' if delim == "[" => true,
+            '+' | '-' if delim == "[" => self.whitespace_flags[WS_PLUSMINUS],
             // Otherwise a space goes before the delimiter unless what precedes
             // it is part of the same token: a name, a number, another opening
             // delimiter (`/` being the second half of `(/`), or an operator
@@ -562,7 +562,10 @@ impl Charwise<'_> {
                 || next_ch == '/'
                 || next_ch == '*'
                 || next_ch == ';'
-                || (next_ch == '/' && self.peek(1) == Some(')'));
+                || (next_ch == '/' && self.peek(1) == Some(')'))
+                // An operator is spaced by its own rule, which pops any blank
+                // left here; with that rule off, a blank here would be lopsided
+                || matches!(next_ch, '+' | '-' | '=' | '<' | '>' | '.');
 
             if !skip_space {
                 self.out.push(' ');

@@ -2,7 +2,7 @@
 //!
 //! This module provides the infrastructure for reading and tokenizing Fortran source:
 //! - [`char_filter::CharFilter`]: Iterator adapter that identifies strings, comments, and code regions
-//! - [`stream::InputStream`]: Joins continuation lines (`&`) and splits semicolon-separated statements
+//! - [`stream::InputStream`]: Joins continuation lines (`&`) into logical lines; semicolon-separated statements stay on one logical line
 //! - [`patterns`]: Precompiled regex patterns for Fortran syntax elements
 //!
 //! The parser handles Fortran's line-continuation semantics, string literals (both
