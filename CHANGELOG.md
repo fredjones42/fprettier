@@ -6,6 +6,14 @@ All notable changes to fprettier are recorded here.
 
 **Bug Fixes:**
 - Fixed continuation lines of a statement after a semicolon being forced to column 1 (as fprettify does), so `case (1); t = x + &` left its continuation unindented. They are now aligned like any other continuation
+- Fixed a fypp `#!` comment on a directive line being split off when the line was over the length limit, leaving a bare `#` that fypp rejects. A comment on a preprocessor line now always stays on it
+- Fixed a comment detached from an over-long unindented line being left at column 0. It is now indented with its code
+- Fixed a lopsided blank before an operator whose spacing rule is off, such as `a(i,j) +b` at `-w 0`. Output at the default whitespace level is unchanged
+
+**Other:**
+- Added a regression test pinning that indentation inspection reads the output of the whitespace pass
+- Corrected the parser module documentation, which said semicolon-separated statements are split into separate logical lines
+- Added the book *Learn fprettier: A Guide for Developers* in `book/`
 
 ## Version 0.5.0
 

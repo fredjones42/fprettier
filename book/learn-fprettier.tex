@@ -198,7 +198,7 @@
 \vfill
 {\sffamily\large Fred Jones\par}
 \vspace{0.3cm}
-{\sffamily\small\color{commentc} Covers fprettier 0.5.0 \textperiodcentered{} October 2026\par}
+{\sffamily\small\color{commentc} Covers fprettier 0.5.0 and later \textperiodcentered{} November 2026\par}
 \end{titlepage}
 
 \thispagestyle{empty}
@@ -212,8 +212,9 @@ terms.\par\medskip
 The source of this book is the single file \file{book/learn-fprettier.tex} in
 the fprettier repository, \url{https://github.com/fredjones42/fprettier}. Build it with
 \code{tectonic learn-fprettier.tex}.\par\medskip
-Every example showing fprettier output was produced by running fprettier 0.5.0
-on the input shown, with default settings unless the text says otherwise.
+Every example showing fprettier output was produced by running fprettier
+(version 0.5.0 plus the fixes listed as unreleased in its changelog, as of
+November 2026) on the input shown, with default settings unless the text says otherwise.
 Source excerpts are taken from the same version; some are abridged, which is
 marked where it matters. Function and file names are given so that you can find
 the code even after its line numbers have moved.\par}
@@ -1002,15 +1003,14 @@ The same line at three levels:
 
 \begin{lstlisting}[style=plain]
 input    x  =  a( i , j )+b  *c
--w 0     x=a(i,j) +b*c
+-w 0     x=a(i,j)+b*c
 -w 2     x = a(i, j) + b*c
 -w 3     x = a(i, j) + b * c
 \end{lstlisting}
 
 The level-0 output is not simply the input: even with every rule off,
-fprettier removes runs of blanks and blanks before punctuation. The odd
-\code{) +b} is explained in Section~\ref{sec:ws-stages}; it is a good example
-of how the stages of the whitespace engine interact.
+fprettier removes runs of blanks and blanks before punctuation.
+Section~\ref{sec:ws-stages} follows this line through the whitespace engine.
 
 \section{What each rule does, precisely}
 
@@ -1860,9 +1860,8 @@ trimmed, so the leading \code{\&} of a manually aligned line does not survive
 into \code{joined\_line}.
 
 \begin{pitfall}[Semicolons are not split]
-The module documentation of \file{parser/mod.rs} says that \code{InputStream}
-splits semicolon-separated statements. It does not, and a comment in
-\code{next\_fortran\_line} explains why: splitting would turn one formatted
+\code{InputStream} does not split semicolon-separated statements, and a
+comment in \code{next\_fortran\_line} explains why: splitting would turn one formatted
 line into several. A logical line may therefore contain several statements,
 and every consumer that matches statements (the indenter, the sort-use pass)
 has to look for semicolons itself.
@@ -2344,12 +2343,13 @@ Figure~\ref{fig:offbyone}.
 \begin{exercise}[Inspect the wrong buffer]
 Change \code{format\_file} so that \code{inspect\_file} reads the original input
 instead of \code{intermediate} (you will need to clone \code{input\_buffer}
-before pass 1 consumes it), and run \code{cargo test}. At the time of writing,
-every test still passes: the test suite does not pin this down. Find an input
-for which the change matters, and turn it into a regression test in
-\file{tests/integration\_test.rs}. (Hint: pass 1 turns a long inline comment
-into a line of its own, which adds a logical line. Put such a comment, with
-\code{-l 40}, just before a pair of stacked \code{do} loops.)
+before pass 1 consumes it), and run \code{cargo test}. Exactly one test
+fails: \code{test\_stacking\_survives\_a\_detached\_comment\_above} in
+\file{tests/integration\_test.rs}. Before writing this book, no test failed;
+that test was added when the gap was found. Read it, and explain line by line
+how the requested indents end up paired with the wrong statements. (Hint: pass
+1 turns a long inline comment into a line of its own, which adds a logical
+line.)
 \end{exercise}
 % ---------------------------------------------------------------------------
 \chapter{Scopes and the Indenter}\label{ch:indenter}
@@ -2969,36 +2969,46 @@ so run on the rejoined line: \code{namelist} groups, \code{endif} $\to$
 \code{end if} (guarded by \code{END\_WITH\_EQ\_RE} against \code{endif = 3}),
 the same after a semicolon, \code{only: }, and construct names.
 
-\section{Explaining a quirk}
+\section{A quirk, and its fix}
 
-Chapter~\ref{ch:whitespace-user} showed that at level 0 the line
-\code{x  =  a( i , j )+b  *c} comes out as \code{x=a(i,j) +b*c}. Now we can
-see why. Stage 1 produces \code{x=a(i,j)+b*c}. In stage 2, the closing
-parenthesis goes to \code{try\_close\_delimiter}, which writes \code{)} and then
-decides what spacing follows:
+Until November 2026, the line of Figure~\ref{fig:ws-stages} came out at level 0
+as \code{x=a(i,j) +b*c}, with a blank on one side of the \code{+} only. The
+cause shows how the handlers depend on one another. Stage 1 produces
+\code{x=a(i,j)+b*c}. In stage 2 the closing parenthesis goes to
+\code{try\_close\_delimiter}, which writes \code{)} and then decides what
+spacing follows. Its list of characters that take no blank did not include
+\code{+}, so it wrote one. At level 2, \code{try\_plus\_minus} then saw the
+\code{+}, popped that trailing blank and wrote \code{ + } symmetrically. At level
+0, or with \code{-{}-whitespace-plusminus=false}, that handler returned false
+at once, the \code{+} was copied as it was, and the lone blank stayed. The same
+happened before \code{==}, \code{<} and \code{.and.} when their rules were off.
+
+The close-delimiter handler had been relying on a later handler to tidy up after
+it. The fix makes it stop leaving the blank before any operator character, whose
+own rule decides the spacing:
 
 \begin{lstlisting}[style=rust]
 let skip_space = next_ch == ')' || next_ch == ']' || next_ch == ','
     || next_ch == '%' || next_ch == ':' || next_ch == '/' || next_ch == '*'
-    || next_ch == ';' || (next_ch == '/' && self.peek(1) == Some(')'));
+    || next_ch == ';' || (next_ch == '/' && self.peek(1) == Some(')'))
+    // An operator is spaced by its own rule, which pops any blank
+    // left here; with that rule off, a blank here would be lopsided
+    || matches!(next_ch, '+' | '-' | '=' | '<' | '>' | '.');
 if !skip_space {
     self.out.push(' ');
 }
 \end{lstlisting}
 
-\code{+} is not in the list, so a blank is written. At level 2,
-\code{try\_plus\_minus} then sees the \code{+}, pops that trailing blank, and
-writes \code{ + } symmetrically. At level 0 (or with
-\code{-{}-whitespace-plusminus=false}), that handler returns false at once, the
-\code{+} is copied as-is, and the lone blank stays. The close-delimiter
-handler relies on a later handler to tidy up after it.
+Two sibling rules in \code{needs\_space\_before\_delimiter} had the same flaw
+from the other side, writing \code{arr= [1]} and \code{6]+ [1} at level 0:
+the blank before an opening bracket after \code{=} or \code{+} is now written
+only when the assignment or plus/minus rule is on. Output at the default level
+did not change.
 
-\begin{exercise}[Fix the quirk]
-Make \code{x=a(i,j)+b} come out unchanged at level 0 and with
-\code{plusminus} off, without changing any output at the default level. Where
-is the right place for the fix: \code{try\_close\_delimiter}, or
-\code{try\_plus\_minus}? Run the whole test suite. Does any expected output in
-\file{examples/out} change? Should it?
+\begin{exercise}[Why each character?]
+Remove the characters from the \code{matches!} above one at a time, and run
+\code{cargo test} after each removal. Which test fails for each? For any
+character whose removal no test notices, write a test that does.
 \end{exercise}
 
 \begin{exercise}[A new rule]
@@ -3110,6 +3120,7 @@ let inline_gap = if pass_ctx.config.normalize_comment_spacing {
     original_gap.max(1)
 };
 let should_detach_comment = has_comment
+    && !write_ctx.is_preprocessor
     && !is_comment_only
     && !comment_trimmed.is_empty()
     && write_ctx.effective_line_length < LINE_SPLIT_THRESHOLD
@@ -3117,6 +3128,12 @@ let should_detach_comment = has_comment
         || line_to_write.trim_end().len() + inline_gap + comment_trimmed.len()
             > write_ctx.effective_line_length);
 \end{lstlisting}
+
+A comment on a preprocessor line is never detached, just as line splitting
+never breaks one. A fypp comment starts with \code{\#!}, and since
+\code{CharFilter} reads the \code{!} as the start of a Fortran comment,
+detaching it used to leave a bare \code{\#} on the directive and move the rest
+of the comment to a line of its own, which fypp rejects.
 
 The detached comment is indented at the line's computed indent.
 
@@ -3154,21 +3171,23 @@ condition on \code{impose\_indent} is what keeps the result a fixed point: if
 no indentation pass follows, nothing removes the marker, and every run would add
 a blank.
 
-\begin{pitfall}[Detached comments in unindented code]
+\begin{keyidea}[The marker, once more]
 A detached comment takes the computed indent of its line. In pass 1, which
-computes no indents, that is the column the code started in. So a long inline
-comment on an \emph{unindented} line, detached in pass 1, starts at column 0,
-and pass 2 then sees an unindented comment-only line and leaves it there:
-\begin{lstlisting}[style=after]
+computes no indents, that is the column the code started in, so a comment
+detached from an \emph{unindented} line started at column 0. Pass 2 then saw an
+unindented comment-only line, took it for one the author had put at column 0,
+and left it there:
+\begin{lstlisting}[style=before]
 subroutine s
     x = 1
 ! a fairly long trailing comment that pushes the line past the limit of sixty
 end subroutine
 \end{lstlisting}
-The same input, already indented, places the comment at column 4. This is the
-kind of interaction between passes that the next chapter's tests are designed
-to catch.
-\end{pitfall}
+The fix uses the same marker: when pass 1 detaches a comment at column 0 and an
+indentation pass is still to come, it writes one blank first, so pass 2 indents
+the comment with its code, at column 4. This kind of interaction between passes
+is what the idempotence tests of the next chapter are there to catch.
+\end{keyidea}
 
 \begin{exercise}[Splitting limits]
 With \code{-l 50}, format a \code{call} with a single 60-character string
@@ -3176,11 +3195,11 @@ argument. Is the line split? Now add three short arguments before the string.
 Explain both results using the ``saves width'' rule.
 \end{exercise}
 
-\begin{exercise}[Fix the detached comment]
-Make the pitfall above come out with the comment at column 4. One approach:
-when pass 1 detaches a comment from an unindented line, give the new
-comment-only line the one-space marker, so pass 2 treats it as indented. Write
-the test first, and check that formatting the output again changes nothing.
+\begin{exercise}[Preprocessor comments]
+Remove \code{!write\_ctx.is\_preprocessor} from \code{should\_detach\_comment},
+build, and format \file{examples/in/test\_fypp.f90} with \code{-l 60}. Find
+the damaged directives. Then explain why the comment of a C preprocessor line
+such as \code{\#define X 1 ! note} must not be detached either.
 \end{exercise}
 % ---------------------------------------------------------------------------
 \chapter{Optional Rewrites: Case, Operators, \texttt{use}}\label{ch:rewrites}
@@ -3659,8 +3678,8 @@ too. The tree benchmark passes an empty \flag{config} so that a
 \file{fprettier.toml} in your home directory cannot skew it.
 
 \begin{exercise}[A test that should exist]
-Chapter~\ref{ch:pipeline} found that no test fails if \code{inspect\_file} reads
-the wrong buffer. Choose another invariant that this book has described (for
+Until this book was written, no test failed if \code{inspect\_file} read the
+wrong buffer (Exercise~9.3). Choose another invariant that this book has described (for
 example: blank lines are transparent to stacking; \code{--check} never writes
 files; a labelled \code{do} closes at its label when two loops share it) and
 find out whether a test pins it down. If none does, write one.
@@ -3780,11 +3799,19 @@ The code base follows a few conventions worth keeping:
 \end{itemize}
 
 \begin{exercise}[Your first contribution]
-Pick one of the exercises from Part II that asked you to fix something: the
-level-0 \code{) +b} quirk (Exercise~\ref{ch:ws-engine}.1), the unindented
-detached comment (Chapter~\ref{ch:lines}), or the missing
-\code{inspect\_file} test (Chapter~\ref{ch:pipeline}). Follow the bug-fixing recipe
-from start to finish, including the CHANGELOG entry.
+At short line limits, fprettier's output is not always a fixed point. Formatting
+\file{examples/in/example.f90} with \code{-l 60} and then formatting the result
+again moves the pieces of a statement that was split inside nested brackets:
+\begin{lstlisting}[style=plain]
+first run:                                      r, k, l) + i
+second run:                                               r, k, &
+                                                          l) + i
+\end{lstlisting}
+Four of the eight example files do this at \code{-l 60} or \code{-l 40}. Follow
+the bug-fixing recipe from start to finish: write the idempotence sweep of
+Exercise~16.2 as a failing test, find out why the column chosen by
+\code{split\_with\_alignment} differs from the one the aligner computes on the
+next run, fix it, and add the CHANGELOG entry.
 \end{exercise}
 
 % ===========================================================================
