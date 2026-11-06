@@ -2,7 +2,7 @@
 
 All notable changes to fprettier are recorded here.
 
-## Unreleased
+## Version 0.5.1
 
 **Bug Fixes:**
 - Fixed a continued declaration whose initializer is an array constructor with a type-spec, such as `x(3) = [character(len=7) :: 'a', &`, aligning its continuation past the constructor's `::` instead of the `[`. That `::` was taken for the declaration's own, and the push left the alignment stack out of step with the closing `]`
