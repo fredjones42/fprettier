@@ -5,6 +5,7 @@ All notable changes to fprettier are recorded here.
 ## Unreleased
 
 **Bug Fixes:**
+- Fixed a continued declaration whose initializer is an array constructor with a type-spec, such as `x(3) = [character(len=7) :: 'a', &`, aligning its continuation past the constructor's `::` instead of the `[`. That `::` was taken for the declaration's own, and the push left the alignment stack out of step with the closing `]`
 - Fixed continuation lines of a statement after a semicolon being forced to column 1 (as fprettify does), so `case (1); t = x + &` left its continuation unindented. They are now aligned like any other continuation
 - Fixed a fypp `#!` comment on a directive line being split off when the line was over the length limit, leaving a bare `#` that fypp rejects. A comment on a preprocessor line now always stays on it
 - Fixed a comment detached from an over-long unindented line being left at column 0. It is now indented with its code

@@ -2179,3 +2179,51 @@ fn test_no_lopsided_space_with_operator_rule_off() {
         "x = a(i, j) + b\nif (a(1) == b) y = f(x) - 1\nz = g(1) .and. h(2)\narr = [1, 2] + [3, 4]\n"
     );
 }
+
+/// The `::` of an array constructor's type-spec sits inside brackets and must
+/// not take the declaration alignment: the continuation aligns past the `[`.
+/// The unbalanced parentheses in the strings must not count either.
+fn type_spec_constructor(q: char) -> (String, String) {
+    let decl = "    character(len=7), parameter :: inputs(9) = [character(len=7) :: ";
+    let first = format!("{q}(()){q}, {q}()(){q}, {q}((({q}, &");
+    let rest =
+        format!("{q}(()(({q}, {q}))((((({q}, {q}()){q}, {q}))({q}, {q}))){q}, {q})())()){q}]");
+    let input = format!(
+        "program p\n    implicit none\n{decl}{first}\n  {rest}\n    print *, inputs\nend program p\n"
+    );
+    let expected = format!(
+        "program p\n    implicit none\n{decl}{first}\n{:48}{rest}\n    print *, inputs\nend program p\n",
+        ""
+    );
+    (input, expected)
+}
+
+#[test]
+fn test_type_spec_in_constructor_aligns_to_bracket() {
+    let config = Config {
+        indent: 4,
+        ..Default::default()
+    };
+    for q in ['\'', '"'] {
+        let (input, expected) = type_spec_constructor(q);
+        assert_eq!(assert_fixed_point(&input, &config), expected);
+    }
+}
+
+/// Split at a line length of 100, every fragment lands past the `[` and a
+/// second run leaves the output alone
+#[test]
+fn test_type_spec_in_constructor_split_is_fixed_point() {
+    let config = Config {
+        indent: 4,
+        line_length: 100,
+        ..Default::default()
+    };
+    for q in ['\'', '"'] {
+        let (input, _) = type_spec_constructor(q);
+        let once = assert_fixed_point(&input, &config);
+        for line in once.lines().skip(3).take_while(|l| !l.contains("print")) {
+            assert_eq!(line.find(q), Some(48), "{once}");
+        }
+    }
+}

@@ -190,8 +190,11 @@ impl F90Aligner {
                 }
             }
 
-            // Handle declaration operator ::
-            if is_decl && line[pos..].starts_with("::") {
+            // Handle declaration operator ::. Only at the top level: a `::`
+            // inside brackets is an array constructor's type-spec
+            // (`[character(len=7) :: 'a', ...]`), and pushing for it would
+            // also leave the stack out of step with the bracket that closes.
+            if self.level == 0 && is_decl && line[pos..].starts_with("::") {
                 // Don't align if :: directly before line break
                 // Check whole line for ":: + whitespace + &" pattern (not just from pos)
                 if !DECL_BEFORE_BREAK_RE.is_match(line) {
