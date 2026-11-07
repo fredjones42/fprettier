@@ -2,7 +2,7 @@
 
 All notable changes to fprettier are recorded here.
 
-## Unreleased
+## Version 0.5.4
 
 **Bug Fixes:**
 - Fixed an indented NAMELIST with a leading-`&` continuation, such as `    namelist /g5/ a, &` followed by `    & /g6/ b`, having that continuation pushed right on every run. The namelist rule collapsed runs of spaces across the whole line, the indent included, so the continuation was measured against a first line at column 1. The indent is now left alone
