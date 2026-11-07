@@ -2,7 +2,7 @@
 
 All notable changes to fprettier are recorded here.
 
-## Unreleased
+## Version 0.5.2
 
 **Bug Fixes:**
 - Fixed `only:` losing its space when it opens a continuation line of a USE statement, as in `use iso_c_binding, &` followed by `only:c_int`. Each continuation line is formatted on its own, and the `only:` rule looked for `use` on that line rather than on the statement
