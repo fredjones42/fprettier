@@ -36,7 +36,7 @@ use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
     ASSOCIATE_RE, BLK_RE, CHANGETEAM_RE, CPP_LINE_RE, CRITICAL_RE, DO_RE, ENUM_RE, ENUMTYPE_RE,
     FORALL_RE, IF_RE, INTERFACE_RE, MOD_RE, OMP_DIR_RE, PROG_RE, SELCASE_RE, STATEMENT_LABEL_RE,
-    TYPE_RE, WHERE_RE, is_fypp_directive,
+    TYPE_RE, USE_RE, WHERE_RE, is_fypp_directive,
 };
 use crate::parser::stream::{FortranLine, InputStream};
 use crate::scope::build_scope_parser;
@@ -568,6 +568,7 @@ fn extract_and_format_pre_ampersands(
     output_lines: &mut Vec<String>,
     fortran_line: &FortranLine,
     pass_ctx: &PassContext<'_>,
+    labels: &LineLabels,
     flags: FormattingFlags,
 ) -> (Vec<String>, Vec<usize>, Option<Vec<usize>>) {
     // Only process in the indentation pass and when not skipped
@@ -618,6 +619,7 @@ fn extract_and_format_pre_ampersands(
             }
             last_char
         });
+        let is_use = USE_RE.is_match(&labels.joined_no_label);
         for (i, line) in output_lines.iter_mut().enumerate() {
             if i == 0 {
                 continue; // First line was already formatted in Pass 1
@@ -640,6 +642,7 @@ fn extract_and_format_pre_ampersands(
                 &line_to_format,
                 &pass_ctx.whitespace_flags,
                 pass_ctx.config.format_decl,
+                is_use,
                 bracket_level,
                 prev_line_last_char,
             );
@@ -692,6 +695,7 @@ fn apply_whitespace_to_lines(
                 output_lines[0].clone_from(&labels.first_no_label);
             }
 
+            let is_use = USE_RE.is_match(&labels.joined_no_label);
             let mut bracket_level: usize = 0;
             let mut prev_line_last_char: Option<char> = None;
             for (i, line) in output_lines.iter_mut().enumerate() {
@@ -733,6 +737,7 @@ fn apply_whitespace_to_lines(
                     line_content,
                     &pass_ctx.whitespace_flags,
                     pass_ctx.config.format_decl,
+                    is_use,
                     bracket_level,
                     if i > 0 { prev_line_last_char } else { None },
                 );
@@ -1492,8 +1497,13 @@ fn format_pass<R: BufRead, W: Write>(
             auto_align: should_auto_align(&output_lines),
         };
 
-        let (pre_ampersand, ampersand_sep, manual_lines_indent) =
-            extract_and_format_pre_ampersands(&mut output_lines, &fortran_line, &pass_ctx, flags);
+        let (pre_ampersand, ampersand_sep, manual_lines_indent) = extract_and_format_pre_ampersands(
+            &mut output_lines,
+            &fortran_line,
+            &pass_ctx,
+            &labels,
+            flags,
+        );
 
         apply_whitespace_to_lines(
             &mut output_lines,

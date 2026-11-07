@@ -2227,3 +2227,43 @@ fn test_type_spec_in_constructor_split_is_fixed_point() {
         }
     }
 }
+
+/// `only:` opening a continuation line of a USE gets its space like on the
+/// first line: the continuation is formatted alone, so it has to be told the
+/// statement is a USE. Covers `use ::`, a leading `&`, and a label.
+#[test]
+fn test_use_only_spaced_on_continuation_line() {
+    let config = Config {
+        indent: 4,
+        ..Default::default()
+    };
+    let input = "module m
+use iso_c_binding, only:c_int
+use iso_c_binding, &
+only: c_int
+use iso_c_binding, &
+    only : c_int
+use :: iso_c_binding, &
+only:c_int, c_double
+use iso_c_binding, &
+& only:c_int
+10 use iso_c_binding, &
+only:c_int
+end module m
+";
+    let expected = "module m
+    use iso_c_binding, only: c_int
+    use iso_c_binding, &
+        only: c_int
+    use iso_c_binding, &
+        only: c_int
+    use :: iso_c_binding, &
+           only: c_int, c_double
+    use iso_c_binding, &
+    & only: c_int
+10  use iso_c_binding, &
+        only: c_int
+end module m
+";
+    assert_eq!(assert_fixed_point(input, &config), expected);
+}

@@ -80,7 +80,8 @@ fn skip_spaces(chars: &[char], mut i: usize) -> usize {
 /// 3. Add whitespace context-aware
 #[must_use]
 pub fn format_line(logical_line: &str, whitespace_flags: &[bool; 11], format_decl: bool) -> String {
-    format_line_with_level(logical_line, whitespace_flags, format_decl, 0, None).0
+    let is_use = USE_RE.is_match(logical_line);
+    format_line_with_level(logical_line, whitespace_flags, format_decl, is_use, 0, None).0
 }
 
 /// Format a single Fortran line with bracket level tracking
@@ -88,11 +89,14 @@ pub fn format_line(logical_line: &str, whitespace_flags: &[bool; 11], format_dec
 /// Returns (`formatted_line`, `ending_bracket_level`, `last_significant_char`) for continuation support.
 /// `prev_line_last_char` should be the last significant character from the previous line (before `&`),
 /// used to determine if a leading +/- on a continuation line is binary or unary.
+/// `is_use` says whether the whole statement is a USE: a continuation line
+/// such as `only: c_int` cannot tell on its own.
 #[must_use]
 pub fn format_line_with_level(
     logical_line: &str,
     whitespace_flags: &[bool; 11],
     format_decl: bool,
+    is_use: bool,
     initial_level: usize,
     prev_line_last_char: Option<char>,
 ) -> (String, usize, Option<char>) {
@@ -112,7 +116,7 @@ pub fn format_line_with_level(
     line = formatted;
 
     // Stage 3: Add whitespace context-aware
-    line = add_whitespace_context(&line, whitespace_flags);
+    line = add_whitespace_context(&line, whitespace_flags, is_use);
 
     (line, final_level, last_char)
 }
@@ -928,7 +932,7 @@ fn add_spacing_around_conditional(text: &str, paren_has_cond: &mut Vec<bool>) ->
     out
 }
 
-fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
+fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11], is_use: bool) -> String {
     // Placeholder to protect pointer assignment (=>) from relational processing
     const PLACEHOLDER: &str = "\x00POINTER_ASSIGN\x00";
 
@@ -1000,12 +1004,12 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11]) -> String {
         }
     }
 
-    space_out_keywords(line_parts.join(""), whitespace_flags)
+    space_out_keywords(line_parts.join(""), whitespace_flags, is_use)
 }
 
 /// Whole-statement keyword spacing, applied once the code and non-code parts
 /// have been rejoined because every one of these patterns spans them.
-fn space_out_keywords(mut result: String, whitespace_flags: &[bool; 11]) -> String {
+fn space_out_keywords(mut result: String, whitespace_flags: &[bool; 11], is_use: bool) -> String {
     // namelist /name/ variables
     if NML_STMT_RE.is_match(&result) {
         result = NML_RE.replace_all(&result, " $1 ").to_string();
@@ -1028,7 +1032,7 @@ fn space_out_keywords(mut result: String, whitespace_flags: &[bool; 11]) -> Stri
     }
 
     // `use module, only:` -> `use module, only: `
-    if whitespace_flags[WS_COMMA] && USE_RE.is_match(&result) {
+    if whitespace_flags[WS_COMMA] && is_use {
         result = ONLY_RE.replace_all(&result, "$1: ").to_string();
     }
 
