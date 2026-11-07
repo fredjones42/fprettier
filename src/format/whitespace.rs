@@ -1032,10 +1032,17 @@ fn add_whitespace_context(line: &str, whitespace_flags: &[bool; 11], kind: StmtK
 /// Whole-statement keyword spacing, applied once the code and non-code parts
 /// have been rejoined because every one of these patterns spans them.
 fn space_out_keywords(mut result: String, whitespace_flags: &[bool; 11], kind: StmtKind) -> String {
-    // namelist /name/ variables
+    // namelist /name/ variables. The indent is kept apart: manual alignment
+    // measures continuations against the first line's indent.
     if kind == StmtKind::Namelist {
-        result = NML_RE.replace_all(&result, " $1 ").to_string();
-        result = RUN_OF_SPACES_RE.replace_all(&result, " ").to_string();
+        let code = result.trim_start();
+        let spaced = NML_RE.replace_all(code, " $1 ");
+        let spaced = RUN_OF_SPACES_RE.replace_all(&spaced, " ");
+        result = format!(
+            "{}{}",
+            &result[..result.len() - code.len()],
+            spaced.trim_start()
+        );
     }
 
     // ENDIF -> END IF, but not in `endif = 3`, where it is a variable name

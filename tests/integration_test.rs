@@ -2299,12 +2299,52 @@ end program p
 ";
     assert_eq!(assert_fixed_point(input, &config), expected);
 
-    // A leading `&` is indented differently by a second run, a separate
-    // NAMELIST bug, so only the spacing is checked here, on both runs.
     let input = "program p\nnamelist/g5/a, &\n& /g6/b\nend program p\n";
-    let once = run_format(input, &config);
-    let twice = run_format(&once, &config);
-    for out in [&once, &twice] {
-        assert!(out.contains("& /g6/ b\n"), "{out}");
-    }
+    let out = assert_fixed_point(input, &config);
+    assert!(out.contains("& /g6/ b\n"), "{out}");
+}
+
+/// The namelist rule collapses runs of spaces it leaves around a `/group/`. It
+/// also collapsed the first line's indent, so an indented NAMELIST measured its
+/// leading-`&` continuations against column 1 and a second run pushed them right.
+#[test]
+fn test_namelist_leading_ampersand_continuation_is_stable() {
+    let config = Config {
+        indent: 4,
+        ..Default::default()
+    };
+    let input = "program p
+integer :: a, b
+namelist /g5/ a, &
+& /g6/ b
+call s(a, &
+& b)
+end program p
+";
+    let expected = "program p
+    integer :: a, b
+    namelist /g5/ a, &
+    & /g6/ b
+    call s(a, &
+    & b)
+end program p
+";
+    assert_eq!(assert_fixed_point(input, &config), expected);
+
+    // Plain continuations are aligned by the aligner, not measured
+    let input = "program p
+integer :: a, b, c
+    namelist /g1/ a, &
+            /g2/ b, &
+  c
+end program p
+";
+    let expected = "program p
+    integer :: a, b, c
+    namelist /g1/ a, &
+        /g2/ b, &
+        c
+end program p
+";
+    assert_eq!(assert_fixed_point(input, &config), expected);
 }
