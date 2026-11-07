@@ -2267,3 +2267,44 @@ end module m
 ";
     assert_eq!(assert_fixed_point(input, &config), expected);
 }
+
+/// A `/group/` opening a continuation line of a NAMELIST is spaced like one on
+/// the first line: the continuation is formatted alone, so it has to be told
+/// the statement is a NAMELIST. Covers a label and a leading `&`.
+#[test]
+fn test_namelist_group_spaced_on_continuation_line() {
+    let config = Config {
+        indent: 4,
+        ..Default::default()
+    };
+    let input = "program p
+integer :: a, b, c
+namelist/g1/a, &
+/g2/b, &
+c
+namelist /g3/ a, /g4/b
+10 namelist/g7/a, &
+/g8/b
+end program p
+";
+    let expected = "program p
+    integer :: a, b, c
+    namelist /g1/ a, &
+        /g2/ b, &
+        c
+    namelist /g3/ a, /g4/ b
+10  namelist /g7/ a, &
+        /g8/ b
+end program p
+";
+    assert_eq!(assert_fixed_point(input, &config), expected);
+
+    // A leading `&` is indented differently by a second run, a separate
+    // NAMELIST bug, so only the spacing is checked here, on both runs.
+    let input = "program p\nnamelist/g5/a, &\n& /g6/b\nend program p\n";
+    let once = run_format(input, &config);
+    let twice = run_format(&once, &config);
+    for out in [&once, &twice] {
+        assert!(out.contains("& /g6/ b\n"), "{out}");
+    }
+}

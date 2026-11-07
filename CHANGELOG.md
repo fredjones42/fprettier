@@ -2,6 +2,11 @@
 
 All notable changes to fprettier are recorded here.
 
+## Unreleased
+
+**Bug Fixes:**
+- Fixed a namelist group losing its spaces when it opens a continuation line, as in `namelist /g1/ a, &` followed by `/g2/b`. As with `only:` in 0.5.2, the rule looked for `namelist` on that line rather than on the statement. The single `is_use` flag the callers pass became a statement kind covering both
+
 ## Version 0.5.2
 
 **Bug Fixes:**
