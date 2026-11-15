@@ -140,6 +140,17 @@ pub fn format_line_with_level(
     // Stage 3: Add whitespace context-aware
     line = add_whitespace_context(&line, whitespace_flags, kind);
 
+    // The indent is the caller's and comes back as it went in. The stages
+    // above kept it only before a letter or digit: a line opening with `(`,
+    // `-` or `#` lost it to the rules that trim the blanks before those, and
+    // one opening with `==` or `.and.` had it replaced by a single blank.
+    let indent_len = logical_line.len() - logical_line.trim_start_matches(' ').len();
+    line = format!(
+        "{}{}",
+        &logical_line[..indent_len],
+        line.trim_start_matches(' ')
+    );
+
     (line, final_level, last_char)
 }
 
@@ -1401,6 +1412,23 @@ mod tests {
         // Should have spacing around =, +, -, and ,
         assert!(result.contains(" = "));
         assert!(result.contains(", "));
+    }
+
+    #[test]
+    fn test_indent_kept_whatever_opens_the_line() {
+        // Only a line opening with a letter or digit used to keep its indent
+        let whitespace_flags = [true; 11];
+        for (line, expected) in [
+            ("    (a) = 1", "    (a) = 1"),
+            ("    [4], &", "    [4], &"),
+            ("    -3", "    -3"),
+            ("    ==7", "    == 7"),
+            ("    .and.b", "    .and. b"),
+            ("    =>p", "    => p"),
+            (".and.b", ".and. b"),
+        ] {
+            assert_eq!(format_line(line, &whitespace_flags, false), expected);
+        }
     }
 
     #[test]

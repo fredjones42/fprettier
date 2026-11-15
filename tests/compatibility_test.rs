@@ -660,9 +660,10 @@ fn test_compat_disable_formatting() {
         whitespace: 2,
         ..Default::default()
     };
-    // When indent disabled, indentation is stripped
+    // When indent is disabled, each line keeps the indentation it came with,
+    // as fprettify 0.3.7 does
     let expected_no_indent =
-        "if ( &\nl == 111) &\n then\n   do m = 1, 2\n A = &\nB + C\nend do; end if\n";
+        "if ( &\nl == 111) &\n then\n   do m = 1, 2\n A = &\nB + C\n    end do; end if\n";
     let result = run_format(input, &config_no_indent);
     assert_eq!(
         result.trim_end(),

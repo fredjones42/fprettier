@@ -762,14 +762,6 @@ fn apply_whitespace_to_lines(
                     prev_line_last_char = last_char;
                 }
 
-                // An operator opening the line is given a blank in front,
-                // which belongs to the & here
-                let formatted = if pre_ampersand.is_empty() {
-                    formatted.as_str()
-                } else {
-                    formatted.trim_start()
-                };
-
                 // Restore continuation marker if needed
                 // When lines have leading & (auto_align=false), preserve original spacing
                 // before trailing & using ampersand_sep or extracting from original line

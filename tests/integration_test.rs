@@ -1002,6 +1002,29 @@ fn test_keyword_argument_on_leading_ampersand_line() {
     );
 }
 
+/// A fypp `#!` comment keeps its place: after code it is not closed up to
+/// it, and on a line of its own it does not lose a column of indent per run
+#[test]
+fn test_fypp_comment_keeps_its_spacing() {
+    let input = "#:def m(RANK)\n  #! on its own\n   x = 1 #! after code\n#:enddef m\n";
+
+    for impose_indent in [false, true] {
+        let config = Config {
+            impose_indent,
+            ..Default::default()
+        };
+        let result = run_format(input, &config);
+        assert!(result.contains("x = 1 #! after code"), "{result}");
+        assert_eq!(run_format(&result, &config), result);
+    }
+
+    let config = Config {
+        impose_indent: false,
+        ..Default::default()
+    };
+    assert_eq!(run_format(input, &config), input);
+}
+
 // ============================================================================
 // Operator replacement tests
 // ============================================================================
