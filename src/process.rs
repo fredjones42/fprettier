@@ -181,6 +181,9 @@ struct LineWriteContext<'a> {
     /// The column of each output line once a split has re-aligned the
     /// statement; `computed_indents` is per line as it was before the split
     split_indents: Option<&'a [usize]>,
+    /// For each output line, the column of the line after it in the same
+    /// statement, if there is one
+    next_line_indents: &'a [Option<usize>],
     /// Effective line length for wrapping decisions
     effective_line_length: usize,
     /// The line is a preprocessor directive, whose comment must stay on it:
@@ -1196,7 +1199,21 @@ fn write_output_line<W: Write>(
 
         if should_detach_comment {
             output.write_all(b"\n")?;
-            let mut indent = comment_indent(write_ctx, indenter, origin, indent_of(line_to_write));
+            // In the indentation pass the comment goes where the next run will
+            // put a comment on a line of its own here: in the continuation
+            // column if the statement goes on, else at the scope's indent,
+            // which is not this line's when the line opens a scope.
+            let own_indent = indent_of(line_to_write);
+            let mut indent = if pass_ctx.impose_indent {
+                write_ctx
+                    .next_line_indents
+                    .get(line_index)
+                    .copied()
+                    .flatten()
+                    .unwrap_or_else(|| indenter.map_or(own_indent, F90Indenter::get_scope_indent))
+            } else {
+                comment_indent(write_ctx, indenter, origin, own_indent)
+            };
             // The comment came off a line of code, so it belongs with the code.
             // When an indent pass is still to come, a comment at column 0 would
             // read to it as one the author put there and be left alone; one
@@ -1644,12 +1661,30 @@ fn format_pass<R: BufRead, W: Write>(
 
         let (comment_line_indices, split_origins) = compute_comment_indices(&line_origins);
 
+        let next_line_indents: Vec<Option<usize>> = (1..=output_lines.len())
+            .map(|next| {
+                let line = output_lines.get(next)?;
+                Some(if line.trim().is_empty() {
+                    // A comment's placeholder: where the comment will go
+                    split_indents
+                        .as_deref()
+                        .unwrap_or(&computed_indents)
+                        .get(next)
+                        .copied()
+                        .unwrap_or(0)
+                } else {
+                    indent_of(line)
+                })
+            })
+            .collect();
+
         let write_ctx = LineWriteContext {
             computed_indents: &computed_indents,
             lines_were_indented: &lines_were_indented,
             comment_line_indices: &comment_line_indices,
             split_origins: &split_origins,
             split_indents: split_indents.as_deref(),
+            next_line_indents: &next_line_indents,
             effective_line_length,
             is_preprocessor: flags.is_cpp_line || flags.is_fypp_line,
         };

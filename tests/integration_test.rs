@@ -2633,3 +2633,33 @@ fn test_split_above_a_directive_inside_a_statement() {
 "
     );
 }
+
+/// A comment the indentation pass detaches goes where a comment on a line of
+/// its own belongs: inside the scope its line opens, not in the line's column
+#[test]
+fn test_comment_detached_from_a_scope_opener_is_a_fixed_point() {
+    let input = "subroutine s
+    do i=1,100;if (i<=2) then! a longer comment
+            l = l + 1
+        end if
+    end do
+end subroutine
+";
+    let config = Config {
+        line_length: 40,
+        impose_whitespace: false,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        assert_fixed_point(input, &config),
+        "subroutine s
+    do i=1,100;if (i<=2) then
+            ! a longer comment
+            l = l + 1
+        end if
+    end do
+end subroutine
+"
+    );
+}
