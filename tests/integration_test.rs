@@ -985,6 +985,23 @@ fn test_leading_ampersand_lines_formatted_without_indent() {
     assert_eq!(run_format(&result, &config), result);
 }
 
+/// A keyword argument on a leading-`&` continuation line is still inside
+/// the bracket opened on the first line, so its `=` is not an assignment
+#[test]
+fn test_keyword_argument_on_leading_ampersand_line() {
+    let input = "call f(a, &
+     & k=3, m=b==c)
+";
+
+    let result = run_format(input, &Config::default());
+    assert_eq!(
+        result,
+        "call f(a, &
+     & k=3, m=b == c)
+"
+    );
+}
+
 // ============================================================================
 // Operator replacement tests
 // ============================================================================

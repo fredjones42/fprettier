@@ -604,22 +604,23 @@ fn extract_and_format_pre_ampersands(
     // the leading & prefix has been stripped. These lines were skipped in
     // Pass 1 (whitespace pass) because remove_pre_ampersands only runs here.
     if pass_ctx.config.impose_whitespace && !flags.skip_format {
-        let mut bracket_level: usize = 0;
-        // Get the last significant character from line 0 (already formatted in Pass 1)
-        // This determines if leading +/- on line 1 is binary or unary
-        let mut prev_line_last_char: Option<char> = output_lines.first().and_then(|line0| {
-            // Find last non-space char before trailing & (if any)
-            let trimmed = line0.trim_end().trim_end_matches('&').trim_end();
-            // Use CharFilter to skip strings and comments
-            let mut last_char = None;
-            for (_, c) in CharFilter::code(trimmed) {
-                if !c.is_whitespace() {
-                    last_char = Some(c);
-                }
-            }
-            last_char
-        });
         let kind = StmtKind::of(&labels.joined_no_label);
+        // Line 0 was formatted in Pass 1; it is run through again only for
+        // where it leaves off. Its bracket level tells a keyword argument
+        // from an assignment on the lines below (`k=3` inside `f(a, &`), and
+        // its last character tells whether a leading +/- is binary or unary.
+        let (mut bracket_level, mut prev_line_last_char) =
+            output_lines.first().map_or((0, None), |line0| {
+                let (_, level, last_char) = format_line_with_level(
+                    line0.trim_end().trim_end_matches('&').trim_end(),
+                    &pass_ctx.whitespace_flags,
+                    pass_ctx.config.format_decl,
+                    kind,
+                    0,
+                    None,
+                );
+                (level, last_char)
+            });
         for (i, line) in output_lines.iter_mut().enumerate() {
             if i == 0 {
                 continue; // First line was already formatted in Pass 1
