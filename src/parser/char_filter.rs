@@ -5,11 +5,20 @@
 //! directives. It's used throughout the codebase to ensure we only parse
 //! actual Fortran code, not string contents or comments.
 
-/// Find the byte position of the first `!` that starts a comment,
-/// i.e. outside strings and fypp expressions.
+/// Find the byte position where a comment starts: the first `!` outside
+/// strings and fypp expressions, or the `#` in front of it when fypp's `#!`
+/// follows code. Taking only the `!` left that `#` behind as code, to be
+/// spaced like any other: `x = 1 #! note` became `x = 1#! note`.
+///
+/// A `#!` on a line of its own is a fypp directive line and is told apart by
+/// its `#`, so there the split stays at the `!`.
 #[must_use]
 pub fn comment_start(line: &str) -> Option<usize> {
-    CharFilter::code_and_comments(line).find_map(|(pos, c)| (c == '!').then_some(pos))
+    let pos = CharFilter::code_and_comments(line).find_map(|(pos, c)| (c == '!').then_some(pos))?;
+    match line[..pos].strip_suffix('#') {
+        Some(code) if !code.trim().is_empty() => Some(pos - 1),
+        _ => Some(pos),
+    }
 }
 
 /// Type of string delimiter we're currently inside

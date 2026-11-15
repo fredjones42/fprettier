@@ -502,6 +502,10 @@ mod tests {
         assert!(comment_start("call foo() ! end of line").is_some());
 
         // No comment
+        // fypp's `#!` after code is the comment, `#` included; on a line of
+        // its own the `#` marks the directive line and stays
+        assert_eq!(comment_start("x = 1 #! note"), Some(6));
+        assert_eq!(comment_start("  #! note"), Some(3));
         assert!(comment_start("x = 1").is_none());
         assert!(comment_start("call foo()").is_none());
 
