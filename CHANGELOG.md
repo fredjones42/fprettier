@@ -2,6 +2,16 @@
 
 All notable changes to fprettier are recorded here.
 
+## Version 0.5.6
+
+**Bug Fixes:**
+- Fixed `--enable-replacements` needing two runs to settle when the spacing rules treat the two spellings differently: with relational spacing off, `--c-relations` turned `a .lt. b` into `a < b` on the first run and `a<b` on the second. Operators are now converted before the whitespace pass rather than after it, which also replaces the padding added in 0.5.5
+- Fixed a fypp or cpp directive between the lines of a continued statement having its operators converted along with the statement's, so `#:if c > d` became `#:if c .gt. d`, which is not Python
+- Fixed a continuation line with a leading `&` getting no whitespace formatting when indentation is off (`--no-indent`), so `& .and. c<=d` was left as written. fprettify formats it
+- Fixed a keyword argument on a continuation line with a leading `&` being spaced as an assignment, so `call f(a, &` followed by `& k=3)` became `& k = 3)`. The bracket opened on the first line was not carried over
+- Fixed the blank before a fypp `#!` comment that follows code being removed, so `x = 1 #! note` became `x = 1#! note`
+- Fixed a line losing its indent in the whitespace pass when it opens with anything but a letter or digit, such as `(`, `[`, `-`, `==`, `.and.` or a fypp `#!` comment. The indent pass put this right, so it showed only with `--no-indent`, where a `#!` comment also moved left a column on every run
+
 ## Version 0.5.5
 
 **Bug Fixes:**
