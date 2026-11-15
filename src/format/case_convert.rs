@@ -825,6 +825,22 @@ fn convert_token_with_context(
         return token.to_string();
     }
 
+    // A dotted operator written without blanks arrives glued to its operands
+    // (`myVar.lt.1`), since the splitter keeps `.` for numeric literals.
+    // Convert the three pieces on their own, or the operator's case lands on
+    // the operands too; the tail is what a following `(` belongs to
+    if let Some(op) = F90_OPERATORS_RE
+        .find(token)
+        .filter(|op| op.len() < token.len())
+    {
+        return [
+            convert_token_with_context(&token[..op.start()], settings, false),
+            convert_token_with_context(op.as_str(), settings, false),
+            convert_token_with_context(&token[op.end()..], settings, is_procedure_call),
+        ]
+        .concat();
+    }
+
     // Safe: we just verified token is not empty
     let Some(first_char) = token.chars().next() else {
         return token.to_string();
@@ -975,6 +991,31 @@ mod tests {
 
         assert_eq!(convert_case("x .and. y", &settings), "x .AND. y");
         assert_eq!(convert_case("a .eq. b", &settings), "a .EQ. b");
+    }
+
+    #[test]
+    fn test_convert_case_operator_glued_to_operands() {
+        // Without blanks the operator and its operands are one token, and the
+        // operator's case used to be applied to all of it (`MYVAR.LT.1`), or
+        // to none of it when the token began with a digit
+        let settings = CaseSettings {
+            keywords: CaseMode::Upper,
+            procedures: CaseMode::Upper,
+            operators: CaseMode::Upper,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            convert_case(
+                "if(myVar.lt.1.and.1.eq.b.or.1.d0.ge.myVar) x=.true.",
+                &settings
+            ),
+            "IF(myVar.LT.1.AND.1.EQ.b.OR.1.d0.GE.myVar) x=.TRUE."
+        );
+        assert_eq!(
+            convert_case("y=a.lt.max(b,c).and.max.gt.d(1)", &settings),
+            "y=a.LT.MAX(b,c).AND.max.GT.d(1)"
+        );
     }
 
     #[test]
