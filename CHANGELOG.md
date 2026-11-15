@@ -2,7 +2,7 @@
 
 All notable changes to fprettier are recorded here.
 
-## Unreleased
+## Version 0.5.7
 
 **Bug Fixes:**
 - Fixed a line split to fit the line length moving on the second run when the statement already had continuation lines. The fragment broken off took the column of the line it came from, or of the line below it, rather than the one the aligner gives it, so a break inside a bracket was re-aligned on the next run, and the lines after it with it: `3, 4), 4) + &` came out at the statement's indent and went under the open bracket a run later. Each fragment now goes where the aligner puts it, and the lines after a break are re-aligned at once, a comment on a line of its own among them
