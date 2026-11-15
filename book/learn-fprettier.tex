@@ -3913,26 +3913,6 @@ The code base follows a few conventions worth keeping:
     next to the code they justify, with the date they were measured.
 \end{itemize}
 
-\begin{exercise}[Your first contribution]
-fprettier's output is not a fixed point for this file, in which a statement
-begins with a line holding nothing but \code{\&}:
-\begin{lstlisting}[style=fortran]
-program t
-call s(a)
-&
-   &; q = 1
-end program t
-\end{lstlisting}
-Each run moves the last line three columns to the right. The input is not
-valid Fortran (no line may consist of a single \code{\&}), which is why this
-was left alone, but a formatter should not make a bad file worse each time it
-runs. Follow the bug-fixing recipe from start to finish: write a failing
-fixed-point test, find out which line keeps its column while the other is
-measured from it, decide what fprettier should do with such a line (indent
-it, leave both lines alone, or warn), implement that, and add the CHANGELOG
-entry.
-\end{exercise}
-
 % ===========================================================================
 \appendix
 % ===========================================================================
