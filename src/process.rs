@@ -22,14 +22,14 @@ use std::io::{BufRead, BufReader, Cursor, Write};
 
 use anyhow::Result;
 
-use crate::config::{Config, MAX_LINE_LENGTH, MAX_STATEMENT_LENGTH};
+use crate::config::{Config, MAX_LINE_LENGTH, MAX_STATEMENT_LENGTH, WS_LOGICAL, WS_RELATIONAL};
 use crate::format::case_convert::{CaseSettings, convert_case};
 use crate::format::continuation::{
     get_manual_alignment, prepend_ampersands, remove_pre_ampersands, should_auto_align,
 };
 use crate::format::indenter::{F90Indenter, IndentParams};
 use crate::format::line_split::split_long_lines;
-use crate::format::replacements::replace_relational_operators;
+use crate::format::replacements::replace_relational_operators_padded;
 use crate::format::sort_use::sort_use_statements;
 use crate::format::whitespace::{StmtKind, format_line, format_line_with_level};
 use crate::parser::char_filter::CharFilter;
@@ -1516,8 +1516,13 @@ fn format_pass<R: BufRead, W: Write>(
 
         // `.lt.`/`.eq.` <-> `<`/`==`
         if pass_ctx.config.enable_replacements && flags.is_rewritable_code() {
+            // A dotted operator is spaced by either rule, so one converted
+            // here, after that pass has run, is spaced to match
+            let pad_dotted = pass_ctx.impose_whitespace
+                && (pass_ctx.whitespace_flags[WS_RELATIONAL]
+                    || pass_ctx.whitespace_flags[WS_LOGICAL]);
             map_code_lines(&mut output_lines, &fortran_line, |line| {
-                replace_relational_operators(line, pass_ctx.config.c_relations)
+                replace_relational_operators_padded(line, pass_ctx.config.c_relations, pad_dotted)
             });
         }
 

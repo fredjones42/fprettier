@@ -1009,6 +1009,30 @@ fn test_enable_replacements_to_fortran_style() {
     );
 }
 
+/// A C-style operator the whitespace pass closed up (`relational = false`)
+/// is converted with the blanks a hand-written `.eq.` gets, and a second run
+/// changes nothing
+#[test]
+fn test_replacement_spaces_a_converted_operator() {
+    let input = "if (b == 1 .and. myVar<1) x = 1
+";
+
+    let config = Config {
+        impose_indent: false,
+        enable_replacements: true,
+        whitespace_dict: [("relational".to_string(), false)].into(),
+        ..Default::default()
+    };
+
+    let result = run_format(input, &config);
+    assert_eq!(
+        result,
+        "if (b .eq. 1 .and. myVar .lt. 1) x = 1
+"
+    );
+    assert_eq!(run_format(&result, &config), result);
+}
+
 /// Test replacement preserves operators in strings
 #[test]
 fn test_replacement_preserves_strings() {

@@ -32,6 +32,23 @@ const POINTER_ASSIGNMENT: &str = "=>";
 /// The line with operators replaced
 #[must_use]
 pub fn replace_relational_operators(line: &str, use_c_style: bool) -> String {
+    replace_relational_operators_padded(line, use_c_style, false)
+}
+
+/// As [`replace_relational_operators`], and with `pad_dotted` a Fortran-style
+/// operator is written with a blank on each side.
+///
+/// Replacement runs after the whitespace pass, which may have closed up the
+/// C-style operator it is about to rewrite (`b==1`). That pass would have
+/// spaced the dotted spelling, so the caller asks for the same here; without
+/// it `b.eq.1` only gets its blanks on the next run.
+#[must_use]
+pub(crate) fn replace_relational_operators_padded(
+    line: &str,
+    use_c_style: bool,
+    pad_dotted: bool,
+) -> String {
+    let pad = pad_dotted && !use_c_style;
     // Byte positions in code, the only ones safe to rewrite. Callers in the
     // formatter have had their comments split off upstream, so in practice
     // this only masks string literals - but the operators are just as much
@@ -61,8 +78,14 @@ pub fn replace_relational_operators(line: &str, use_c_style: bool) -> String {
                 if rest.len() >= from.len()
                     && rest[..from.len()].eq_ignore_ascii_case(from.as_bytes())
                 {
+                    if pad && !result.is_empty() && !result.ends_with(' ') {
+                        result.push(' ');
+                    }
                     result.push_str(to);
                     i += from.len();
+                    if pad && i < line.len() && line.as_bytes()[i] != b' ' {
+                        result.push(' ');
+                    }
                     continue 'next;
                 }
             }
@@ -107,6 +130,19 @@ mod tests {
         let input = "a < b <= c > d >= e == f /= g";
         let result = replace_relational_operators(input, false);
         assert_eq!(result, "a .lt. b .le. c .gt. d .ge. e .eq. f .ne. g");
+    }
+
+    #[test]
+    fn test_c_to_fortran_padded() {
+        // Only missing blanks are added, and only around a dotted operator
+        assert_eq!(
+            replace_relational_operators_padded("if (b==1 .and. c >= 2) p=>q", false, true),
+            "if (b .eq. 1 .and. c .ge. 2) p=>q"
+        );
+        assert_eq!(
+            replace_relational_operators_padded("if (a.lt.b) x = 1", true, true),
+            "if (a<b) x = 1"
+        );
     }
 
     #[test]
