@@ -697,6 +697,8 @@ spelling: Fortran-style (\code{.lt.}, \code{.eq.}, \ldots) by default, or
 C-style (\code{<}, \code{==}, \ldots) with \flag{c-relations}. With both flags,
 \code{y=x .lt. 3 .and. .not. flag} becomes \code{y = x < 3 .and. .not. flag}.
 Logical operators have no C-style spelling in Fortran and are left alone.
+The conversion comes before the whitespace rules, so the result is spaced as
+if it had been written in the new spelling.
 
 \section{Sorting \texttt{use} statements}
 
@@ -1481,19 +1483,19 @@ File & Lines & Responsibility\\
 \file{cli.rs} & 730 & \code{clap} command definition and \code{CliArgs}\\
 \file{config.rs} & 520 & \code{Config}, TOML discovery and merging, whitespace flag resolution\\
 \file{directive.rs} & 260 & \code{! fprettier:} comment parsing\\
-\file{process.rs} & 1710 & The pipeline: \code{format\_file}, \code{inspect\_file}, \code{format\_pass}\\
+\file{process.rs} & 1780 & The pipeline: \code{format\_file}, \code{inspect\_file}, \code{format\_pass}\\
 \file{scope.rs} & 270 & The \code{SCOPES} table of constructs that open a scope\\
 \midrule
-\file{parser/char\_filter.rs} & 380 & \code{CharFilter}: which characters are code, string, comment or fypp\\
+\file{parser/char\_filter.rs} & 390 & \code{CharFilter}: which characters are code, string, comment or fypp\\
 \file{parser/stream.rs} & 560 & \code{InputStream}: physical lines to logical lines (\code{FortranLine})\\
 \file{parser/patterns.rs} & 620 & About 75 compiled regular expressions for Fortran statements\\
 \midrule
 \file{format/indenter.rs} & 860 & \code{F90Indenter}: scope stack and indentation\\
 \file{format/aligner.rs} & 400 & \code{F90Aligner}: continuation-line columns\\
 \file{format/continuation.rs} & 230 & Manual alignment (leading \code{\&}) helpers\\
-\file{format/whitespace.rs} & 1590 & The three-stage whitespace engine\\
+\file{format/whitespace.rs} & 1680 & The three-stage whitespace engine\\
 \file{format/line\_split.rs} & 570 & Breaking long lines, detaching comments\\
-\file{format/case\_convert.rs} & 1010 & Keyword tables and case conversion\\
+\file{format/case\_convert.rs} & 1050 & Keyword tables and case conversion\\
 \file{format/replacements.rs} & 170 & \code{.lt.} $\leftrightarrow$ \code{<}\\
 \file{format/sort\_use.rs} & 460 & Sorting \code{use} statements and \code{only:} lists\\
 \bottomrule
@@ -1692,12 +1694,23 @@ caller can find a character with the filter and then slice the original line
 around it. This is the pattern you will see everywhere in fprettier:
 
 \begin{lstlisting}[style=rust]
-/// Find the byte position of the first `!` that starts a comment,
-/// i.e. outside strings and fypp expressions.
+/// Find the byte position where a comment starts: the first `!` outside
+/// strings and fypp expressions, or the `#` in front of it when fypp's `#!`
+/// follows code.
 pub fn comment_start(line: &str) -> Option<usize> {
-    CharFilter::code_and_comments(line).find_map(|(pos, c)| (c == '!').then_some(pos))
+    let pos = CharFilter::code_and_comments(line).find_map(|(pos, c)| (c == '!').then_some(pos))?;
+    match line[..pos].strip_suffix('#') {
+        Some(code) if !code.trim().is_empty() => Some(pos - 1),
+        _ => Some(pos),
+    }
 }
 \end{lstlisting}
+
+The \code{match} is for fypp's own comment, \code{\#!}. After code, as in
+\code{x = 1 \#! note}, the comment starts at the \code{\#}; splitting at the
+\code{!} would leave that \code{\#} behind as code. On a line of its own the
+\code{\#} is what marks the line as a directive, so there the split stays at
+the \code{!}.
 
 \subsection{The state machine}
 
@@ -2167,13 +2180,13 @@ Figure~\ref{fig:format-pass}.
   st/.style={stage,minimum width=62mm,minimum height=6.5mm,font=\sffamily\scriptsize},
   side/.style={note,text width=52mm}]
   \node[st] (s1) {read \code{FortranLine}; skip repeated blank lines};
-  \node[st,below=of s1] (s2) {copy \code{lines} $\to$ \code{output\_lines}; record \code{lines\_were\_indented}};
-  \node[st,below=of s2] (s3) {\code{blank\_out\_omp\_prefix}};
-  \node[st,below=of s3] (s4) {\code{split\_off\_label}};
-  \node[st,below=of s4] (s5) {compute \code{FormattingFlags}};
-  \node[st,below=of s5] (s6) {\code{extract\_and\_format\_pre\_ampersands}};
-  \node[st,below=of s6] (s7) {\code{apply\_whitespace\_to\_lines}};
-  \node[st,below=of s7] (s8) {\code{replace\_relational\_operators} (opt.)};
+  \node[st,below=of s1] (s2) {\code{replace\_operators\_in} (opt.)};
+  \node[st,below=of s2] (s3) {copy \code{lines} $\to$ \code{output\_lines}; record \code{lines\_were\_indented}};
+  \node[st,below=of s3] (s4) {\code{blank\_out\_omp\_prefix}};
+  \node[st,below=of s4] (s5) {\code{split\_off\_label}};
+  \node[st,below=of s5] (s6) {compute \code{FormattingFlags}};
+  \node[st,below=of s6] (s7) {\code{extract\_and\_format\_pre\_ampersands}};
+  \node[st,below=of s7] (s8) {\code{apply\_whitespace\_to\_lines}};
   \node[st,below=of s8] (s9) {\code{convert\_case} (opt.)};
   \node[st,below=of s9] (s10) {indentation: \code{compute\_and\_apply\_indentation}\\ or pin CPP line to column 0};
   \node[st,below=of s10] (s11) {\code{apply\_pre\_ampersand\_indentation}};
@@ -2181,11 +2194,12 @@ Figure~\ref{fig:format-pass}.
   \node[st,below=of s12] (s13) {\code{compute\_comment\_indices}};
   \node[st,below=of s13] (s14) {\code{write\_output\_line} for each line};
   \foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8,s8/s9,s9/s10,s10/s11,s11/s12,s12/s13,s13/s14}{\draw[flow] (\a)--(\b);}
-  \node[side,right=4mm of s3] {\code{!\$ } sentinel replaced by blanks};
-  \node[side,right=4mm of s4] {numeric label removed, padding normalised (pass 2)};
-  \node[side,right=4mm of s5] {fypp? CPP? \code{!\&} skip? auto-align?};
-  \node[side,right=4mm of s6] {pass 2, manual alignment only};
-  \node[side,right=4mm of s7] {pass 1 only; Chapter~\ref{ch:ws-engine}};
+  \node[side,right=4mm of s2] {\code{.lt.} $\leftrightarrow$ \code{<}, on the line as read};
+  \node[side,right=4mm of s4] {\code{!\$ } sentinel replaced by blanks};
+  \node[side,right=4mm of s5] {numeric label removed, padding normalised (pass 2)};
+  \node[side,right=4mm of s6] {fypp? CPP? \code{!\&} skip? auto-align?};
+  \node[side,right=4mm of s7] {pass 2, manual alignment only};
+  \node[side,right=4mm of s8] {pass 1 only; Chapter~\ref{ch:ws-engine}};
   \node[side,right=4mm of s10] {pass 2 only; Chapters \ref{ch:indenter}, \ref{ch:aligner}};
   \node[side,right=4mm of s12] {Section~\ref{sec:linesplit}};
   \node[side,right=4mm of s14] {label, comment placement, newline};
@@ -2195,11 +2209,19 @@ Figure~\ref{fig:format-pass}.
 \label{fig:format-pass}
 \end{figure}
 
-\subsection{Steps 1--3: preparation}
+\subsection{Steps 1--4: preparation}
 
 Blank lines are dropped if the previous line was blank too, which is how runs of
 blank lines collapse to one. (A labelled blank line does not count as blank
 for this purpose: \code{skip\_blank = is\_blank \&\& labels.label.is\_empty()}.)
+
+Step 2, operator replacement, rewrites the \code{FortranLine} itself, before
+anything is copied from it. Every later step then sees the new spelling as if
+the author had written it, and in particular the whitespace engine spaces it
+by the rules for that spelling. Section~\ref{sec:replacement} explains why it
+has to come first. It is skipped for a preprocessor line and for a deactivated
+one, which is why three of the four flags of step 6 are worked out just before
+it.
 
 \code{lines\_were\_indented} records whether each physical line started with
 whitespace \emph{before} anything rewrote it. It is needed at the very end, to
@@ -2211,7 +2233,7 @@ spaces on every line, so that the formatting steps see plain Fortran in the
 same columns. The indentation step writes the sentinel back
 (\code{restore\_omp\_prefix} does it when indentation is off).
 
-\subsection{Step 4: labels}
+\subsection{Step 5: labels}
 
 \code{split\_off\_label} removes a numeric statement label from the joined line and
 from the first physical line, replacing it with blanks so that columns do not
@@ -2235,13 +2257,19 @@ earlier would erase the original spacing that the shift is measured from. When
 the line is finally written, \code{write\_output\_line} prints the label and
 pads it to the statement's indentation column.
 
-\subsection{Step 5: flags}
+\subsection{Step 6: flags}
 
 \begin{lstlisting}[style=rust]
+// before step 2, which needs them
+let is_fypp_line = is_fypp_directive(&fortran_line.joined_line);
+let is_cpp_line = CPP_LINE_RE.is_match(&fortran_line.joined_line);
+let skip_format = detect_skip_format(&fortran_line.comments, &mut in_deactivation_block);
+
+// step 6
 let flags = FormattingFlags {
-    is_fypp_line: is_fypp_directive(&fortran_line.joined_line),
-    is_cpp_line: CPP_LINE_RE.is_match(&fortran_line.joined_line),
-    skip_format: detect_skip_format(&fortran_line.comments, &mut in_deactivation_block),
+    is_fypp_line,
+    is_cpp_line,
+    skip_format,
     auto_align: should_auto_align(&output_lines),
 };
 \end{lstlisting}
@@ -2255,9 +2283,9 @@ The helper \code{is\_rewritable\_code()} combines the first three flags: a
 line may be rewritten only if it is neither a preprocessor line nor
 deactivated.
 
-\subsection{Steps 6--9: rewriting content}
+\subsection{Steps 7--9: rewriting content}
 
-Step 7, \code{apply\_whitespace\_to\_lines}, runs only in pass 1. For a
+Step 8, \code{apply\_whitespace\_to\_lines}, runs only in pass 1. For a
 single-line statement it formats the label-free joined line. For a statement
 with continuations it formats each physical line separately, removing the trailing
 \code{\&} first and restoring it afterwards, and carries two pieces of state
@@ -2266,16 +2294,20 @@ a call is still known to be a keyword argument, and the last significant
 character, so that a \code{-} at the start of a continuation line can be
 classified as unary or binary.
 
-Manually aligned continuation lines cannot be formatted in pass 1, because
-their leading \code{\&} is still attached. Step 6,
+Manually aligned continuation lines are left alone in pass 1, because their
+leading \code{\&} is still attached. Step 7,
 \code{extract\_and\_format\_pre\_ampersands}, runs in pass 2: it records each
 line's manual offset, strips the leading \code{\&} with
 \code{remove\_pre\_ampersands}, and then applies whitespace formatting to the
-continuation lines. Chapter~\ref{ch:aligner} covers this.
+continuation lines, starting from the bracket depth and last character that
+the first line ends with. Chapter~\ref{ch:aligner} covers this. When
+indentation is off there is no pass 2, so step 8 formats these lines itself:
+it sets the \code{\&} and the blanks around it aside, formats the rest, and
+puts them back as written.
 
-Steps 8 and 9 apply operator replacement and case conversion to each physical
-line, through \code{map\_code\_lines}, which skips lines that begin inside a
-multi-line string.
+Step 9 applies case conversion to each physical line, through
+\code{map\_code\_lines}, which skips lines that begin inside a multi-line
+string.
 
 \subsection{Steps 10--11: indentation}
 
@@ -2767,7 +2799,7 @@ lines whose spacing is final: had it seen \code{call  compute( alpha,}, it would
 put the continuation two columns too far right, and the whitespace engine would
 then shrink the first line without moving the continuation. The ordering
 guarantees it: the indentation pass reads pass 1's output, and even within one
-\code{format\_pass}, whitespace (step 7 of Figure~\ref{fig:format-pass}) runs
+\code{format\_pass}, whitespace (step 8 of Figure~\ref{fig:format-pass}) runs
 before indentation (step 10).
 \end{keyidea}
 
@@ -2838,6 +2870,9 @@ pub fn format_line_with_level(
     line = formatted;
     // Stage 3: Add whitespace context-aware
     line = add_whitespace_context(&line, whitespace_flags);
+    // The indent is the caller's and comes back as it went in
+    let indent_len = logical_line.len() - logical_line.trim_start_matches(' ').len();
+    line = format!("{}{}", &logical_line[..indent_len], line.trim_start_matches(' '));
     (line, final_level, last_char)
 }
 \end{lstlisting}
@@ -2845,6 +2880,12 @@ pub fn format_line_with_level(
 The extra parameters and results exist for continuation lines: the bracket
 depth at the start of the line and at its end, and the last significant
 character of the previous line and of this one.
+
+The last two lines put the indent back. The stages keep it in front of a
+letter or digit, but a line that opens with \code{(}, \code{-} or \code{==}
+meets the rules that trim or add blanks before those characters, and they
+cannot tell an indent from spacing. The indentation pass recomputes every
+indent, so this matters only when that pass is off.
 
 Figure~\ref{fig:ws-stages} follows one line through the stages at the default
 level.
@@ -2869,8 +2910,9 @@ level.
 \code{rm\_extra\_whitespace} walks the code characters (via \code{CharFilter},
 copying skipped strings and comments through verbatim) and keeps a blank only
 where it separates two words: after an alphanumeric character, and not before a
-non-word character. It preserves leading whitespace, which the aligner and the
-inspection pass need. It also keeps blanks in a few places where removing them
+non-word character. It preserves leading whitespace in front of a word, which
+the aligner and the inspection pass need; \code{format\_line\_with\_level}
+restores it for every other line. It also keeps blanks in a few places where removing them
 would change a token's meaning or a deliberate layout:
 
 \begin{itemize}
@@ -3281,7 +3323,7 @@ keyword to the table and is converted. Keep that in mind before enabling
 \code{keywords} on a codebase with such names.
 \end{pitfall}
 
-\section{Relational operator replacement}
+\section{Relational operator replacement}\label{sec:replacement}
 
 \code{replace\_relational\_operators} in \file{format/replacements.rs} is a
 short, careful scanner. It first marks which byte positions are code, using
@@ -3302,6 +3344,28 @@ const OPERATORS: [(&str, &str); 6] = [
 The order puts \code{<=} before \code{<}; otherwise \code{a <= b} would become
 \code{a .lt.= b}. When converting to Fortran style it skips \code{=>}, which
 would otherwise become \code{=.gt.}.
+
+\code{format\_pass} calls it through \code{replace\_operators\_in}, at step 2
+of Figure~\ref{fig:format-pass}: on the joined line and on each physical line
+of the \code{FortranLine}, before the whitespace engine runs. Three kinds of
+physical line are passed over or handled specially. A line that begins inside
+a multi-line string is text. A fypp or C preprocessor directive between the
+lines of a continued statement is another language: \code{\#:if c > d} is
+Python, where \code{.gt.} is an error. An OpenMP conditional line is code
+behind its \code{!\$}, which is set aside so that the line does not read as a
+comment.
+
+\begin{pitfall}[Replace before spacing, not after]
+Until 0.5.6 replacement ran after the whitespace engine, and the two
+spellings are not spaced by the same rules. With relational spacing off, the
+engine closes up \code{b == 1} to \code{b==1} but spaces a dotted operator
+(the logical rule covers it), so a late conversion wrote \code{b.eq.1}, and
+the \emph{next} run respaced it to \code{b .eq. 1}. In the other direction
+\code{a .lt. b} became \code{a < b} and then \code{a<b}. A formatter whose
+second run changes the file fails its own \code{-{}-check}. Converting first
+makes the result indistinguishable from source written in the target
+spelling, so no rule has to know that a conversion happened.
+\end{pitfall}
 
 \section{Sorting \texttt{use} statements}
 
