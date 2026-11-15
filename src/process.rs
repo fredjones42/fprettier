@@ -22,14 +22,14 @@ use std::io::{BufRead, BufReader, Cursor, Write};
 
 use anyhow::Result;
 
-use crate::config::{Config, MAX_LINE_LENGTH, MAX_STATEMENT_LENGTH, WS_LOGICAL, WS_RELATIONAL};
+use crate::config::{Config, MAX_LINE_LENGTH, MAX_STATEMENT_LENGTH};
 use crate::format::case_convert::{CaseSettings, convert_case};
 use crate::format::continuation::{
     get_manual_alignment, prepend_ampersands, remove_pre_ampersands, should_auto_align,
 };
 use crate::format::indenter::{F90Indenter, IndentParams};
 use crate::format::line_split::split_long_lines;
-use crate::format::replacements::replace_relational_operators_padded;
+use crate::format::replacements::replace_relational_operators;
 use crate::format::sort_use::sort_use_statements;
 use crate::format::whitespace::{StmtKind, format_line, format_line_with_level};
 use crate::parser::char_filter::CharFilter;
@@ -1418,6 +1418,30 @@ fn restore_omp_prefix(lines: &mut [String], prefix: &str) {
     }
 }
 
+/// Rewrite the relational operators of a statement in place, in the joined
+/// line and in each physical line that is code.
+///
+/// A line inside a multi-line string is text. An OMP conditional line is code behind
+/// its `!$`, which is set aside so the line does not read as a comment.
+fn replace_operators_in(fortran_line: &mut FortranLine, c_relations: bool) {
+    fortran_line.joined_line = replace_relational_operators(&fortran_line.joined_line, c_relations);
+    for i in 0..fortran_line.lines.len() {
+        let line = &fortran_line.lines[i];
+        if fortran_line.starts_in_string(i) || is_fypp_directive(line) || CPP_LINE_RE.is_match(line)
+        {
+            continue;
+        }
+        let code = line
+            .strip_prefix(fortran_line.omp_prefix.as_str())
+            .unwrap_or(line);
+        let prefix = &line[..line.len() - code.len()];
+        fortran_line.lines[i] = format!(
+            "{prefix}{}",
+            replace_relational_operators(code, c_relations)
+        );
+    }
+}
+
 /// Single formatting pass
 ///
 /// Either whitespace formatting or indentation, controlled by flags
@@ -1458,7 +1482,7 @@ fn format_pass<R: BufRead, W: Write>(
     };
 
     let mut stream = InputStream::new(input);
-    while let Some(fortran_line) = stream.next_fortran_line()? {
+    while let Some(mut fortran_line) = stream.next_fortran_line()? {
         let is_blank = is_blank_line(&fortran_line);
         if is_blank && skip_blank {
             continue;
@@ -1472,6 +1496,20 @@ fn format_pass<R: BufRead, W: Write>(
         if !is_blank {
             fortran_line_number += 1;
         }
+
+        let is_fypp_line = is_fypp_directive(&fortran_line.joined_line);
+        let is_cpp_line = CPP_LINE_RE.is_match(&fortran_line.joined_line);
+        let skip_format = detect_skip_format(&fortran_line.comments, &mut in_deactivation_block);
+
+        // `.lt.`/`.eq.` <-> `<`/`==`, on the line as read: every later step
+        // then sees the new spelling as if it had been written that way. Done
+        // after the whitespace pass, `b==1` became `b.eq.1` and `a .lt. b`
+        // became `a < b` under rules that space the one and close up the
+        // other, and only the next run put that right.
+        if pass_ctx.config.enable_replacements && !skip_format && !is_cpp_line && !is_fypp_line {
+            replace_operators_in(&mut fortran_line, pass_ctx.config.c_relations);
+        }
+
         let mut output_lines = fortran_line.lines.clone();
 
         // Captured before any trimming or formatting, and used much later to
@@ -1491,9 +1529,9 @@ fn format_pass<R: BufRead, W: Write>(
         );
 
         let flags = FormattingFlags {
-            is_fypp_line: is_fypp_directive(&fortran_line.joined_line),
-            is_cpp_line: CPP_LINE_RE.is_match(&fortran_line.joined_line),
-            skip_format: detect_skip_format(&fortran_line.comments, &mut in_deactivation_block),
+            is_fypp_line,
+            is_cpp_line,
+            skip_format,
             auto_align: should_auto_align(&output_lines),
         };
 
@@ -1513,18 +1551,6 @@ fn format_pass<R: BufRead, W: Write>(
             flags,
             &ampersand_sep,
         );
-
-        // `.lt.`/`.eq.` <-> `<`/`==`
-        if pass_ctx.config.enable_replacements && flags.is_rewritable_code() {
-            // A dotted operator is spaced by either rule, so one converted
-            // here, after that pass has run, is spaced to match
-            let pad_dotted = pass_ctx.impose_whitespace
-                && (pass_ctx.whitespace_flags[WS_RELATIONAL]
-                    || pass_ctx.whitespace_flags[WS_LOGICAL]);
-            map_code_lines(&mut output_lines, &fortran_line, |line| {
-                replace_relational_operators_padded(line, pass_ctx.config.c_relations, pad_dotted)
-            });
-        }
 
         // Neither preprocessor is Fortran, and fypp only recognizes its own
         // directives (#:if, #:endif, ...) in lower case

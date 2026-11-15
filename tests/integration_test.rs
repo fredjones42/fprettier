@@ -1033,6 +1033,31 @@ fn test_replacement_spaces_a_converted_operator() {
     assert_eq!(run_format(&result, &config), result);
 }
 
+/// Replacement and whitespace settle in one run in both directions: with
+/// relational spacing off, `a .lt. b` used to become `a < b` on the first run
+/// and `a<b` on the second
+#[test]
+fn test_replacement_to_c_style_is_stable() {
+    let input = "if (a .lt. b .and. c.ge.d) x = 1
+";
+
+    let config = Config {
+        impose_indent: false,
+        enable_replacements: true,
+        c_relations: true,
+        whitespace_dict: [("relational".to_string(), false)].into(),
+        ..Default::default()
+    };
+
+    let result = run_format(input, &config);
+    assert_eq!(
+        result,
+        "if (a<b .and. c>=d) x = 1
+"
+    );
+    assert_eq!(run_format(&result, &config), result);
+}
+
 /// Test replacement preserves operators in strings
 #[test]
 fn test_replacement_preserves_strings() {
