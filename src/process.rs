@@ -178,6 +178,9 @@ struct LineWriteContext<'a> {
     comment_line_indices: &'a HashSet<usize>,
     /// Origin indices that were split into multiple lines
     split_origins: &'a HashSet<usize>,
+    /// The column of each output line once a split has re-aligned the
+    /// statement; `computed_indents` is per line as it was before the split
+    split_indents: Option<&'a [usize]>,
     /// Effective line length for wrapping decisions
     effective_line_length: usize,
     /// The line is a preprocessor directive, whose comment must stay on it:
@@ -1211,7 +1214,10 @@ fn write_output_line<W: Write>(
             && !OMP_DIR_RE.is_match(comment_trimmed)
             && !is_ford_comment
         {
-            let indent = comment_indent(write_ctx, indenter, line_index, 0);
+            let indent = write_ctx
+                .split_indents
+                .and_then(|indents| indents.get(line_index).copied())
+                .unwrap_or_else(|| comment_indent(write_ctx, indenter, line_index, 0));
             write_spaces(output, indent)?;
         } else {
             // The gap between the code and the comment that follows it
@@ -1276,20 +1282,31 @@ fn compute_comment_indices(line_origins: &[usize]) -> (HashSet<usize>, HashSet<u
 /// with a trailing backslash and a fypp directive not at all, so breaking
 /// either one with Fortran's `&` would change what it means.
 ///
-/// Returns a vector mapping each output line to its original line index.
+/// Returns a vector mapping each output line to its original line index, and
+/// the column of each output line if anything was split.
 fn split_lines_if_needed(
     output_lines: &mut Vec<String>,
+    computed_indents: &[usize],
     effective_line_length: usize,
     indent_size: usize,
     is_preprocessor: bool,
-) -> Vec<usize> {
+) -> (Vec<usize>, Option<Vec<usize>>) {
     // Track which original line each output line came from (for comment placement)
     // By default, output line i corresponds to original line i
-    let mut line_origins: Vec<usize> = (0..output_lines.len()).collect();
+    let line_origins: Vec<usize> = (0..output_lines.len()).collect();
 
     if effective_line_length < LINE_SPLIT_THRESHOLD && !is_preprocessor {
         // Get indents for splitting (use 0 if not computed)
-        let line_indents: Vec<usize> = output_lines.iter().map(|line| indent_of(line)).collect();
+        // A blank line stands for a comment, which goes where the indenter
+        // put the line
+        let line_indents: Vec<usize> = output_lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| match computed_indents.get(i) {
+                Some(&computed) if line.trim().is_empty() => computed,
+                _ => indent_of(line),
+            })
+            .collect();
 
         let (split_lines, split_indents, split_origins) = split_long_lines(
             output_lines,
@@ -1316,11 +1333,11 @@ fn split_lines_if_needed(
                     }
                 })
                 .collect();
-            line_origins = split_origins;
+            return (split_origins, Some(split_indents));
         }
     }
 
-    line_origins
+    (line_origins, None)
 }
 
 /// Restore pre-ampersands and apply indentation to continuation lines
@@ -1617,8 +1634,9 @@ fn format_pass<R: BufRead, W: Write>(
             );
         }
 
-        let line_origins = split_lines_if_needed(
+        let (line_origins, split_indents) = split_lines_if_needed(
             &mut output_lines,
+            &computed_indents,
             effective_line_length,
             pass_ctx.config.indent,
             flags.is_cpp_line || flags.is_fypp_line,
@@ -1631,6 +1649,7 @@ fn format_pass<R: BufRead, W: Write>(
             lines_were_indented: &lines_were_indented,
             comment_line_indices: &comment_line_indices,
             split_origins: &split_origins,
+            split_indents: split_indents.as_deref(),
             effective_line_length,
             is_preprocessor: flags.is_cpp_line || flags.is_fypp_line,
         };

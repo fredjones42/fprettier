@@ -2500,3 +2500,107 @@ end program p
 ";
     assert_eq!(assert_fixed_point(input, &config), expected);
 }
+
+/// A fragment split off a line goes where the aligner will put it on the next
+/// run, and the lines after the break are re-aligned with it. The fragment
+/// used to take the column of the line it came from or of the line below, so
+/// a split inside a bracket moved on the second run.
+#[test]
+fn test_split_inside_a_bracket_is_a_fixed_point() {
+    let input = "subroutine s
+    l = test_function(1, 2, test_function(1, 2, 3, 4), 4) + &
+        3*(2 + 1)
+end subroutine
+";
+    let config = Config {
+        line_length: 50,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        assert_fixed_point(input, &config),
+        "subroutine s
+    l = test_function(1, 2, test_function(1, 2, &
+                                          3, 4), 4) + &
+        3*(2 + 1)
+end subroutine
+"
+    );
+}
+
+/// A comment on a line of its own inside a continued statement stays where it
+/// is when a line above it is split
+#[test]
+fn test_split_keeps_a_comment_line_inside_the_statement() {
+    let input = "subroutine s
+    if (k == 1) &
+        l = test_function(1, &
+                          test_function(1, 2, 3, 4), 9, 10) &
+            ! a comment
+            + 13*str_function('') + str_function('x')
+end subroutine
+";
+    let config = Config {
+        line_length: 50,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        assert_fixed_point(input, &config),
+        "subroutine s
+    if (k == 1) &
+        l = test_function(1, &
+                          test_function(1, 2, 3, &
+                                        4), 9, &
+                          10) &
+            ! a comment
+            + 13*str_function('') + &
+            str_function('x')
+end subroutine
+"
+    );
+}
+
+/// A comment on a line of its own below a split takes the column of the
+/// re-aligned statement. Its column used to be looked up by its position
+/// after the split in a table made before it, which ran off the end.
+#[test]
+fn test_comment_line_below_a_split_moves_with_the_code() {
+    let input = "subroutine s
+do i = 1, 2
+do j = 1, 2
+if (k == 1) &
+l = f(1, &
+h(1, 2, 3, 4), 9, 10, 11, 12, 13, 14) &
+ ! first note
+ ! second note
++ 13*m(2)
+end do
+end do
+end subroutine
+";
+    let config = Config {
+        line_length: 40,
+        strict_indent: true,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        assert_fixed_point(input, &config),
+        "subroutine s
+    do i = 1, 2
+        do j = 1, 2
+            if (k == 1) &
+                l = f(1, &
+                      h(1, 2, 3, 4), &
+                      9, 10, 11, &
+                      12, 13, 14) &
+                    ! first note
+                    ! second note
+                    + 13*m(2)
+        end do
+    end do
+end subroutine
+"
+    );
+}

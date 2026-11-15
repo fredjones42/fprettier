@@ -232,74 +232,69 @@ pub fn auto_split_line(
     Some(new_lines)
 }
 
-/// The column the next pass will align a continuation to, relative to the
-/// start of the statement.
+/// The offsets the aligner gives the physical `lines` of one statement,
+/// relative to the statement's base indent. The entry for a line depends only
+/// on the lines before it.
+fn aligner_offsets(lines: &[String], indent_size: usize) -> Vec<usize> {
+    let trimmed: Vec<String> = lines.iter().map(|l| l.trim().to_string()).collect();
+    // Only the statement's opening words matter to the aligner here (is it a
+    // declaration, is it a USE), so a rough join is enough
+    let joined = trimmed
+        .iter()
+        .map(|l| l.strip_suffix('&').unwrap_or(l).trim_end())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut aligner = F90Aligner::new();
+    aligner.process_logical_line(&joined, &trimmed, indent_size);
+    aligner.get_lines_indent().to_vec()
+}
+
+/// The column the next pass will put a line in when it follows `emitted`, the
+/// lines of the statement so far.
 ///
 /// Asking the aligner the same question the indentation pass asks keeps a
 /// freshly split line in the column a hand-written continuation would get,
 /// so the split does not move on a second run.
-fn aligned_continuation_offset(logical_line: &str, first_chunk: &str, indent_size: usize) -> usize {
-    let mut aligner = F90Aligner::new();
-    let lines = [first_chunk.trim_start().to_string(), String::new()];
-    aligner.process_logical_line(logical_line, &lines, indent_size);
-    aligner
-        .get_lines_indent()
-        .get(1)
+fn next_line_offset(emitted: &[String], indent_size: usize) -> usize {
+    let mut lines = emitted.to_vec();
+    lines.push(String::new());
+    aligner_offsets(&lines, indent_size)
+        .last()
         .copied()
         .unwrap_or(indent_size)
 }
 
-/// Split one line, returning the fragments and the column its continuations
-/// belong in.
-///
-/// `follow_indent` is the column when the caller already knows it, i.e. the
-/// statement has other continuation lines that have been aligned. Otherwise
-/// the line is split once to see where the break lands, and split again if
-/// the aligner would put the remainder somewhere other than the plain extra
-/// indent guessed for the first attempt.
-fn split_with_alignment(
-    line: &str,
-    indent: usize,
-    max_line_length: usize,
-    follow_indent: Option<usize>,
-    indent_size: usize,
-) -> Option<(Vec<String>, usize)> {
-    if let Some(follow) = follow_indent {
-        return Some((
-            auto_split_line(line, indent, max_line_length, follow)?,
-            follow,
-        ));
-    }
-
-    let guess = indent + indent_size;
-    let probe = auto_split_line(line, indent, max_line_length, guess)?;
-    let follow = indent + aligned_continuation_offset(line, &probe[0], indent_size);
-    if follow == guess {
-        return Some((probe, guess));
-    }
-    auto_split_line(line, indent, max_line_length, follow)
-        .map_or(Some((probe, guess)), |split| Some((split, follow)))
+fn is_code(line: &str) -> bool {
+    let line = line.trim();
+    !line.is_empty() && !line.starts_with('!')
 }
 
-/// Push the fragments of one split statement onto `out`. The first fragment
-/// keeps the statement's own indent; the rest go in the continuation column.
-fn push_fragments(
-    out: &mut Vec<(String, usize, usize)>,
-    fragments: Vec<String>,
-    indent: usize,
-    follow_indent: usize,
-    origin: usize,
-) {
-    for (n, fragment) in fragments.into_iter().enumerate() {
-        out.push((
-            fragment,
-            if n == 0 { indent } else { follow_indent },
-            origin,
-        ));
+/// The indent the statement's continuation columns are measured from, if its
+/// layout is the aligner's: every continuation line sits where the aligner
+/// puts it. `None` for a statement laid out some other way (by hand with
+/// leading `&`, or not indented yet), whose columns are not ours to compute.
+fn aligner_base(lines: &[String], indents: &[usize], indent_size: usize) -> Option<usize> {
+    if lines.iter().any(|l| l.trim_start().starts_with('&')) {
+        return None;
     }
+    let offsets = aligner_offsets(lines, indent_size);
+    let mut base = None;
+    for k in (1..lines.len()).filter(|&k| is_code(&lines[k])) {
+        let this = indents.get(k)?.checked_sub(*offsets.get(k)?)?;
+        if *base.get_or_insert(this) != this {
+            return None;
+        }
+    }
+    base.or_else(|| indents.first().copied())
 }
 
 /// Apply line splitting to an array of lines, replacing long lines with split versions.
+///
+/// `lines` are the physical lines of one statement. When their layout is the
+/// aligner's, each fragment broken off goes in the column the aligner gives
+/// it, and the lines after a break are re-aligned, since a new break can move
+/// them: the result is what the next run would make of it. Otherwise the
+/// fragments of a line go in the column of the line that follows it.
 ///
 /// Returns a tuple of:
 /// - The new lines
@@ -312,68 +307,99 @@ pub fn split_long_lines(
     max_line_length: usize,
     indent_size: usize,
 ) -> (Vec<String>, Vec<usize>, Vec<usize>) {
-    // (line, indent, index of the original line it came from)
-    let mut out: Vec<(String, usize, usize)> = Vec::with_capacity(lines.len());
+    let mut result_lines = Vec::with_capacity(lines.len());
+    let mut result_indents = Vec::with_capacity(lines.len());
+    let mut result_origins = Vec::with_capacity(lines.len());
 
     // Strings count toward a line's visual width, so measure the raw text
-    let too_long = |s: &str| s.trim_end_matches('\n').len() > max_line_length;
+    let too_long = |s: &str, indent: usize| {
+        indent + s.trim_start().trim_end_matches('\n').len() > max_line_length
+    };
+
+    let base = aligner_base(lines, indents, indent_size);
+    let mut split_any = false;
 
     for (i, line) in lines.iter().enumerate() {
-        let indent = indents.get(i).copied().unwrap_or(0);
-
-        // Where the fragments after the break go. A statement that already
-        // has continuation lines has had them aligned (on the open bracket,
-        // `::` or `=`); a fragment broken out of it belongs in that same
-        // column, or the statement comes out ragged. Only a statement that
-        // is still a single line falls back to a plain extra indent.
-        let next_is_code = lines
-            .get(i + 1)
-            .is_some_and(|next| !next.trim_start().starts_with('!'));
-        let follow_indent = if next_is_code {
-            indents.get(i + 1).copied()
-        } else if i > 0 {
-            Some(indent)
-        } else {
-            None
-        };
-        let split = |text: &str| {
-            split_with_alignment(text, indent, max_line_length, follow_indent, indent_size)
-        };
-
-        if !too_long(line) {
-            out.push((line.clone(), indent, i));
-            continue;
+        let mut indent = indents.get(i).copied().unwrap_or(0);
+        // A blank line stands for a comment, which moves with the code
+        if let (Some(base), true) = (base, split_any) {
+            indent = base + next_line_offset(&result_lines, indent_size);
         }
 
         // Detaching an inline comment comes first: it may bring the code
         // within the limit on its own, and otherwise hands the splitter a
         // shorter line to work with.
-        if let Some((code_line, comment_line)) = split_inline_comment(line) {
-            match too_long(&code_line).then(|| split(&code_line)).flatten() {
-                Some((fragments, follow)) => {
-                    push_fragments(&mut out, fragments, indent, follow, i);
+        let detached = too_long(line, indent)
+            .then(|| split_inline_comment(line))
+            .flatten();
+        let (mut code, comment) = match detached {
+            Some((code, comment)) => (code, Some(comment)),
+            None => (line.clone(), None),
+        };
+        let first_indent = indent;
+        // Every line is passed on, a blank one included: it holds the place
+        // of a comment the caller writes back
+        let mut emitted_whole = false;
+
+        // Break one fragment off at a time; over-length and unsplittable
+        // lines stand
+        while too_long(&code, indent) {
+            let follow = if let Some(base) = base {
+                // Where the break lands does not depend on the column of
+                // what follows it, so find it first
+                let Some(probe) =
+                    auto_split_line(&code, indent, max_line_length, indent + indent_size)
+                else {
+                    break;
+                };
+                let mut emitted = result_lines.clone();
+                emitted.push(probe[0].clone());
+                base + next_line_offset(&emitted, indent_size)
+            } else {
+                // The column of the line after this one, or this line's own
+                // if it is the last
+                let next_is_code = lines.get(i + 1).is_some_and(|next| is_code(next));
+                match indents.get(i + 1) {
+                    Some(&next) if next_is_code => next,
+                    _ => indent,
                 }
-                None => out.push((code_line, indent, i)),
+            };
+            let Some(fragments) = auto_split_line(&code, indent, max_line_length, follow) else {
+                break;
+            };
+            split_any = true;
+            if base.is_none() {
+                for (n, fragment) in fragments.into_iter().enumerate() {
+                    result_lines.push(fragment);
+                    result_indents.push(if n == 0 { indent } else { follow });
+                    result_origins.push(i);
+                }
+                emitted_whole = true;
+                break;
             }
-            out.push((comment_line, indent, i));
-            continue;
+            // Keep the first fragment and look at the rest afresh: it may open
+            // a bracket of its own, which moves what follows it again
+            let stripped = code.trim_start();
+            let head_len = fragments[0].trim_end().len() - 2;
+            let rest = stripped[head_len..].trim_start().to_string();
+            result_lines.push(fragments[0].clone());
+            result_indents.push(indent);
+            result_origins.push(i);
+            code = rest;
+            indent = follow;
         }
-
-        // No comment to detach; over-length and unsplittable lines stand
-        match split(line) {
-            Some((fragments, follow)) => push_fragments(&mut out, fragments, indent, follow, i),
-            None => out.push((line.clone(), indent, i)),
+        if !emitted_whole {
+            result_lines.push(code);
+            result_indents.push(indent);
+            result_origins.push(i);
+        }
+        if let Some(comment) = comment {
+            result_lines.push(comment);
+            result_indents.push(first_indent);
+            result_origins.push(i);
         }
     }
 
-    let mut result_lines = Vec::with_capacity(out.len());
-    let mut result_indents = Vec::with_capacity(out.len());
-    let mut result_origins = Vec::with_capacity(out.len());
-    for (line, indent, origin) in out {
-        result_lines.push(line);
-        result_indents.push(indent);
-        result_origins.push(origin);
-    }
     (result_lines, result_indents, result_origins)
 }
 
