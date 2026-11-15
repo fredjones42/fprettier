@@ -2,6 +2,15 @@
 
 All notable changes to fprettier are recorded here.
 
+## Version 0.5.5
+
+**Bug Fixes:**
+- Fixed `/=` being split into `/ =` when multiply/divide spacing is on (`-w 3` and up, or `multdiv = true`), so `a /= 0` became `a / =0`, which does not compile. The `/` was spaced as a division before the relational operator was seen (#5)
+- Fixed a relational operator converted to its dotted form by `--enable-replacements` being left without blanks when relational spacing is off, as in `b == 1` becoming `b.eq.1`. Replacement runs after the whitespace pass, which had closed up the `==`; the next run then spaced it. It now gets its blanks at once (#6)
+- Fixed operator case being applied to the operands of a dotted operator written without blanks, so `myVar.lt.1` became `MYVAR.LT.1`, while `1.eq.b` was not converted at all (#6)
+
+Thanks to Vikas Sharma for reporting both issues, with their causes.
+
 ## Version 0.5.4
 
 **Bug Fixes:**
