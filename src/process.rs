@@ -35,8 +35,8 @@ use crate::format::whitespace::{StmtKind, format_line, format_line_with_level};
 use crate::parser::char_filter::CharFilter;
 use crate::parser::patterns::{
     ASSOCIATE_RE, BLK_RE, CHANGETEAM_RE, CPP_LINE_RE, CRITICAL_RE, DO_RE, ENUM_RE, ENUMTYPE_RE,
-    FORALL_RE, IF_RE, INTERFACE_RE, MOD_RE, OMP_DIR_RE, PROG_RE, SELCASE_RE, STATEMENT_LABEL_RE,
-    TYPE_RE, WHERE_RE, is_fypp_directive,
+    FORALL_RE, IF_RE, INTERFACE_RE, MOD_RE, OMP_DIR_RE, PRE_AMPERSAND_RE, PROG_RE, SELCASE_RE,
+    STATEMENT_LABEL_RE, TYPE_RE, WHERE_RE, is_fypp_directive,
 };
 use crate::parser::stream::{FortranLine, InputStream};
 use crate::scope::build_scope_parser;
@@ -702,8 +702,10 @@ fn apply_whitespace_to_lines(
                 // When lines have leading & (auto_align=false), skip formatting here.
                 // The leading & hasn't been stripped yet (remove_pre_ampersands runs
                 // in the indent pass), so formatting would break the prefix.
-                // These lines get formatted in the indent pass instead.
-                if !flags.auto_align && i > 0 {
+                // These lines get formatted in the indent pass instead. With
+                // that pass off this is their only chance, and the & is set
+                // aside below.
+                if !flags.auto_align && i > 0 && pass_ctx.config.impose_indent {
                     continue;
                 }
 
@@ -731,6 +733,17 @@ fn apply_whitespace_to_lines(
                     line.trim_end()
                 };
 
+                // A leading &, with the blanks on either side of it, is kept
+                // as written
+                let pre_ampersand = if i > 0 {
+                    PRE_AMPERSAND_RE
+                        .find(line_content)
+                        .map_or("", |m| m.as_str())
+                } else {
+                    ""
+                };
+                let line_content = &line_content[pre_ampersand.len()..];
+
                 // Format this physical line with bracket level tracking
                 // Pass prev_line_last_char for continuation lines to determine +/- treatment
                 let (formatted, ending_level, last_char) = format_line_with_level(
@@ -748,6 +761,14 @@ fn apply_whitespace_to_lines(
                     prev_line_last_char = last_char;
                 }
 
+                // An operator opening the line is given a blank in front,
+                // which belongs to the & here
+                let formatted = if pre_ampersand.is_empty() {
+                    formatted.as_str()
+                } else {
+                    formatted.trim_start()
+                };
+
                 // Restore continuation marker if needed
                 // When lines have leading & (auto_align=false), preserve original spacing
                 // before trailing & using ampersand_sep or extracting from original line
@@ -755,8 +776,8 @@ fn apply_whitespace_to_lines(
                     let spacing = if !ampersand_sep.is_empty() && i < ampersand_sep.len() {
                         // Use captured spacing from extraction
                         ampersand_sep[i]
-                    } else if !flags.auto_align && i == 0 {
-                        // For first line when auto_align=false, extract original spacing
+                    } else if !flags.auto_align {
+                        // When auto_align=false, extract original spacing
                         // to preserve manual formatting
                         let original = if i < fortran_line.lines.len() {
                             &fortran_line.lines[i]
@@ -775,9 +796,13 @@ fn apply_whitespace_to_lines(
                         // Default: 1 space before &
                         1
                     };
-                    *line = format!("{}{}&", formatted.trim_end(), " ".repeat(spacing));
+                    *line = format!(
+                        "{pre_ampersand}{}{}&",
+                        formatted.trim_end(),
+                        " ".repeat(spacing)
+                    );
                 } else {
-                    *line = formatted;
+                    *line = format!("{pre_ampersand}{formatted}");
                 }
                 // Note: OMP prefix is handled during indentation, not here
             }

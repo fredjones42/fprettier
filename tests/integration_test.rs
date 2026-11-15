@@ -959,6 +959,32 @@ fn test_multiple_whitespace_overrides() {
     assert!(result.contains(", "), "Expected comma spacing: {result}");
 }
 
+/// With the indent pass off, a continuation line with a leading `&` is still
+/// whitespace-formatted, as fprettify does; the `&` and the blanks around it
+/// stay as written
+#[test]
+fn test_leading_ampersand_lines_formatted_without_indent() {
+    let input = "y = merge(1, 2, a>b   &
+        &.and. c.le.d+e*f,g   &
+   &   ,-h, k=3)
+";
+
+    let config = Config {
+        impose_indent: false,
+        ..Default::default()
+    };
+
+    let result = run_format(input, &config);
+    assert_eq!(
+        result,
+        "y = merge(1, 2, a > b   &
+        &.and. c .le. d + e*f, g   &
+   &   , -h, k=3)
+"
+    );
+    assert_eq!(run_format(&result, &config), result);
+}
+
 // ============================================================================
 // Operator replacement tests
 // ============================================================================
