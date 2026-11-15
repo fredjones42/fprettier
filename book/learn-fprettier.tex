@@ -1483,7 +1483,7 @@ File & Lines & Responsibility\\
 \file{cli.rs} & 730 & \code{clap} command definition and \code{CliArgs}\\
 \file{config.rs} & 520 & \code{Config}, TOML discovery and merging, whitespace flag resolution\\
 \file{directive.rs} & 260 & \code{! fprettier:} comment parsing\\
-\file{process.rs} & 1800 & The pipeline: \code{format\_file}, \code{inspect\_file}, \code{format\_pass}\\
+\file{process.rs} & 1840 & The pipeline: \code{format\_file}, \code{inspect\_file}, \code{format\_pass}\\
 \file{scope.rs} & 270 & The \code{SCOPES} table of constructs that open a scope\\
 \midrule
 \file{parser/char\_filter.rs} & 390 & \code{CharFilter}: which characters are code, string, comment or fypp\\
@@ -1493,8 +1493,8 @@ File & Lines & Responsibility\\
 \file{format/indenter.rs} & 860 & \code{F90Indenter}: scope stack and indentation\\
 \file{format/aligner.rs} & 400 & \code{F90Aligner}: continuation-line columns\\
 \file{format/continuation.rs} & 230 & Manual alignment (leading \code{\&}) helpers\\
-\file{format/whitespace.rs} & 1680 & The three-stage whitespace engine\\
-\file{format/line\_split.rs} & 600 & Breaking long lines, detaching comments\\
+\file{format/whitespace.rs} & 1700 & The three-stage whitespace engine\\
+\file{format/line\_split.rs} & 610 & Breaking long lines, detaching comments\\
 \file{format/case\_convert.rs} & 1050 & Keyword tables and case conversion\\
 \file{format/replacements.rs} & 170 & \code{.lt.} $\leftrightarrow$ \code{<}\\
 \file{format/sort\_use.rs} & 460 & Sorting \code{use} statements and \code{only:} lists\\
@@ -3220,7 +3220,17 @@ never breaks one. A fypp comment starts with \code{\#!}, and since
 detaching it used to leave a bare \code{\#} on the directive and move the rest
 of the comment to a line of its own, which fypp rejects.
 
-The detached comment is indented at the line's computed indent.
+Where the detached comment goes depends on the pass. Pass 1 computes no
+indents and puts it in the column its code started in. Pass 2 puts it where
+the next run will put a comment on a line of its own at that spot: in the
+continuation column if the statement goes on below it, and otherwise at the
+indenter's current scope indent. That is the line's own indent for most
+statements, but one level in for a line that opens a scope, such as
+\code{if (i <= 2) then ! comment}: on the next run the comment is the first
+line of the \code{if} body. Using the line's indent there was a bug until
+0.5.6; it showed with \flag{no-whitespace}, and whenever a line fit as
+written but not once indented, because in both cases pass 2 is the one that
+detaches.
 
 \paragraph{The gap.} An inline comment that stays keeps \code{original\_gap},
 the blanks at the end of the code part in \code{FortranLine::lines}
@@ -3257,8 +3267,8 @@ no indentation pass follows, nothing removes the marker, and every run would add
 a blank.
 
 \begin{keyidea}[The marker, once more]
-A detached comment takes the computed indent of its line. In pass 1, which
-computes no indents, that is the column the code started in, so a comment
+In pass 1, which computes no indents, a detached comment takes the column the
+code started in, so a comment
 detached from an \emph{unindented} line started at column 0. Pass 2 then saw an
 unindented comment-only line, took it for one the author had put at column 0,
 and left it there:
@@ -3906,20 +3916,23 @@ The code base follows a few conventions worth keeping:
 \end{itemize}
 
 \begin{exercise}[Your first contribution]
-With multiply and divide spacing on, fprettier's output is not always a fixed
-point. Formatting \file{examples/in/test\_fypp.f90} with \code{-l 60 -w 4} and
-then formatting the result again closes up a \code{/} that a split left at the
-start of a continuation line:
-\begin{lstlisting}[style=plain]
-first run:     res = abs((obtained - reference) &
-                         / reference)
-second run:    res = abs((obtained - reference) &
-                         /reference)
+fprettier's output is not a fixed point for this file, in which a statement
+begins with a line holding nothing but \code{\&}:
+\begin{lstlisting}[style=fortran]
+program t
+call s(a)
+&
+   &; q = 1
+end program t
 \end{lstlisting}
-Follow the bug-fixing recipe from start to finish: write the idempotence sweep
-of Exercise~16.2 as a failing test, find out why the whitespace engine spaces
-an operator differently when it opens a continuation line, decide which of the
-two outputs is right, fix it, and add the CHANGELOG entry.
+Each run moves the last line three columns to the right. The input is not
+valid Fortran (no line may consist of a single \code{\&}), which is why this
+was left alone, but a formatter should not make a bad file worse each time it
+runs. Follow the bug-fixing recipe from start to finish: write a failing
+fixed-point test, find out which line keeps its column while the other is
+measured from it, decide what fprettier should do with such a line (indent
+it, leave both lines alone, or warn), implement that, and add the CHANGELOG
+entry.
 \end{exercise}
 
 % ===========================================================================
