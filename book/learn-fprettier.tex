@@ -3,8 +3,9 @@
 % Build with:   tectonic learn-fprettier.tex
 % or:           latexmk -pdf learn-fprettier.tex
 %
-% The book describes fprettier 0.5.6. Every before/after example was produced
-% by running that version of fprettier on the input shown.
+% The book describes fprettier 0.5.6 plus the fixes listed as unreleased in its
+% changelog. Every before/after example was produced by running that build of
+% fprettier on the input shown.
 
 \documentclass[11pt,a4paper,openany]{book}
 
@@ -212,7 +213,8 @@ The source of this book is the single file \file{book/learn-fprettier.tex} in
 the fprettier repository, \url{https://github.com/fredjones42/fprettier}. Build it with
 \code{tectonic learn-fprettier.tex}.\par\medskip
 Every example showing fprettier output was produced by running fprettier
-(version 0.5.6) on the input shown, with default settings unless the text says otherwise.
+(version 0.5.6 plus the fixes listed as unreleased in its changelog) on the
+input shown, with default settings unless the text says otherwise.
 Source excerpts are taken from the same version; some are abridged, which is
 marked where it matters. Function and file names are given so that you can find
 the code even after its line numbers have moved.\par}
@@ -1481,7 +1483,7 @@ File & Lines & Responsibility\\
 \file{cli.rs} & 730 & \code{clap} command definition and \code{CliArgs}\\
 \file{config.rs} & 520 & \code{Config}, TOML discovery and merging, whitespace flag resolution\\
 \file{directive.rs} & 260 & \code{! fprettier:} comment parsing\\
-\file{process.rs} & 1780 & The pipeline: \code{format\_file}, \code{inspect\_file}, \code{format\_pass}\\
+\file{process.rs} & 1800 & The pipeline: \code{format\_file}, \code{inspect\_file}, \code{format\_pass}\\
 \file{scope.rs} & 270 & The \code{SCOPES} table of constructs that open a scope\\
 \midrule
 \file{parser/char\_filter.rs} & 390 & \code{CharFilter}: which characters are code, string, comment or fypp\\
@@ -1492,7 +1494,7 @@ File & Lines & Responsibility\\
 \file{format/aligner.rs} & 400 & \code{F90Aligner}: continuation-line columns\\
 \file{format/continuation.rs} & 230 & Manual alignment (leading \code{\&}) helpers\\
 \file{format/whitespace.rs} & 1680 & The three-stage whitespace engine\\
-\file{format/line\_split.rs} & 570 & Breaking long lines, detaching comments\\
+\file{format/line\_split.rs} & 600 & Breaking long lines, detaching comments\\
 \file{format/case\_convert.rs} & 1050 & Keyword tables and case conversion\\
 \file{format/replacements.rs} & 170 & \code{.lt.} $\leftrightarrow$ \code{<}\\
 \file{format/sort\_use.rs} & 460 & Sorting \code{use} statements and \code{only:} lists\\
@@ -3083,9 +3085,13 @@ For each line longer than the limit:
     (\code{split\_inline\_comment}). That may be enough on its own; if the code is
     still too long, it is split, and the comment goes on a line of its own
     after the fragments.
-  \item Otherwise the line is split with \code{split\_with\_alignment}. If it
-    cannot be split usefully, it is left as it is, over-length.
+  \item Otherwise the line is split, one fragment at a time. If it cannot be
+    split usefully, it is left as it is, over-length.
 \end{enumerate}
+
+A blank entry in \code{lines} is not noise: it holds the place of a comment on
+a line of its own inside the statement, which the caller writes back by
+origin. Every input line is passed on, blank ones included.
 
 \subsection{Where to break}
 
@@ -3114,27 +3120,66 @@ Two decisions keep the result sensible:
 
 \subsection{Splitting where the next pass would align}
 
-A freshly split line must not move when it is formatted again, so its
-continuation fragments have to go exactly where the aligner would put a
-hand-written continuation. \code{split\_with\_alignment} asks the aligner:
+A freshly split line must not move when it is formatted again, so each
+fragment has to go exactly where the aligner would put a hand-written
+continuation. The aligner's column for a line depends only on the lines before
+it, so the splitter can ask it, giving it the lines of the statement emitted
+so far:
 
 \begin{lstlisting}[style=rust]
-let guess = indent + indent_size;
-let probe = auto_split_line(line, indent, max_line_length, guess)?;
-let follow = indent + aligned_continuation_offset(line, &probe[0], indent_size);
-if follow == guess {
-    return Some((probe, guess));
+fn next_line_offset(emitted: &[String], indent_size: usize) -> usize {
+    let mut lines = emitted.to_vec();
+    lines.push(String::new());
+    aligner_offsets(&lines, indent_size)
+        .last()
+        .copied()
+        .unwrap_or(indent_size)
 }
-auto_split_line(line, indent, max_line_length, follow)
-    .map_or(Some((probe, guess)), |split| Some((split, follow)))
 \end{lstlisting}
 
-It splits once with a guessed continuation column (one indent deeper), asks
-\code{F90Aligner} where it would put a continuation of that first fragment,
-and, if that differs, splits again with the aligner's column, since a different
-column changes how much fits on each fragment. If the statement already had
-continuation lines, their column is known and used directly
-(\code{follow\_indent}).
+The loop in \code{split\_long\_lines} breaks one fragment off at a time. It
+splits once with a guessed continuation column (one indent deeper) to find
+where the first break lands, which does not depend on that column; asks for
+the column of a line following that first fragment; and splits again with it,
+since a different column changes how much fits. It keeps only the first
+fragment and looks at the rest afresh, because the rest may open a bracket of
+its own, which moves what follows it again:
+
+\begin{lstlisting}[style=rust]
+let Some(probe) =
+    auto_split_line(&code, indent, max_line_length, indent + indent_size)
+else {
+    break;
+};
+let mut emitted = result_lines.clone();
+emitted.push(probe[0].clone());
+base + next_line_offset(&emitted, indent_size)
+\end{lstlisting}
+
+A break also moves the lines \emph{below} it: a bracket left open by the
+first fragment is a new alignment column for everything up to its close. So
+once anything has been split, every later line of the statement gets its
+column from the aligner again, a comment's placeholder line included.
+\code{split\_lines\_if\_needed} hands these columns to
+\code{write\_output\_line} as \code{split\_indents}, because
+\code{computed\_indents} is indexed by the lines as they were before the split.
+
+All of this assumes the statement's layout is the aligner's.
+\code{aligner\_base} checks: it runs the aligner over the lines as they stand
+and looks for one base indent that explains the column of every continuation
+line. A statement laid out by hand with leading \code{\&}, or one that pass 1
+is looking at before anything has indented it, has none, and then the
+fragments of a line simply take the column of the line below it.
+
+\begin{pitfall}[Ask about the whole statement]
+Through 0.5.6 the aligner was asked only when the statement was a single line.
+A line of a statement that already had continuations was split into the column
+of the line below it, or its own if it was the last. That is where a
+continuation of the \emph{unsplit} line belongs, not where one belongs after
+the new break: a split inside a bracket came out at the statement's indent and
+went under the bracket a run later. Formatting
+\file{examples/in/example.f90} with \code{-l 60} twice showed it.
+\end{pitfall}
 
 \code{LINE\_SPLIT\_THRESHOLD} (1024) caps the whole mechanism: with
 \code{line\_length = 0}, or any limit of 1024 or more, nothing is split.
@@ -3861,19 +3906,20 @@ The code base follows a few conventions worth keeping:
 \end{itemize}
 
 \begin{exercise}[Your first contribution]
-At short line limits, fprettier's output is not always a fixed point. Formatting
-\file{examples/in/example.f90} with \code{-l 60} and then formatting the result
-again moves the pieces of a statement that was split inside nested brackets:
+With multiply and divide spacing on, fprettier's output is not always a fixed
+point. Formatting \file{examples/in/test\_fypp.f90} with \code{-l 60 -w 4} and
+then formatting the result again closes up a \code{/} that a split left at the
+start of a continuation line:
 \begin{lstlisting}[style=plain]
-first run:                                      r, k, l) + i
-second run:                                                   r, k, &
-                                                              l) + i
+first run:     res = abs((obtained - reference) &
+                         / reference)
+second run:    res = abs((obtained - reference) &
+                         /reference)
 \end{lstlisting}
-Four of the eight example files do this at \code{-l 60} or \code{-l 40}. Follow
-the bug-fixing recipe from start to finish: write the idempotence sweep of
-Exercise~16.2 as a failing test, find out why the column chosen by
-\code{split\_with\_alignment} differs from the one the aligner computes on the
-next run, fix it, and add the CHANGELOG entry.
+Follow the bug-fixing recipe from start to finish: write the idempotence sweep
+of Exercise~16.2 as a failing test, find out why the whitespace engine spaces
+an operator differently when it opens a continuation line, decide which of the
+two outputs is right, fix it, and add the CHANGELOG entry.
 \end{exercise}
 
 % ===========================================================================
