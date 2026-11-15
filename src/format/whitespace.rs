@@ -894,11 +894,12 @@ impl Charwise<'_> {
         }
 
         // This is a binary mult/div operator - add spacing
-        // But only if preceded by alphanumeric, ), or ]
-        let is_binary = match prev_non_space {
-            Some(c) => c.is_alphanumeric() || c == ')' || c == ']',
-            None => false,
-        };
+        // But only if preceded by alphanumeric, ), or ]. At the start of a
+        // continuation line the operand is the last thing on the line above,
+        // as for +/-: a split before `/ c` must not close up on the next run.
+        let is_binary = prev_non_space
+            .or(self.prev_line_last_char)
+            .is_some_and(|c| c.is_alphanumeric() || c == ')' || c == ']');
         if !is_binary {
             return false;
         }
@@ -910,12 +911,15 @@ impl Charwise<'_> {
         self.out.push(' ');
         self.out.push(ch);
 
-        // Add space after
-        self.out.push(' ');
         self.i += 1;
 
         // Skip existing spaces after
         self.i = skip_spaces(&self.chars, self.i);
+        // Add space after, unless the line ends here (the closing `/` of a
+        // DATA value list): that would be trailing whitespace
+        if self.i < self.chars.len() {
+            self.out.push(' ');
+        }
         true
     }
 }
@@ -1373,6 +1377,26 @@ mod tests {
             result2, "+3",
             "Unary plus after comma should not have space"
         );
+    }
+
+    #[test]
+    fn test_multdiv_binary_at_start_of_continuation() {
+        let mut whitespace_flags = [false; 11];
+        whitespace_flags[WS_MULTDIV] = true;
+        let fmt = |line, prev| {
+            add_whitespace_charwise_with_level(line, &whitespace_flags, false, 0, prev)
+                .0
+                .trim_start()
+                .to_string()
+        };
+        // The operand is on the line above: spaced as it would be mid-line,
+        // so a line split before the operator does not close up next run
+        assert_eq!(fmt("/c", Some(')')), "/ c");
+        assert_eq!(fmt("* c", Some('b')), "* c");
+        // Nothing to its left on either line: not a binary operator
+        assert_eq!(fmt("*) y", Some(',')), "*) y");
+        // The closing `/` of a DATA value list leaves no trailing blank
+        assert_eq!(fmt("data x /1, 2/", None), "data x / 1, 2 /");
     }
 
     #[test]
