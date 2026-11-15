@@ -3,9 +3,8 @@
 % Build with:   tectonic learn-fprettier.tex
 % or:           latexmk -pdf learn-fprettier.tex
 %
-% The book describes fprettier 0.5.0 (plus the unreleased fixes on main as of
-% October 2026). Every before/after example was produced by running that
-% build of fprettier on the input shown.
+% The book describes fprettier 0.5.6. Every before/after example was produced
+% by running that version of fprettier on the input shown.
 
 \documentclass[11pt,a4paper,openany]{book}
 
@@ -198,7 +197,7 @@
 \vfill
 {\sffamily\large Fred Jones\par}
 \vspace{0.3cm}
-{\sffamily\small\color{commentc} Covers fprettier 0.5.0 and later \textperiodcentered{} November 2026\par}
+{\sffamily\small\color{commentc} Covers fprettier 0.5.6 \textperiodcentered{} November 2026\par}
 \end{titlepage}
 
 \thispagestyle{empty}
@@ -213,8 +212,7 @@ The source of this book is the single file \file{book/learn-fprettier.tex} in
 the fprettier repository, \url{https://github.com/fredjones42/fprettier}. Build it with
 \code{tectonic learn-fprettier.tex}.\par\medskip
 Every example showing fprettier output was produced by running fprettier
-(version 0.5.0 plus the fixes listed as unreleased in its changelog, as of
-November 2026) on the input shown, with default settings unless the text says otherwise.
+(version 0.5.6) on the input shown, with default settings unless the text says otherwise.
 Source excerpts are taken from the same version; some are abridged, which is
 marked where it matters. Function and file names are given so that you can find
 the code even after its line numbers have moved.\par}
@@ -1399,8 +1397,8 @@ markers are part of the block:
 matrix = [1, 0, &   !&<
           0, 1]     !&>
 y=1;z=2  !&
-    x = [1, 2, 3, &
-        & 4, 5, 6]
+      x = [1, 2, 3, &
+          & 4, 5, 6]
 \end{lstlisting}
 
 The two deactivated statements are not even re-indented. This is fprettier
@@ -3868,8 +3866,8 @@ At short line limits, fprettier's output is not always a fixed point. Formatting
 again moves the pieces of a statement that was split inside nested brackets:
 \begin{lstlisting}[style=plain]
 first run:                                      r, k, l) + i
-second run:                                               r, k, &
-                                                          l) + i
+second run:                                                   r, k, &
+                                                              l) + i
 \end{lstlisting}
 Four of the eight example files do this at \code{-l 60} or \code{-l 40}. Follow
 the bug-fixing recipe from start to finish: write the idempotence sweep of
