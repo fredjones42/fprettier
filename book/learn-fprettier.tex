@@ -3,9 +3,8 @@
 % Build with:   tectonic learn-fprettier.tex
 % or:           latexmk -pdf learn-fprettier.tex
 %
-% The book describes fprettier 0.5.6 plus the fixes listed as unreleased in its
-% changelog. Every before/after example was produced by running that build of
-% fprettier on the input shown.
+% The book describes fprettier 0.5.7. Every before/after example was produced
+% by running that version of fprettier on the input shown.
 
 \documentclass[11pt,a4paper,openany]{book}
 
@@ -198,7 +197,7 @@
 \vfill
 {\sffamily\large Fred Jones\par}
 \vspace{0.3cm}
-{\sffamily\small\color{commentc} Covers fprettier 0.5.6 \textperiodcentered{} November 2026\par}
+{\sffamily\small\color{commentc} Covers fprettier 0.5.7 \textperiodcentered{} November 2026\par}
 \end{titlepage}
 
 \thispagestyle{empty}
@@ -213,8 +212,7 @@ The source of this book is the single file \file{book/learn-fprettier.tex} in
 the fprettier repository, \url{https://github.com/fredjones42/fprettier}. Build it with
 \code{tectonic learn-fprettier.tex}.\par\medskip
 Every example showing fprettier output was produced by running fprettier
-(version 0.5.6 plus the fixes listed as unreleased in its changelog) on the
-input shown, with default settings unless the text says otherwise.
+(version 0.5.7) on the input shown, with default settings unless the text says otherwise.
 Source excerpts are taken from the same version; some are abridged, which is
 marked where it matters. Function and file names are given so that you can find
 the code even after its line numbers have moved.\par}
@@ -3227,7 +3225,7 @@ continuation column if the statement goes on below it, and otherwise at the
 indenter's current scope indent. That is the line's own indent for most
 statements, but one level in for a line that opens a scope, such as
 \code{if (i <= 2) then ! comment}: on the next run the comment is the first
-line of the \code{if} body. Using the line's indent there was a bug until
+line of the \code{if} body. Using the line's indent there was a bug through
 0.5.6; it showed with \flag{no-whitespace}, and whenever a line fit as
 written but not once indented, because in both cases pass 2 is the one that
 detaches.
