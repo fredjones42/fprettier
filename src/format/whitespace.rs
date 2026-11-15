@@ -864,6 +864,14 @@ impl Charwise<'_> {
             return true;
         }
 
+        // Check for /= (not equal) - copy through whole, so neither half is
+        // spaced here; the relational pass spaces it as one operator
+        if ch == '/' && self.peek(1) == Some('=') {
+            self.out.push_str("/=");
+            self.i += 2;
+            return true;
+        }
+
         // Check for (/ or /) - array constructor delimiters, copy through
         let prev_non_space = self.prev_non_space();
         let next_char = self.peek(1);
@@ -1393,6 +1401,23 @@ mod tests {
         // Should have spacing around =, +, -, and ,
         assert!(result.contains(" = "));
         assert!(result.contains(", "));
+    }
+
+    #[test]
+    fn test_not_equal_survives_multdiv_spacing() {
+        // `/=` is one operator: with multdiv on, its `/` was spaced as a
+        // division, giving `a / =0`, which does not compile
+        let mut whitespace_flags = [false; 11];
+        whitespace_flags[WS_MULTDIV] = true;
+        assert_eq!(
+            format_line("if (a/=0 .and. b/c /= d) x = a/b", &whitespace_flags, false),
+            "if(a/=0.and.b / c/=d) x=a / b"
+        );
+        whitespace_flags[WS_RELATIONAL] = true;
+        assert_eq!(
+            format_line("if (a/=0 .and. b/c /= d) x = a/b", &whitespace_flags, false),
+            "if(a /= 0.and.b / c /= d) x=a / b"
+        );
     }
 
     #[test]
