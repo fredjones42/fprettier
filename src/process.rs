@@ -1421,7 +1421,9 @@ fn restore_omp_prefix(lines: &mut [String], prefix: &str) {
 /// Rewrite the relational operators of a statement in place, in the joined
 /// line and in each physical line that is code.
 ///
-/// A line inside a multi-line string is text. An OMP conditional line is code behind
+/// A line inside a multi-line string is text. A fypp or cpp directive between
+/// the lines of a continued statement is another language: `#:if c > d` is
+/// Python, where `.gt.` is an error. An OMP conditional line is code behind
 /// its `!$`, which is set aside so the line does not read as a comment.
 fn replace_operators_in(fortran_line: &mut FortranLine, c_relations: bool) {
     fortran_line.joined_line = replace_relational_operators(&fortran_line.joined_line, c_relations);

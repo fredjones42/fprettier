@@ -1058,6 +1058,43 @@ fn test_replacement_to_c_style_is_stable() {
     assert_eq!(run_format(&result, &config), result);
 }
 
+/// A fypp directive between the lines of a continued statement is Python,
+/// and an OMP conditional line is code even with whitespace formatting off
+#[test]
+fn test_replacement_skips_fypp_and_reaches_omp_lines() {
+    let config = Config {
+        impose_indent: false,
+        impose_whitespace: false,
+        enable_replacements: true,
+        ..Default::default()
+    };
+
+    let fypp = "call test(a, &
+#:if c > d
+   c, &
+#:endif
+   e == f)
+";
+    assert_eq!(
+        run_format(fypp, &config),
+        "call test(a, &
+#:if c > d
+   c, &
+#:endif
+   e .eq. f)
+"
+    );
+    assert_eq!(
+        run_format(
+            "!$ if (a == b) x = 1
+",
+            &config
+        ),
+        "!$ if (a .eq. b) x = 1
+"
+    );
+}
+
 /// Test replacement preserves operators in strings
 #[test]
 fn test_replacement_preserves_strings() {
