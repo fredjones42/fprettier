@@ -264,9 +264,15 @@ fn next_line_offset(emitted: &[String], indent_size: usize) -> usize {
         .unwrap_or(indent_size)
 }
 
+/// A preprocessor directive between the lines of a statement: it keeps its
+/// own column and has no say in the statement's
+fn is_directive(line: &str) -> bool {
+    line.trim_start().starts_with('#')
+}
+
 fn is_code(line: &str) -> bool {
     let line = line.trim();
-    !line.is_empty() && !line.starts_with('!')
+    !line.is_empty() && !line.starts_with('!') && !is_directive(line)
 }
 
 /// The indent the statement's continuation columns are measured from, if its
@@ -322,7 +328,7 @@ pub fn split_long_lines(
     for (i, line) in lines.iter().enumerate() {
         let mut indent = indents.get(i).copied().unwrap_or(0);
         // A blank line stands for a comment, which moves with the code
-        if let (Some(base), true) = (base, split_any) {
+        if let (Some(base), true) = (base, split_any && !is_directive(line)) {
             indent = base + next_line_offset(&result_lines, indent_size);
         }
 
@@ -343,7 +349,7 @@ pub fn split_long_lines(
 
         // Break one fragment off at a time; over-length and unsplittable
         // lines stand
-        while too_long(&code, indent) {
+        while !is_directive(line) && too_long(&code, indent) {
             let follow = if let Some(base) = base {
                 // Where the break lands does not depend on the column of
                 // what follows it, so find it first

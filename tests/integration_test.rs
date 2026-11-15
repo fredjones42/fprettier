@@ -2604,3 +2604,32 @@ end subroutine
 "
     );
 }
+
+/// A fypp directive between the lines of a continued statement keeps its own
+/// column and does not lend it to a fragment split off the line above
+#[test]
+fn test_split_above_a_directive_inside_a_statement() {
+    let input = "call test(arg1,&
+   ${a if a  > b else b}$, arg3, &
+ #:if c>d
+   c,&
+ #:endif
+   arg4)
+";
+    let config = Config {
+        line_length: 40,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        assert_fixed_point(input, &config),
+        "call test(arg1, &
+          ${a if a  > b else b}$, &
+          arg3, &
+ #:if c>d
+          c, &
+ #:endif
+          arg4)
+"
+    );
+}
