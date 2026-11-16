@@ -2177,11 +2177,11 @@ Figure~\ref{fig:format-pass}.
 \begin{figure}[p]
 \centering
 \begin{tikzpicture}[node distance=3.2mm,
-  st/.style={stage,minimum width=62mm,minimum height=6.5mm,font=\sffamily\scriptsize},
+  st/.style={stage,minimum width=73mm,minimum height=6.5mm,font=\sffamily\scriptsize},
   side/.style={note,text width=52mm}]
   \node[st] (s1) {read \code{FortranLine}; skip repeated blank lines};
   \node[st,below=of s1] (s2) {\code{replace\_operators\_in} (opt.)};
-  \node[st,below=of s2] (s3) {copy \code{lines} $\to$ \code{output\_lines}; record \code{lines\_were\_indented}};
+  \node[st,below=of s2] (s3) {copy \code{lines} $\to$ \code{output\_lines};\\ record \code{lines\_were\_indented}};
   \node[st,below=of s3] (s4) {\code{blank\_out\_omp\_prefix}};
   \node[st,below=of s4] (s5) {\code{split\_off\_label}};
   \node[st,below=of s5] (s6) {compute \code{FormattingFlags}};
