@@ -145,7 +145,7 @@
 % ---------------------------------------------------------------------------
 \newcounter{exercise}[chapter]
 \renewcommand{\theexercise}{\thechapter.\arabic{exercise}}
-\newtcolorbox{exercise}[1][]{enhanced,breakable,colback=exbg,colframe=exframe,
+\newtcolorbox{exercise}[1][]{enhanced,colback=exbg,colframe=exframe,
   boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,
   fonttitle=\sffamily\bfseries\small,coltitle=white,
   title={Exercise \refstepcounter{exercise}\theexercise\ifx&#1&\else: #1\fi}}
