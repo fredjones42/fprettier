@@ -233,7 +233,7 @@ It was inspired by \emph{fprettify}, the Python formatter that many Fortran
 projects already use, and it keeps fprettify's formatting
 conventions closely enough that switching is usually uneventful. It differs in
 two ways: it is written in Rust and formats large trees in parallel, and it is
-actively maintained, with a test suite of almost four hundred tests that pins
+actively maintained, with a test suite of over four hundred tests that pins
 down its behaviour.
 
 \section*{Who this book is for}
@@ -3686,7 +3686,7 @@ sorted at the end. Is the result still deterministic?
 
 \section{The four kinds of test}
 
-\code{cargo test} runs 385 tests in four groups:
+\code{cargo test} runs 409 tests in four groups:
 
 \begin{center}
 \small
@@ -3694,8 +3694,8 @@ sorted at the end. Is the result still deterministic?
 \toprule
 Where & Tests & What they check\\
 \midrule
-\code{\#[cfg(test)]} modules in \file{src/} & 222 & One function at a time: a regex, a \code{CharFilter} state, an aligner column, a whitespace handler\\
-\file{tests/integration\_test.rs} & 70 & Components together through the public API: the indenter fed statement by statement, \code{format\_file} on small programs\\
+\code{\#[cfg(test)]} modules in \file{src/} & 226 & One function at a time: a regex, a \code{CharFilter} state, an aligner column, a whitespace handler\\
+\file{tests/integration\_test.rs} & 90 & Components together through the public API: the indenter fed statement by statement, \code{format\_file} on small programs\\
 \file{tests/compatibility\_test.rs} & 90 & Whole files and focused snippets against expected output, including the \file{examples/in} $\to$ \file{examples/out} pairs\\
 \file{tests/cli\_test.rs} & 3 & The binary itself: \flag{check} and \flag{diff} exit codes, output and the promise not to touch files\\
 \bottomrule
